@@ -1,0 +1,39 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+
+  - package-ecosystem: maven
+    directory: "/api-service"
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      maven-dependencies:
+        patterns:
+          - "*"
+
+  - package-ecosystem: maven
+    directory: "/api-gateway"
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      maven-dependencies:
+        patterns:
+          - "*"
+
+  - package-ecosystem: docker
+    directory: "/api-service"
+    schedule:
+      interval: weekly
+      day: monday
+
+  - package-ecosystem: docker
+    directory: "/api-gateway"
+    schedule:
+      interval: weekly
+      day: monday

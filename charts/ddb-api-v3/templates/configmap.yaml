@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ddb-api-v3.configMapName" . }}
+  labels:
+    {{- include "ddb-api-v3.labels" . | nindent 4 }}
+data:
+  APP_PROFILE: prod
+  SERVER_PORT: "8080"
+  GATEWAY_PORT: "8081"
+  API_SERVICE_URI: {{ printf "http://%s:8080" (include "ddb-api-v3.apiServiceName" .) | quote }}
+  DDB_API_PUBLIC_BASE_URL: {{ include "ddb-api-v3.publicBaseUrl" . | quote }}
+  DDB_RESOURCE_BASE_URL: https://www.deutsche-digitale-bibliothek.de
+  DDB_API_MAX_RECORDS: "10000"
+  DDB_API_UPLOAD_MAX_FILE_SIZE: 1MB
+  DDB_API_UPLOAD_MAX_REQUEST_SIZE: 10MB
+  DDB_API_COMPRESSION_ENABLED: "true"
+  DDB_API_COMPRESSION_MIN_RESPONSE_SIZE: 1KB
+  CASSANDRA_CONTACT_POINTS: {{ required "cassandra.contactPoints is required" .Values.cassandra.contactPoints | quote }}
+  CASSANDRA_LOCAL_DATACENTER: {{ required "cassandra.localDatacenter is required" .Values.cassandra.localDatacenter | quote }}
+  CASSANDRA_KEYSPACE: {{ .Values.cassandra.keyspace | quote }}
+  CASSANDRA_CONNECT_TIMEOUT: 5s
+  CASSANDRA_INIT_QUERY_TIMEOUT: 5s
+  CASSANDRA_REQUEST_TIMEOUT: 2s
+  CASSANDRA_CONSISTENCY: LOCAL_QUORUM
+  CASSANDRA_MAX_CONCURRENT_REQUESTS: "1024"
+  CASSANDRA_MAX_QUEUED_REQUESTS: "2048"
+  # Spring Boot prefers the Sentinel settings below over this fallback address.
+  REDIS_HOST: {{ include "ddb-api-v3.redisName" . | quote }}
+  REDIS_PORT: "6379"
+  REDIS_USERNAME: {{ required "redis.auth.username is required" .Values.redis.auth.username | quote }}
+  SPRING_DATA_REDIS_SENTINEL_MASTER: {{ .Values.redis.haMode.masterGroupName | quote }}
+  SPRING_DATA_REDIS_SENTINEL_NODES: {{ printf "%s:26379" (include "ddb-api-v3.redisName" .) | quote }}
+  REDIS_TLS_ENABLED: "false"
+  REDIS_CONNECT_TIMEOUT: 500ms
+  REDIS_COMMAND_TIMEOUT: 500ms
+  RATE_LIMIT_BURST_CAPACITY: "20"
+  RATE_LIMIT_REPLENISH_RATE: "10"
+  RATE_LIMIT_REFILL_PERIOD: 1s
+  RATE_LIMIT_REQUESTED_TOKENS: "1"
+  CLIENT_ID_HEADER_ENABLED: "false"
+  CLIENT_ID_HEADER_NAME: X-Client-Id
+  ANONYMOUS_RATE_LIMIT_BY_REMOTE_ADDRESS: "false"

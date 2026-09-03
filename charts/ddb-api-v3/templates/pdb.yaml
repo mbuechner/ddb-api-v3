@@ -1,0 +1,27 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "ddb-api-v3.apiServiceName" . }}
+  labels:
+    {{- include "ddb-api-v3.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api-service
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "ddb-api-v3.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "ddb-api-v3.gatewayName" . }}
+  labels:
+    {{- include "ddb-api-v3.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "ddb-api-v3.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: gateway

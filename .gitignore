@@ -1,0 +1,16 @@
+target/
+.idea/
+.vscode/
+*.iml
+*.log
+*.mv.db
+*.trace.db
+.DS_Store
+.env
+!.env.example
+/data/
+/api-service/data/
+hs_err_pid*
+
+# Helm dependencies are downloaded from their configured repositories.
+/charts/*/charts/*.tgz

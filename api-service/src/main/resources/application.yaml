@@ -1,0 +1,63 @@
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+  compression:
+    # Jetty handles negotiation, gzip request decompression, response compression and
+    # encoding-specific ETags. Small responses stay uncompressed by default.
+    enabled: ${DDB_API_COMPRESSION_ENABLED:true}
+    min-response-size: ${DDB_API_COMPRESSION_MIN_RESPONSE_SIZE:1KB}
+    additional-mime-types:
+      - application/ld+json
+      - application/problem+json
+      - application/rdf+xml
+      - application/n-quads
+      - application/n-triples
+      - application/rdf+json
+      - application/trig
+      - application/trix
+      - application/rdf+thrift
+      - application/rdf+protobuf
+      - application/x-ndjson
+      - multipart/mixed
+      - text/turtle
+
+spring:
+  config:
+    # Support one shared developer .env both from the repository root (IDE/JAR) and from
+    # the module directory (Maven). OS/container environment variables retain higher priority.
+    import:
+      - optional:file:.env[.properties]
+      - optional:file:../.env[.properties]
+  application:
+    name: ddb-api-v3-service
+  profiles:
+    active: ${APP_PROFILE:dev}
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  threads:
+    virtual:
+      enabled: true
+  servlet:
+    multipart:
+      # Operational limits may vary by deployment without changing record identity or semantics.
+      max-file-size: ${DDB_API_UPLOAD_MAX_FILE_SIZE:1MB}
+      max-request-size: ${DDB_API_UPLOAD_MAX_REQUEST_SIZE:10MB}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+
+ddb:
+  # Stable identifiers for items, datasets and organizations are independent of the
+  # API deployment URL and therefore use their own globally configurable origin.
+  resource-base-url: ${DDB_RESOURCE_BASE_URL:https://www.deutsche-digitale-bibliothek.de}
+  api:
+    public-base-url: ${DDB_API_PUBLIC_BASE_URL:http://localhost:${server.port}}
+    max-records: ${DDB_API_MAX_RECORDS:10000}

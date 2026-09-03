@@ -1,0 +1,36 @@
+spring:
+  cloud:
+    gateway:
+      server:
+        webflux:
+          # Bucket4j is the only rate-limiter implementation; Redis stores its state.
+          redis:
+            enabled: false
+  data:
+    redis:
+      # A stable standalone/managed endpoint is sufficient outside Kubernetes.
+      # Deployments that set Spring Boot's native SPRING_DATA_REDIS_SENTINEL_*
+      # variables replace this address with Sentinel discovery automatically.
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      username: ${REDIS_USERNAME:}
+      password: ${REDIS_PASSWORD}
+      ssl:
+        enabled: ${REDIS_TLS_ENABLED:true}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:500ms}
+      timeout: ${REDIS_COMMAND_TIMEOUT:500ms}
+      client-name: ddb-api-v3-gateway
+
+ddb:
+  gateway:
+    client-id:
+      # Production accepts only a principal established by the authentication layer.
+      allow-header: ${CLIENT_ID_HEADER_ENABLED:false}
+      allow-remote-address: ${ANONYMOUS_RATE_LIMIT_BY_REMOTE_ADDRESS:false}
+
+management:
+  endpoint:
+    health:
+      group:
+        readiness:
+          include: readinessState,redis

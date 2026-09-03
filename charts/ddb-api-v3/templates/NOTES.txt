@@ -1,0 +1,20 @@
+The DDB API v3 has been installed.
+
+Public entry point:
+{{- if .Values.ingress.enabled }}
+  {{ if .Values.ingress.tlsSecretName }}https{{ else }}http{{ end }}://{{ .Values.ingress.host }}
+{{- else if eq .Values.gateway.service.type "LoadBalancer" }}
+  kubectl get service {{ include "ddb-api-v3.gatewayName" . }}
+{{- else }}
+  kubectl port-forward service/{{ include "ddb-api-v3.gatewayName" . }} 8081:{{ .Values.gateway.service.port }}
+  http://127.0.0.1:8081
+{{- end }}
+
+The gateway forwards requests through the internal ClusterIP service
+{{ include "ddb-api-v3.apiServiceName" . }}. Gateway and API replicas can
+therefore be scaled independently.
+
+Redis Sentinel is available only inside the cluster as
+{{ include "ddb-api-v3.redisName" . }}:26379. The generated Redis password,
+its configuration Secrets, the Cassandra Secret and all Redis PVCs are retained
+on uninstall. Container images are always pulled from their configured registries.

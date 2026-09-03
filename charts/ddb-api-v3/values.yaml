@@ -1,0 +1,185 @@
+# Image locations, Cassandra and the public endpoint are the only values that
+# normally need adapting. Application defaults live in the chart templates;
+# extraEnv remains available for exceptional Spring configuration overrides.
+images:
+  apiService:
+    repository: ghcr.io/mbuechner/ddb-api-v3-service
+    tag: "latest"
+  gateway:
+    repository: ghcr.io/mbuechner/ddb-api-v3-gateway
+    tag: "latest"
+  # Pods always resolve the configured tag through the registry. Images are
+  # never embedded in this Helm chart.
+  pullPolicy: Always
+  pullSecrets: []
+
+cassandra:
+  contactPoints: cassandra.example.internal:9042
+  localDatacenter: datacenter1
+  keyspace: ddb_api_v3
+  # Required on the first installation. The generated Secret deliberately
+  # retains the initially installed credentials on later upgrades.
+  username: ""
+  password: ""
+
+ingress:
+  enabled: true
+  # Empty selects the OpenShift or Kubernetes cluster's default IngressClass.
+  className: ""
+  host: api.example.org
+  annotations: {}
+  tlsSecretName: ""
+
+apiService:
+  replicaCount: 3
+  # Required only when ingress.enabled=false; otherwise derived from the Ingress.
+  publicBaseUrl: ""
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { memory: 1Gi }
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+  extraEnv: {}
+
+gateway:
+  replicaCount: 2
+  service:
+    type: ClusterIP
+    port: 80
+    annotations: {}
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 512Mi }
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+  extraEnv: {}
+
+redis:
+  # Groundhog2k deploys the unmodified Docker Official Redis image. The
+  # dependency archive contains only Helm templates, never this image.
+  image:
+    registry: docker.io
+    repository: library/redis
+    tag: "8.8.0"
+    pullPolicy: Always
+  auth:
+    username: gateway
+    secretName: ddb-api-v3-redis-auth
+  serviceAccount:
+    create: false
+    name: ddb-api-v3-redis
+  podLabels:
+    ddb-api-v3/redis-node: "true"
+  # Disable the subchart's fixed UID/GID 999. OpenShift's restricted SCC
+  # supplies the permitted UID, GID, fsGroup and container restrictions.
+  podSecurityContext: false
+  securityContext: false
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: "1", memory: 512Mi }
+  sentinelResources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 250m, memory: 128Mi }
+  metrics:
+    enabled: false
+    exporter:
+      image:
+        pullPolicy: Always
+  initResources:
+    requests: { cpu: 25m, memory: 32Mi }
+    limits: { cpu: 250m, memory: 128Mi }
+  redisConfig: |-
+    appendonly yes
+    appendfsync everysec
+    save ""
+    maxmemory 256mb
+    maxmemory-policy noeviction
+  extraSecretRedisConfigs: ddb-api-v3-redis-server-config
+  extraSecretSentinelConfigs: ddb-api-v3-redis-sentinel-config
+  customStartupProbe:
+    exec:
+      command:
+        - sh
+        - -c
+        - >-
+          password="$(awk '/^requirepass / {print $2; exit}' /data/conf/sentinel.conf)" &&
+          REDISCLI_AUTH="$password" redis-cli -p 26379 ping | grep -q PONG &&
+          REDISCLI_AUTH="$password" redis-cli --user replication -p 6379 ping | grep -q PONG
+    periodSeconds: 5
+    failureThreshold: 30
+  customLivenessProbe:
+    exec:
+      command:
+        - sh
+        - -c
+        - >-
+          password="$(awk '/^requirepass / {print $2; exit}' /data/conf/sentinel.conf)" &&
+          REDISCLI_AUTH="$password" redis-cli -p 26379 ping | grep -q PONG &&
+          REDISCLI_AUTH="$password" redis-cli --user replication -p 6379 ping | grep -q PONG
+    periodSeconds: 10
+    failureThreshold: 3
+  customReadinessProbe:
+    exec:
+      command:
+        - sh
+        - -c
+        - >-
+          password="$(awk '/^requirepass / {print $2; exit}' /data/conf/sentinel.conf)" &&
+          REDISCLI_AUTH="$password" redis-cli -p 26379 ping | grep -q PONG &&
+          REDISCLI_AUTH="$password" redis-cli --user replication -p 6379 ping | grep -q PONG
+    periodSeconds: 5
+    failureThreshold: 3
+  haMode:
+    enabled: true
+    masterGroupName: ddb-api-v3
+    replicas: 3
+    quorum: 2
+    downAfterMilliseconds: 5000
+    failoverTimeout: 60000
+    parallelSyncs: 1
+    failoverWait: 10
+  storage:
+    requestedSize: 8Gi
+    className: ""
+    persistentVolumeClaimRetentionPolicy:
+      whenScaled: Retain
+      whenDeleted: Retain
+  podDisruptionBudget:
+    minAvailable: 2
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              ddb-api-v3/redis-node: "true"
+          topologyKey: kubernetes.io/hostname
+  networkPolicy:
+    ingress:
+      - from:
+          - podSelector:
+              matchLabels:
+                ddb-api-v3/redis-node: "true"
+          - podSelector:
+              matchLabels:
+                ddb-api-v3/redis-client: "true"
+        ports:
+          - { protocol: TCP, port: 6379 }
+          - { protocol: TCP, port: 26379 }
+
+# These settings rarely differ between the three pods, but remain available
+# for cluster-specific scheduling requirements.
+pod:
+  annotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+
+nameOverride: ""
+fullnameOverride: ""

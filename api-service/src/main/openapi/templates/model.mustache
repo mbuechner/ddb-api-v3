@@ -1,0 +1,78 @@
+package {{package}};
+
+import java.util.Objects;
+{{#imports}}import {{import}};
+{{/imports}}
+{{#openApiNullable}}
+import org.openapitools.jackson.nullable.JsonNullable;
+{{/openApiNullable}}
+{{#serializableModel}}
+import java.io.Serializable;
+{{/serializableModel}}
+{{#useBeanValidation}}
+import {{javaxPackage}}.validation.Valid;
+import {{javaxPackage}}.validation.constraints.AssertFalse;
+import {{javaxPackage}}.validation.constraints.AssertTrue;
+import {{javaxPackage}}.validation.constraints.DecimalMax;
+import {{javaxPackage}}.validation.constraints.DecimalMin;
+import {{javaxPackage}}.validation.constraints.Digits;
+import {{javaxPackage}}.validation.constraints.Email;
+import {{javaxPackage}}.validation.constraints.Future;
+import {{javaxPackage}}.validation.constraints.FutureOrPresent;
+import {{javaxPackage}}.validation.constraints.Max;
+import {{javaxPackage}}.validation.constraints.Min;
+import {{javaxPackage}}.validation.constraints.Negative;
+import {{javaxPackage}}.validation.constraints.NegativeOrZero;
+import {{javaxPackage}}.validation.constraints.NotBlank;
+import {{javaxPackage}}.validation.constraints.NotEmpty;
+import {{javaxPackage}}.validation.constraints.NotNull;
+import {{javaxPackage}}.validation.constraints.Null;
+import {{javaxPackage}}.validation.constraints.Past;
+import {{javaxPackage}}.validation.constraints.PastOrPresent;
+import {{javaxPackage}}.validation.constraints.Pattern;
+import {{javaxPackage}}.validation.constraints.Positive;
+import {{javaxPackage}}.validation.constraints.PositiveOrZero;
+import {{javaxPackage}}.validation.constraints.Size;
+{{/useBeanValidation}}
+{{^useBeanValidation}}
+import {{javaxPackage}}.validation.constraints.NotNull;
+{{/useBeanValidation}}
+{{#jackson}}
+{{#withXml}}
+import {{jacksonPackage}}.dataformat.xml.annotation.JacksonXmlRootElement;
+import {{jacksonPackage}}.dataformat.xml.annotation.JacksonXmlProperty;
+import {{jacksonPackage}}.dataformat.xml.annotation.JacksonXmlElementWrapper;
+{{/withXml}}
+{{/jackson}}
+{{#swagger2AnnotationLibrary}}
+import io.swagger.v3.oas.annotations.media.Schema;
+{{/swagger2AnnotationLibrary}}
+
+{{#withXml}}
+import {{javaxPackage}}.xml.bind.annotation.*;
+{{/withXml}}
+{{^parent}}
+{{#hateoas}}
+import org.springframework.hateoas.RepresentationModel;
+{{/hateoas}}
+{{/parent}}
+
+import {{javaxPackage}}.annotation.Generated;
+
+{{#models}}
+{{#model}}
+{{#additionalPropertiesType}}
+import java.util.HashMap;
+import java.util.Map;
+import com.fasterxml.jackson.annotation.JsonAnyGetter;
+import com.fasterxml.jackson.annotation.JsonAnySetter;
+{{/additionalPropertiesType}}
+{{#isEnum}}
+{{>enumOuterClass}}
+
+{{/isEnum}}
+{{^isEnum}}
+{{#vendorExtensions.x-is-one-of-interface}}{{>oneof_interface}}{{/vendorExtensions.x-is-one-of-interface}}{{^vendorExtensions.x-is-one-of-interface}}{{>pojo}}{{/vendorExtensions.x-is-one-of-interface}}
+{{/isEnum}}
+{{/model}}
+{{/models}}

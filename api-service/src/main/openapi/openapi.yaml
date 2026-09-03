@@ -1,0 +1,2801 @@
+openapi: 3.1.0
+info:
+  title: DDB API v3 - Records
+  version: 3.0.0-dev
+  contact:
+    name: Michael Büchner
+    email: m.buechner@dnb.de
+    url: https://github.com/mbuechner/ddb-api-v3
+  description: >-
+    Standalone development contract containing only the Records API. It preserves
+    record creation, replacement, deletion, validation, representation discovery,
+    source and display access, and small batches. RDF record input is RDF/XML only;
+    RDF output is negotiated through HTTP Accept across all production RDF formats
+    registered by Apache Jena RIOT. Large bodies are streamed. Request bodies and
+    response representations support gzip content coding.
+servers:
+  # Resolve API calls against the origin serving this contract. Swagger UI therefore works
+  # unchanged on localhost, behind the gateway, and in every deployment environment.
+  - url: /
+
+security:
+  - oauth2: [records:read]
+
+tags:
+  - name: Records
+    description: Record metadata, representations, validation, and small batches.
+
+paths:
+  /3/records:
+    post:
+      tags: [Records]
+      operationId: createRecord
+      summary: Create a record
+      description: >-
+        Parses the complete RDF/XML record with Apache Jena RIOT and stores it only
+        when it is valid RDF. The client supplies the globally unique record ID;
+        the API never derives or replaces it. An existing ID returns 409.
+        A 202 response links to the write-operation monitor.
+      security:
+        - oauth2: [records:write]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/RequestContentEncoding'
+        - $ref: '#/components/parameters/AcceptEncoding'
+      requestBody:
+        $ref: '#/components/requestBodies/RecordWriteRequest'
+      responses:
+        '201':
+          description: Record has been created
+          headers:
+            Vary:
+              $ref: '#/components/headers/VaryAcceptEncoding'
+            Content-Encoding:
+              $ref: '#/components/headers/ContentEncoding'
+            Location:
+              $ref: '#/components/headers/Location'
+            ETag:
+              $ref: '#/components/headers/ETag'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/DcatCatalogRecord'
+        '202':
+          description: Accepted; ordered publication continues at the Location monitor
+          headers:
+            Vary:
+              $ref: '#/components/headers/VaryAcceptEncoding'
+            Content-Encoding:
+              $ref: '#/components/headers/ContentEncoding'
+            Location:
+              $ref: '#/components/headers/Location'
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WriteOperation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/ContentTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/UnprocessableContent'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /3/records/{recordId}:
+    get:
+      tags: [Records]
+      operationId: getRecord
+      summary: Get record metadata
+      description: >-
+        Returns administrative metadata as one DCAT 3 JSON-LD catalog record. Tombstones remain addressable with
+        the current ETag so an authorized client can restore them conditionally. They are identified by
+        publicationStatus ending in /WITHDRAWN together with invalidatedAtTime; DELETED is only the internal
+        lifecycle value because the EU Dataset Status vocabulary has no DELETED concept. Published records are public; restricted
+        states require records:read. A permanently purged or unknown ID returns 404.
+      security:
+        - {}
+        - oauth2: [records:read]
+      parameters:
+        - $ref: '#/components/parameters/RecordId'
+        - $ref: '#/components/parameters/IfNoneMatch'
+        - $ref: '#/components/parameters/IfModifiedSince'
+        - $ref: '#/components/parameters/AcceptEncoding'
+      responses:
+        '200':
+          description: Current record state without RDF content
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+            Vary:
+              $ref: '#/components/headers/VaryAcceptEncoding'
+            Content-Encoding:
+              $ref: '#/components/headers/ContentEncoding'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/DcatCatalogRecord'
+              examples:
+                catalogRecord:
+                  $ref: '#/components/examples/DcatRecordMetadata'
+        '304':
+          description: The current record state has not changed
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+            Vary:
+              $ref: '#/components/headers/VaryAcceptEncoding'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    head:
+      tags: [Records]
+      operationId: headRecord
+      summary: Inspect record metadata headers
+      description: >-
+        Applies the same conditions and authorization as GET without returning the
+        administrative metadata body.
+      security:
+        - {}
+        - oauth2: [records:read]
+      parameters:
+        - $ref: '#/components/parameters/RecordId'
+        - $ref: '#/components/parameters/IfNoneMatch'
+        - $ref: '#/components/parameters/IfModifiedSince'
+        - $ref: '#/components/parameters/AcceptEncoding'
+      responses:
+        '200':
+          description: Headers for the current record state
+          headers:
+            Content-Length:
+              $ref: '#/components/headers/ContentLength'
+            Content-Encoding:
+              $ref: '#/components/headers/ContentEncoding'
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+            Vary:
+              $ref: '#/components/headers/VaryAcceptEncoding'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+        '304':
+          description: The current record state has not changed
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+            Vary:
+              $ref: '#/components/headers/VaryAcceptEncoding'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    put:
+      tags: [Records]
+      operationId: putRecord
+      summary: Update a record
+      description: >-
+        The complete RDF/XML is parsed with Apache Jena RIOT before persistence.
+        The record must already exist and its current ETag is required in If-Match.
+        The ID supplied in the metadata must equal the path ID and is never changed.
+        A 202 response links to the monitor.
+      security:
+        - oauth2: [records:write]
+      parameters:
+        - $ref: '#/components/parameters/RecordId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/RequestContentEncoding'
+        - $ref: '#/components/parameters/AcceptEncoding'
+      requestBody:
+        $ref: '#/components/requestBodies/RecordWriteRequest'
+      responses:
+        '200':
+          description: Record updated or left unchanged by an idempotent retry
+          headers:
+            Vary:
+              $ref: '#/components/headers/VaryAcceptEncoding'
+            Content-Encoding:
+              $ref: '#/components/headers/ContentEncoding'
+            ETag:
+              $ref: '#/components/headers/ETag'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/DcatCatalogRecord'
+        '202':
+          description: Accepted; ordered publication continues at the Location monitor
+          headers:
+            Vary:
+              $ref: '#/components/headers/VaryAcceptEncoding'
+            Content-Encoding:
+              $ref: '#/components/headers/ContentEncoding'
+            Location:
+              $ref: '#/components/headers/Location'
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WriteOperation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '413':
+          $ref: '#/components/responses/ContentTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/UnprocessableContent'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    patch:
+      tags: [Records]
+      operationId: patchRecordLifecycle
+      summary: Create or remove a record tombstone
+      description: >-
+        Changes only the record lifecycle state. publicationStatus=DELETED creates a
+        tombstone without physically erasing retained content.
+        publicationStatus=PUBLISHED restores the retained non-deleted content.
+        Repeating the current target state is idempotent. Every
+        transition requires the current state ETag.
+      security:
+        - oauth2: [records:write]
+      parameters:
+        - $ref: '#/components/parameters/RecordId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/RequestContentEncoding'
+        - $ref: '#/components/parameters/AcceptEncoding'
+      requestBody:
+        $ref: '#/components/requestBodies/RecordLifecyclePatchRequest'
+      responses:
+        '200':
+          description: Lifecycle transition completed or target state already active
+          headers:
+            Vary:
+              $ref: '#/components/headers/VaryAcceptEncoding'
+            Content-Encoding:
+              $ref: '#/components/headers/ContentEncoding'
+            ETag:
+              $ref: '#/components/headers/ETag'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/DcatCatalogRecord'
+        '202':
+          description: Accepted; ordered lifecycle publication continues at Location
+          headers:
+            Vary:
+              $ref: '#/components/headers/VaryAcceptEncoding'
+            Content-Encoding:
+              $ref: '#/components/headers/ContentEncoding'
+            Location:
+              $ref: '#/components/headers/Location'
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WriteOperation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '413':
+          $ref: '#/components/responses/ContentTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/UnprocessableContent'
+        '428':
+          $ref: '#/components/responses/PreconditionRequired'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    delete:
+      tags: [Records]
+      operationId: deleteRecord
+      summary: Permanently purge a record
+      description: >-
+        Irreversibly removes the record, its retained source content,
+        its tombstone, and derived representations. This exceptional administrative
+        operation is not a lifecycle transition and cannot be undone. The
+        records:purge scope is issued only to administrative principals; possession
+        of the scope is necessary but the server must also enforce its independent
+        administrator policy, retention rules, and legal holds. Purging may complete
+        asynchronously across storage, search, and cache systems.
+      security:
+        - oauth2: [records:purge]
+      x-authorization-policy:
+        principalType: ADMIN
+        exceptionalAccess: true
+        scopeIsNecessaryButNotSufficient: true
+      parameters:
+        - $ref: '#/components/parameters/RecordId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/PurgeReason'
+        - $ref: '#/components/parameters/AcceptEncoding'
+      responses:
+        '202':
+          description: Administrative purge accepted and continuing at Location
+          headers:
+            Vary:
+              $ref: '#/components/headers/VaryAcceptEncoding'
+            Content-Encoding:
+              $ref: '#/components/headers/ContentEncoding'
+            Location:
+              $ref: '#/components/headers/Location'
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WriteOperation'
+        '204':
+          description: Record permanently purged, or identical purge retry completed
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '428':
+          $ref: '#/components/responses/PreconditionRequired'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /3/records/{recordId}/content:
+    get:
+      tags: [Records]
+      operationId: getRecordContent
+      summary: Get record RDF
+      description: >-
+        Returns exactly one record graph. Accept selects any production RDF format
+        emitted by Apache Jena RIOT: RDF/XML, JSON-LD, Turtle, N-Triples, N-Quads,
+        RDF/JSON, TriG, TriX, RDF Thrift, or RDF Protobuf. N3 is represented by its
+        equivalent Turtle serialization. Internal RDF/null, RDF/raw, and SHACL-C are
+        not RDF graph output formats and are not exposed. Derived serializations cost
+        more and have distinct ETags; no cross-record query is performed. A tombstone
+        has no current RDF representation and returns 410 Gone for both GET and HEAD,
+        even when retained bytes still exist for audit or restoration.
+      security:
+        - {}
+        - oauth2: [records:read]
+      parameters:
+        - $ref: '#/components/parameters/RecordId'
+        - $ref: '#/components/parameters/IfNoneMatch'
+        - $ref: '#/components/parameters/IfModifiedSince'
+        - $ref: '#/components/parameters/AcceptEncoding'
+      responses:
+        '200':
+          description: Record content in the negotiated RDF serialization
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+            Vary:
+              $ref: '#/components/headers/VaryAcceptEncoding'
+            Content-Encoding:
+              $ref: '#/components/headers/ContentEncoding'
+            X-Content-SHA256:
+              $ref: '#/components/headers/ContentSha256'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/rdf+xml:
+              schema:
+                $ref: '#/components/schemas/RdfRepresentation'
+              examples:
+                simpleEdmRecord:
+                  $ref: '#/components/examples/SimpleEdmRdfXml'
+                enrichedEdmRecord:
+                  $ref: '#/components/examples/EnrichedEdmRdfXml'
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/RdfRepresentation'
+              examples:
+                simpleEdmRecord:
+                  $ref: '#/components/examples/SimpleEdmJsonLd'
+                enrichedEdmRecord:
+                  $ref: '#/components/examples/EnrichedEdmJsonLd'
+            text/turtle:
+              schema:
+                $ref: '#/components/schemas/RdfRepresentation'
+              examples:
+                simpleEdmRecord:
+                  $ref: '#/components/examples/SimpleEdmTurtle'
+                enrichedEdmRecord:
+                  $ref: '#/components/examples/EnrichedEdmTurtle'
+            application/n-triples:
+              schema:
+                $ref: '#/components/schemas/RdfRepresentation'
+              examples:
+                simpleEdmRecord:
+                  $ref: '#/components/examples/SimpleEdmNTriples'
+                enrichedEdmRecord:
+                  $ref: '#/components/examples/EnrichedEdmNTriples'
+            application/n-quads:
+              schema:
+                $ref: '#/components/schemas/RdfRepresentation'
+              examples:
+                simpleEdmRecord:
+                  $ref: '#/components/examples/SimpleEdmNQuads'
+                enrichedEdmRecord:
+                  $ref: '#/components/examples/EnrichedEdmNQuads'
+            application/rdf+json:
+              schema:
+                $ref: '#/components/schemas/RdfRepresentation'
+            application/trig:
+              schema:
+                $ref: '#/components/schemas/RdfRepresentation'
+            application/trix:
+              schema:
+                $ref: '#/components/schemas/RdfRepresentation'
+            application/rdf+thrift:
+              schema:
+                $ref: '#/components/schemas/RdfRepresentation'
+            application/rdf+protobuf:
+              schema:
+                $ref: '#/components/schemas/RdfRepresentation'
+        '304':
+          description: The selected representation has not changed
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+            Vary:
+              $ref: '#/components/headers/VaryAcceptEncoding'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    head:
+      tags: [Records]
+      operationId: headRecordContent
+      summary: Inspect record RDF headers
+      description: >-
+        Applies the same negotiation and conditions as GET but returns no body.
+        Content-Length may be absent for a representation generated on demand.
+      security:
+        - {}
+        - oauth2: [records:read]
+      parameters:
+        - $ref: '#/components/parameters/RecordId'
+        - $ref: '#/components/parameters/IfNoneMatch'
+        - $ref: '#/components/parameters/IfModifiedSince'
+        - $ref: '#/components/parameters/AcceptEncoding'
+      responses:
+        '200':
+          description: Metadata for the negotiated content representation
+          headers:
+            Content-Length:
+              description: Byte length when known for the selected representation
+              schema:
+                type: integer
+                format: int64
+                minimum: 0
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+            Vary:
+              $ref: '#/components/headers/VaryAcceptEncoding'
+            Content-Encoding:
+              $ref: '#/components/headers/ContentEncoding'
+            X-Content-SHA256:
+              $ref: '#/components/headers/ContentSha256'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+        '304':
+          description: The selected representation has not changed
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+            Vary:
+              $ref: '#/components/headers/VaryAcceptEncoding'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /3/records/{recordId}/representations:
+    get:
+      tags: [Records]
+      operationId: getRecordRepresentations
+      summary: List record representations
+      description: >-
+        Lists the available canonical, source, and derived representations for the
+        current record state. Every item has a concrete URL and media type. Source
+        items identify their public metadata format; application profiles are
+        included only when applicable. Listing the catalog does not parse or convert
+        record content.
+      security:
+        - {}
+        - oauth2: [records:read]
+      parameters:
+        - $ref: '#/components/parameters/RecordId'
+        - $ref: '#/components/parameters/IfNoneMatch'
+        - $ref: '#/components/parameters/IfModifiedSince'
+        - $ref: '#/components/parameters/AcceptEncoding'
+      responses:
+        '200':
+          description: Available representations of the current record state
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+            Vary:
+              $ref: '#/components/headers/VaryAcceptEncoding'
+            Content-Encoding:
+              $ref: '#/components/headers/ContentEncoding'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordRepresentationList'
+              examples:
+                edmSourceAndDisplay:
+                  $ref: '#/components/examples/RecordRepresentations'
+        '304':
+          description: The representation catalog has not changed
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+            Vary:
+              $ref: '#/components/headers/VaryAcceptEncoding'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    head:
+      tags: [Records]
+      operationId: headRecordRepresentations
+      summary: Inspect record representation catalog headers
+      description: >-
+        Applies the same conditions and authorization as GET without returning the
+        representation catalog body.
+      security:
+        - {}
+        - oauth2: [records:read]
+      parameters:
+        - $ref: '#/components/parameters/RecordId'
+        - $ref: '#/components/parameters/IfNoneMatch'
+        - $ref: '#/components/parameters/IfModifiedSince'
+        - $ref: '#/components/parameters/AcceptEncoding'
+      responses:
+        '200':
+          description: Headers for the representation catalog
+          headers:
+            Content-Length:
+              $ref: '#/components/headers/ContentLength'
+            Content-Encoding:
+              $ref: '#/components/headers/ContentEncoding'
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+            Vary:
+              $ref: '#/components/headers/VaryAcceptEncoding'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+        '304':
+          description: The representation catalog has not changed
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+            Vary:
+              $ref: '#/components/headers/VaryAcceptEncoding'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /3/records/{recordId}/source:
+    get:
+      tags: [Records]
+      operationId: getRecordSource
+      summary: Get the original source record
+      description: >-
+        Streams the exact source document stored for the current record state.
+        It is not reconstructed from EDM and is not converted to another source
+        schema. The Link response header identifies the public LIDO, EAD, METS, MODS,
+        or other metadata format with rel="type" and, when applicable, a separate
+        DDB/API application profile with rel="profile".
+      security:
+        - {}
+        - oauth2: [records:read]
+      parameters:
+        - $ref: '#/components/parameters/RecordId'
+        - $ref: '#/components/parameters/IfNoneMatch'
+        - $ref: '#/components/parameters/IfModifiedSince'
+        - $ref: '#/components/parameters/AcceptEncoding'
+      responses:
+        '200':
+          description: Original source bytes in their stored XML media type
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+            Vary:
+              $ref: '#/components/headers/VaryAcceptEncoding'
+            Content-Encoding:
+              $ref: '#/components/headers/ContentEncoding'
+            Link:
+              $ref: '#/components/headers/SourceLinks'
+            X-Source-SHA256:
+              $ref: '#/components/headers/SourceSha256'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/xml:
+              schema:
+                type: string
+                format: binary
+                description: UTF-8 XML, for example LIDO or EAD
+            application/mets+xml:
+              schema:
+                type: string
+                format: binary
+                description: UTF-8 METS XML
+            application/mods+xml:
+              schema:
+                type: string
+                format: binary
+                description: UTF-8 MODS XML
+        '304':
+          description: The stored source representation has not changed
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+            Vary:
+              $ref: '#/components/headers/VaryAcceptEncoding'
+            Link:
+              $ref: '#/components/headers/SourceLinks'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Record or stored source representation not found
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    head:
+      tags: [Records]
+      operationId: headRecordSource
+      summary: Inspect source record headers
+      description: >-
+        Applies the same negotiation and conditions as GET without returning the
+        source body. Content-Length may be absent for gzip because the encoded length
+        can be unknown in advance. X-Source-SHA256 covers the uncompressed bytes.
+      security:
+        - {}
+        - oauth2: [records:read]
+      parameters:
+        - $ref: '#/components/parameters/RecordId'
+        - $ref: '#/components/parameters/IfNoneMatch'
+        - $ref: '#/components/parameters/IfModifiedSince'
+        - $ref: '#/components/parameters/AcceptEncoding'
+      responses:
+        '200':
+          description: Metadata for the stored source representation
+          headers:
+            Content-Length:
+              $ref: '#/components/headers/ContentLength'
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+            Vary:
+              $ref: '#/components/headers/VaryAcceptEncoding'
+            Content-Encoding:
+              $ref: '#/components/headers/ContentEncoding'
+            Link:
+              $ref: '#/components/headers/SourceLinks'
+            X-Source-SHA256:
+              $ref: '#/components/headers/SourceSha256'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+        '304':
+          description: The stored source representation has not changed
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+            Vary:
+              $ref: '#/components/headers/VaryAcceptEncoding'
+            Link:
+              $ref: '#/components/headers/SourceLinks'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /3/records/{recordId}/display:
+    get:
+      tags: [Records]
+      operationId: getRecordDisplay
+      summary: Get frontend display JSON
+      description: >-
+        Returns a derived JSON projection for one supported frontend profile. The
+        profile query parameter is the only request selector; Accept-Profile is not
+        used. The response Link header identifies the exact versioned profile URI.
+      security:
+        - {}
+        - oauth2: [records:read]
+      parameters:
+        - $ref: '#/components/parameters/RecordId'
+        - $ref: '#/components/parameters/DisplayProfile'
+        - $ref: '#/components/parameters/IfNoneMatch'
+        - $ref: '#/components/parameters/IfModifiedSince'
+        - $ref: '#/components/parameters/AcceptEncoding'
+      responses:
+        '200':
+          description: Display projection for the selected frontend profile
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+            Vary:
+              $ref: '#/components/headers/VaryAcceptEncoding'
+            Content-Encoding:
+              $ref: '#/components/headers/ContentEncoding'
+            Link:
+              $ref: '#/components/headers/ProfileLink'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DisplayDocument'
+              examples:
+                ddb:
+                  $ref: '#/components/examples/DdbDisplayDocument'
+                ccc:
+                  $ref: '#/components/examples/CccDisplayDocument'
+                apd:
+                  $ref: '#/components/examples/ApdDisplayDocument'
+        '304':
+          description: The selected display projection has not changed
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+            Vary:
+              $ref: '#/components/headers/VaryAcceptEncoding'
+            Link:
+              $ref: '#/components/headers/ProfileLink'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    head:
+      tags: [Records]
+      operationId: headRecordDisplay
+      summary: Inspect display JSON headers
+      description: >-
+        Applies the same profile selection and conditions as GET without generating
+        or returning the display body.
+      security:
+        - {}
+        - oauth2: [records:read]
+      parameters:
+        - $ref: '#/components/parameters/RecordId'
+        - $ref: '#/components/parameters/DisplayProfile'
+        - $ref: '#/components/parameters/IfNoneMatch'
+        - $ref: '#/components/parameters/IfModifiedSince'
+        - $ref: '#/components/parameters/AcceptEncoding'
+      responses:
+        '200':
+          description: Metadata for the selected display projection
+          headers:
+            Content-Length:
+              $ref: '#/components/headers/ContentLength'
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+            Vary:
+              $ref: '#/components/headers/VaryAcceptEncoding'
+            Content-Encoding:
+              $ref: '#/components/headers/ContentEncoding'
+            Link:
+              $ref: '#/components/headers/ProfileLink'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+        '304':
+          description: The selected display projection has not changed
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Last-Modified:
+              $ref: '#/components/headers/LastModified'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+            Vary:
+              $ref: '#/components/headers/VaryAcceptEncoding'
+            Link:
+              $ref: '#/components/headers/ProfileLink'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /3/records:batchGet:
+    post:
+      tags: [Records]
+      operationId: batchGetRecords
+      summary: Get a record batch
+      description: >-
+        Preserves request order and reports 200, 404, or 410 per item; outer 200 only
+        confirms batch execution. The limit is 1,000 or lower by client policy.
+        POST responses are not CDN-cacheable. include=METADATA returns
+        application/x-ndjson. include=CONTENT returns multipart/mixed; every successful
+        part contains the canonical stored RDF/XML with Content-Type
+        application/rdf+xml. There is no RDF format selector for batch content and no
+        Jena conversion is performed. HTTP Accept selects only the outer response
+        format and must match include.
+      security:
+        - {}
+        - oauth2: [records:read]
+      parameters:
+        - $ref: '#/components/parameters/RequestContentEncoding'
+        - $ref: '#/components/parameters/AcceptEncoding'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchGetRequest'
+      responses:
+        '200':
+          description: >-
+            Streamed per-item results. NDJSON is used for metadata and
+            multipart/mixed for content. Successful content parts are always
+            application/rdf+xml; failed parts are application/problem+json. Each item
+            status is carried in the item itself or in the part headers. The order is
+            identical to recordIds. HTTP Content-Encoding, when present, applies to
+            the complete response entity; individual MIME parts are not encoded.
+          headers:
+            Vary:
+              $ref: '#/components/headers/VaryAcceptEncoding'
+            Content-Encoding:
+              $ref: '#/components/headers/ContentEncoding'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/x-ndjson:
+              schema:
+                type: string
+                format: binary
+                description: UTF-8 NDJSON with one BatchGetItem line per record ID
+              x-ndjson-item-schema:
+                $ref: '#/components/schemas/BatchGetItem'
+            multipart/mixed:
+              schema:
+                type: string
+                format: binary
+                description: >-
+                  MIME multipart stream. Each part has Content-ID, X-Record-Id,
+                  X-Part-Status, and either canonical RDF/XML or Problem Details. The
+                  actual HTTP Content-Type carries the boundary parameter, for example
+                  multipart/mixed; boundary=batch-get. MIME lines use CRLF on the wire.
+              x-multipart-item-schema:
+                $ref: '#/components/schemas/BatchGetContentPart'
+              examples:
+                contentAndTombstone:
+                  summary: One RDF/XML record followed by one tombstone
+                  value: |-
+                    --batch-get
+                    Content-Type: application/rdf+xml
+                    Content-ID: <item-1@api.deutsche-digitale-bibliothek.de>
+                    X-Record-Id: ABCDEFGHIJKLMNOPQRSTUVWXYZ234567
+                    X-Part-Status: 200
+                    ETag: "rdfxml-stored-sha256-example"
+
+                    <?xml version="1.0" encoding="UTF-8"?>
+                    <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+                      <rdf:Description rdf:about="https://example.org/record/1"/>
+                    </rdf:RDF>
+                    --batch-get
+                    Content-Type: application/problem+json
+                    Content-ID: <item-2@api.deutsche-digitale-bibliothek.de>
+                    X-Record-Id: BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+                    X-Part-Status: 410
+
+                    {"type":"about:blank","title":"Gone","status":410,"detail":"The record has a tombstone and no current content.","requestId":"018f6c1a-7b2d-7f3e-a9c1-4b5d6e7f8090","code":"RECORD_GONE"}
+                    --batch-get--
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '413':
+          $ref: '#/components/responses/ContentTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/UnprocessableContent'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /3/records:batchWrite:
+    post:
+      tags: [Records]
+      operationId: batchWriteRecords
+      summary: Write a small record batch
+      description: >-
+        Accepts at most 100 records and 100 MiB after HTTP content decoding. The
+        outer entity is multipart/mixed and preserves item order. Every outer MIME
+        part is a multipart/related record envelope whose Content-Type requires
+        type="application/json" and a start parameter selecting its metadata part.
+        The envelope also requires a unique Content-ID, an Idempotency-Key, and
+        exactly one of If-Match or If-None-Match: *. Its inner parts are metadata
+        (application/json), canonical content
+        (application/rdf+xml), and optionally the retained non-RDF source document.
+        No other RDF input serialization is accepted. Every item carries its externally
+        assigned record ID in metadata. Items commit independently; outer 200
+        therefore permits partial success. gzip, when selected by the HTTP
+        Content-Encoding header, applies once to the complete multipart/mixed entity;
+        individual MIME parts must not have Content-Encoding. MIME boundaries and
+        header lines use CRLF on the wire. A failure that prevents reliable
+        enumeration of the outer parts, including invalid top-level MIME, HTTP
+        decoding, missing or duplicate outer Content-ID, or an exceeded batch limit,
+        rejects the whole request before any item commits. After that structural
+        check, envelope-level failures are reported per item in the NDJSON response.
+        This nested multipart contract requires byte-level integration tests because
+        OpenAPI cannot model it natively.
+      security:
+        - oauth2: [records:write]
+      parameters:
+        - $ref: '#/components/parameters/RequestContentEncoding'
+        - $ref: '#/components/parameters/AcceptEncoding'
+      requestBody:
+        required: true
+        content:
+          multipart/mixed:
+            schema:
+              type: string
+              format: binary
+              description: >-
+                Nested MIME batch defined by BatchWriteRecordEnvelope. Each outer
+                part is multipart/related and contains JSON metadata, exactly one
+                RDF/XML content part, and optionally one retained source part.
+            x-multipart-item-schema:
+              $ref: '#/components/schemas/BatchWriteRecordEnvelope'
+      responses:
+        '200':
+          description: >-
+            NDJSON with exactly one result for each outer Content-ID, in request order.
+            Each line reports its own status; partial success is possible.
+          headers:
+            Vary:
+              $ref: '#/components/headers/VaryAcceptEncoding'
+            Content-Encoding:
+              $ref: '#/components/headers/ContentEncoding'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/x-ndjson:
+              schema:
+                type: string
+                format: binary
+              x-ndjson-item-schema:
+                $ref: '#/components/schemas/BatchWriteItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '413':
+          $ref: '#/components/responses/ContentTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/UnprocessableContent'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /3/records:validate:
+    post:
+      tags: [Records]
+      operationId: validateRecord
+      summary: Validate an RDF/XML record
+      description: >-
+        Validates RDF/XML against the selected profile without storage or change
+        event. 200 with conforms=false means validation completed; 422 means the
+        input could not be evaluated.
+      security:
+        - oauth2: [records:validate]
+      parameters:
+        - name: profileVersion
+          in: query
+          required: true
+          description: Exact EDM application-profile version
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - $ref: '#/components/parameters/RequestContentEncoding'
+        - $ref: '#/components/parameters/AcceptEncoding'
+      requestBody:
+        required: true
+        content:
+          application/rdf+xml:
+            schema:
+              $ref: '#/components/schemas/RdfXmlDocument'
+            examples:
+              simpleEdmRecord:
+                $ref: '#/components/examples/SimpleEdmRdfXml'
+              enrichedEdmRecord:
+                $ref: '#/components/examples/EnrichedEdmRdfXml'
+      responses:
+        '200':
+          description: Complete validation result, including when conforms is false
+          headers:
+            Vary:
+              $ref: '#/components/headers/VaryAcceptEncoding'
+            Content-Encoding:
+              $ref: '#/components/headers/ContentEncoding'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationReport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '413':
+          $ref: '#/components/responses/ContentTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/UnprocessableContent'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+components:
+  securitySchemes:
+    oauth2:
+      type: oauth2
+      description: >-
+        OAuth 2.0 Client Credentials. Authentication is optional for operations that
+        explicitly include the anonymous security alternative.
+      flows:
+        clientCredentials:
+          tokenUrl: /oauth2/token
+          scopes:
+            records:read: Read records and the change feed
+            records:write: Create and replace records
+            records:purge: Permanently purge records; issued to administrators only
+            records:validate: Validate RDF/XML without storing it
+            imports:read: Read the client's import jobs
+            imports:write: Create, start, and cancel import jobs
+            exports:read: Read the client's export jobs
+            exports:write: Create export jobs
+
+  examples:
+    DcatRecordMetadata:
+      summary: Administrative metadata as a DCAT 3 catalog record
+      description: >-
+        API-owned links are relative in this portable contract example. The running service derives
+        them from DDB_API_PUBLIC_BASE_URL. Stable item, dataset and organization identifiers use the
+        separately configurable DDB_RESOURCE_BASE_URL.
+      value:
+        '@context': /contexts/record-metadata-v1.jsonld
+        '@id': /3/records/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567#metadata
+        '@type': dcat:CatalogRecord
+        primaryTopic:
+          '@id': https://www.deutsche-digitale-bibliothek.de/item/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567
+          '@type': dcat:Dataset
+          recordId: ABCDEFGHIJKLMNOPQRSTUVWXYZ234567
+          datasets:
+            - https://www.deutsche-digitale-bibliothek.de/dataset/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+          provider: https://www.deutsche-digitale-bibliothek.de/organization/CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
+          aggregator: https://www.deutsche-digitale-bibliothek.de/organization/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          sourceIdentifier:
+            '@type': adms:Identifier
+            notation: source-001
+          publicationStatus: http://publications.europa.eu/resource/authority/dataset-status/COMPLETED
+          validationAssertion:
+            '@id': /3/records/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567#validation
+            '@type': earl:Assertion
+            test: /profiles/edm/ddb-v3
+            mode: earl:automatic
+            result:
+              '@type': earl:TestResult
+              outcome: earl:passed
+        createdAt: '2026-01-01T12:00:00Z'
+        modifiedAt: '2026-01-02T09:30:00Z'
+
+    SimpleEdmRdfXml:
+      summary: Minimal EDM record with a ProvidedCHO and its aggregation
+      description: >-
+        Illustrative RDF/XML. A selected application profile may require additional
+        properties or apply stricter controlled vocabularies.
+      value: |-
+        <?xml version="1.0" encoding="UTF-8"?>
+        <rdf:RDF
+            xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+            xmlns:dc="http://purl.org/dc/elements/1.1/"
+            xmlns:edm="http://www.europeana.eu/schemas/edm/"
+            xmlns:ore="http://www.openarchives.org/ore/terms/">
+          <edm:ProvidedCHO rdf:about="/resource/cho/demo-001">
+            <dc:title xml:lang="en">Example cultural heritage object</dc:title>
+            <edm:type>IMAGE</edm:type>
+          </edm:ProvidedCHO>
+          <ore:Aggregation rdf:about="/resource/aggregation/demo-001">
+            <edm:aggregatedCHO rdf:resource="/resource/cho/demo-001"/>
+            <edm:dataProvider xml:lang="en">Example Museum</edm:dataProvider>
+            <edm:provider>Deutsche Digitale Bibliothek</edm:provider>
+            <edm:isShownAt rdf:resource="https://www.deutsche-digitale-bibliothek.de/item/demo-001"/>
+            <edm:rights rdf:resource="http://creativecommons.org/publicdomain/mark/1.0/"/>
+          </ore:Aggregation>
+        </rdf:RDF>
+
+    EnrichedEdmRdfXml:
+      summary: EDM record with an agent, place, web resource, and aggregation
+      description: >-
+        Illustrative RDF/XML with several resources in one technical record. A
+        selected application profile may require additional properties.
+      value: |-
+        <?xml version="1.0" encoding="UTF-8"?>
+        <rdf:RDF
+            xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+            xmlns:dc="http://purl.org/dc/elements/1.1/"
+            xmlns:dcterms="http://purl.org/dc/terms/"
+            xmlns:edm="http://www.europeana.eu/schemas/edm/"
+            xmlns:ore="http://www.openarchives.org/ore/terms/"
+            xmlns:skos="http://www.w3.org/2004/02/skos/core#"
+            xmlns:wgs84="http://www.w3.org/2003/01/geo/wgs84_pos#">
+          <edm:ProvidedCHO rdf:about="/resource/cho/demo-002">
+            <dc:title xml:lang="en">Portrait of Ada Lovelace</dc:title>
+            <dc:creator rdf:resource="/resource/agent/demo-002"/>
+            <dcterms:spatial rdf:resource="/resource/place/demo-002"/>
+            <edm:type>IMAGE</edm:type>
+          </edm:ProvidedCHO>
+          <edm:Agent rdf:about="/resource/agent/demo-002">
+            <skos:prefLabel xml:lang="en">Ada Lovelace</skos:prefLabel>
+          </edm:Agent>
+          <edm:Place rdf:about="/resource/place/demo-002">
+            <skos:prefLabel xml:lang="en">London</skos:prefLabel>
+            <wgs84:lat>51.5074</wgs84:lat>
+            <wgs84:long>-0.1278</wgs84:long>
+          </edm:Place>
+          <edm:WebResource rdf:about="/resource/web/demo-002">
+            <dc:format>image/jpeg</dc:format>
+            <edm:rights rdf:resource="http://creativecommons.org/publicdomain/mark/1.0/"/>
+          </edm:WebResource>
+          <ore:Aggregation rdf:about="/resource/aggregation/demo-002">
+            <edm:aggregatedCHO rdf:resource="/resource/cho/demo-002"/>
+            <edm:isShownBy rdf:resource="/resource/web/demo-002"/>
+            <edm:dataProvider xml:lang="en">Example Museum</edm:dataProvider>
+            <edm:provider>Deutsche Digitale Bibliothek</edm:provider>
+          </ore:Aggregation>
+        </rdf:RDF>
+
+    SimpleEdmJsonLd:
+      summary: Minimal EDM record as JSON-LD
+      value: {
+          "@context": {
+            "dc": "http://purl.org/dc/elements/1.1/",
+            "edm": "http://www.europeana.eu/schemas/edm/",
+            "ore": "http://www.openarchives.org/ore/terms/"
+          },
+          "@graph": [
+            {
+              "@id": "/resource/cho/demo-001",
+              "@type": "edm:ProvidedCHO",
+              "dc:title": { "@value": "Example cultural heritage object", "@language": "en" },
+              "edm:type": "IMAGE"
+            },
+            {
+              "@id": "/resource/aggregation/demo-001",
+              "@type": "ore:Aggregation",
+              "edm:aggregatedCHO": { "@id": "/resource/cho/demo-001" },
+              "edm:dataProvider": { "@value": "Example Museum", "@language": "en" },
+              "edm:provider": "Deutsche Digitale Bibliothek",
+              "edm:isShownAt": { "@id": "https://www.deutsche-digitale-bibliothek.de/item/demo-001" },
+              "edm:rights": { "@id": "http://creativecommons.org/publicdomain/mark/1.0/" }
+            }
+          ]
+        }
+
+    EnrichedEdmJsonLd:
+      summary: Enriched EDM record as JSON-LD
+      value: {
+          "@context": {
+            "dc": "http://purl.org/dc/elements/1.1/",
+            "dcterms": "http://purl.org/dc/terms/",
+            "edm": "http://www.europeana.eu/schemas/edm/",
+            "ore": "http://www.openarchives.org/ore/terms/",
+            "skos": "http://www.w3.org/2004/02/skos/core#",
+            "wgs84": "http://www.w3.org/2003/01/geo/wgs84_pos#"
+          },
+          "@graph": [
+            {
+              "@id": "/resource/cho/demo-002",
+              "@type": "edm:ProvidedCHO",
+              "dc:title": { "@value": "Portrait of Ada Lovelace", "@language": "en" },
+              "dc:creator": { "@id": "/resource/agent/demo-002" },
+              "dcterms:spatial": { "@id": "/resource/place/demo-002" },
+              "edm:type": "IMAGE"
+            },
+            {
+              "@id": "/resource/agent/demo-002",
+              "@type": "edm:Agent",
+              "skos:prefLabel": { "@value": "Ada Lovelace", "@language": "en" }
+            },
+            {
+              "@id": "/resource/place/demo-002",
+              "@type": "edm:Place",
+              "skos:prefLabel": { "@value": "London", "@language": "en" },
+              "wgs84:lat": "51.5074",
+              "wgs84:long": "-0.1278"
+            },
+            {
+              "@id": "/resource/web/demo-002",
+              "@type": "edm:WebResource",
+              "dc:format": "image/jpeg",
+              "edm:rights": { "@id": "http://creativecommons.org/publicdomain/mark/1.0/" }
+            },
+            {
+              "@id": "/resource/aggregation/demo-002",
+              "@type": "ore:Aggregation",
+              "edm:aggregatedCHO": { "@id": "/resource/cho/demo-002" },
+              "edm:isShownBy": { "@id": "/resource/web/demo-002" },
+              "edm:dataProvider": { "@value": "Example Museum", "@language": "en" },
+              "edm:provider": "Deutsche Digitale Bibliothek"
+            }
+          ]
+        }
+
+    SimpleEdmTurtle:
+      summary: Minimal EDM record as Turtle
+      value: |-
+        @prefix dc: <http://purl.org/dc/elements/1.1/> .
+        @prefix edm: <http://www.europeana.eu/schemas/edm/> .
+        @prefix ore: <http://www.openarchives.org/ore/terms/> .
+
+        <https://example.org/resource/cho/demo-001>
+            a edm:ProvidedCHO ;
+            dc:title "Example cultural heritage object"@en ;
+            edm:type "IMAGE" .
+
+        <https://example.org/resource/aggregation/demo-001>
+            a ore:Aggregation ;
+            edm:aggregatedCHO <https://example.org/resource/cho/demo-001> ;
+            edm:dataProvider "Example Museum"@en ;
+            edm:provider "Deutsche Digitale Bibliothek" ;
+            edm:isShownAt <https://www.deutsche-digitale-bibliothek.de/item/demo-001> ;
+            edm:rights <http://creativecommons.org/publicdomain/mark/1.0/> .
+
+    EnrichedEdmTurtle:
+      summary: Enriched EDM record as Turtle
+      value: |-
+        @prefix dc: <http://purl.org/dc/elements/1.1/> .
+        @prefix dcterms: <http://purl.org/dc/terms/> .
+        @prefix edm: <http://www.europeana.eu/schemas/edm/> .
+        @prefix ore: <http://www.openarchives.org/ore/terms/> .
+        @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+        @prefix wgs84: <http://www.w3.org/2003/01/geo/wgs84_pos#> .
+
+        <https://example.org/resource/cho/demo-002>
+            a edm:ProvidedCHO ;
+            dc:title "Portrait of Ada Lovelace"@en ;
+            dc:creator <https://example.org/resource/agent/demo-002> ;
+            dcterms:spatial <https://example.org/resource/place/demo-002> ;
+            edm:type "IMAGE" .
+
+        <https://example.org/resource/agent/demo-002>
+            a edm:Agent ;
+            skos:prefLabel "Ada Lovelace"@en .
+
+        <https://example.org/resource/place/demo-002>
+            a edm:Place ;
+            skos:prefLabel "London"@en ;
+            wgs84:lat "51.5074" ;
+            wgs84:long "-0.1278" .
+
+        <https://example.org/resource/web/demo-002>
+            a edm:WebResource ;
+            dc:format "image/jpeg" ;
+            edm:rights <http://creativecommons.org/publicdomain/mark/1.0/> .
+
+        <https://example.org/resource/aggregation/demo-002>
+            a ore:Aggregation ;
+            edm:aggregatedCHO <https://example.org/resource/cho/demo-002> ;
+            edm:isShownBy <https://example.org/resource/web/demo-002> ;
+            edm:dataProvider "Example Museum"@en ;
+            edm:provider "Deutsche Digitale Bibliothek" .
+
+    SimpleEdmNTriples:
+      summary: Minimal EDM record as N-Triples
+      value: |-
+        <https://example.org/resource/cho/demo-001> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.europeana.eu/schemas/edm/ProvidedCHO> .
+        <https://example.org/resource/cho/demo-001> <http://purl.org/dc/elements/1.1/title> "Example cultural heritage object"@en .
+        <https://example.org/resource/cho/demo-001> <http://www.europeana.eu/schemas/edm/type> "IMAGE" .
+        <https://example.org/resource/aggregation/demo-001> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.openarchives.org/ore/terms/Aggregation> .
+        <https://example.org/resource/aggregation/demo-001> <http://www.europeana.eu/schemas/edm/aggregatedCHO> <https://example.org/resource/cho/demo-001> .
+        <https://example.org/resource/aggregation/demo-001> <http://www.europeana.eu/schemas/edm/dataProvider> "Example Museum"@en .
+        <https://example.org/resource/aggregation/demo-001> <http://www.europeana.eu/schemas/edm/provider> "Deutsche Digitale Bibliothek" .
+        <https://example.org/resource/aggregation/demo-001> <http://www.europeana.eu/schemas/edm/isShownAt> <https://www.deutsche-digitale-bibliothek.de/item/demo-001> .
+        <https://example.org/resource/aggregation/demo-001> <http://www.europeana.eu/schemas/edm/rights> <http://creativecommons.org/publicdomain/mark/1.0/> .
+
+    EnrichedEdmNTriples:
+      summary: Enriched EDM record as N-Triples
+      value: |-
+        <https://example.org/resource/cho/demo-002> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.europeana.eu/schemas/edm/ProvidedCHO> .
+        <https://example.org/resource/cho/demo-002> <http://purl.org/dc/elements/1.1/title> "Portrait of Ada Lovelace"@en .
+        <https://example.org/resource/cho/demo-002> <http://purl.org/dc/elements/1.1/creator> <https://example.org/resource/agent/demo-002> .
+        <https://example.org/resource/cho/demo-002> <http://purl.org/dc/terms/spatial> <https://example.org/resource/place/demo-002> .
+        <https://example.org/resource/cho/demo-002> <http://www.europeana.eu/schemas/edm/type> "IMAGE" .
+        <https://example.org/resource/agent/demo-002> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.europeana.eu/schemas/edm/Agent> .
+        <https://example.org/resource/agent/demo-002> <http://www.w3.org/2004/02/skos/core#prefLabel> "Ada Lovelace"@en .
+        <https://example.org/resource/place/demo-002> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.europeana.eu/schemas/edm/Place> .
+        <https://example.org/resource/place/demo-002> <http://www.w3.org/2004/02/skos/core#prefLabel> "London"@en .
+        <https://example.org/resource/place/demo-002> <http://www.w3.org/2003/01/geo/wgs84_pos#lat> "51.5074" .
+        <https://example.org/resource/place/demo-002> <http://www.w3.org/2003/01/geo/wgs84_pos#long> "-0.1278" .
+        <https://example.org/resource/web/demo-002> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.europeana.eu/schemas/edm/WebResource> .
+        <https://example.org/resource/web/demo-002> <http://purl.org/dc/elements/1.1/format> "image/jpeg" .
+        <https://example.org/resource/web/demo-002> <http://www.europeana.eu/schemas/edm/rights> <http://creativecommons.org/publicdomain/mark/1.0/> .
+        <https://example.org/resource/aggregation/demo-002> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.openarchives.org/ore/terms/Aggregation> .
+        <https://example.org/resource/aggregation/demo-002> <http://www.europeana.eu/schemas/edm/aggregatedCHO> <https://example.org/resource/cho/demo-002> .
+        <https://example.org/resource/aggregation/demo-002> <http://www.europeana.eu/schemas/edm/isShownBy> <https://example.org/resource/web/demo-002> .
+        <https://example.org/resource/aggregation/demo-002> <http://www.europeana.eu/schemas/edm/dataProvider> "Example Museum"@en .
+        <https://example.org/resource/aggregation/demo-002> <http://www.europeana.eu/schemas/edm/provider> "Deutsche Digitale Bibliothek" .
+
+    SimpleEdmNQuads:
+      summary: Minimal EDM record as N-Quads with the record URL as graph name
+      value: |-
+        <https://example.org/resource/cho/demo-001> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.europeana.eu/schemas/edm/ProvidedCHO> <https://example.org/3/records/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567> .
+        <https://example.org/resource/cho/demo-001> <http://purl.org/dc/elements/1.1/title> "Example cultural heritage object"@en <https://example.org/3/records/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567> .
+        <https://example.org/resource/cho/demo-001> <http://www.europeana.eu/schemas/edm/type> "IMAGE" <https://example.org/3/records/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567> .
+        <https://example.org/resource/aggregation/demo-001> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.openarchives.org/ore/terms/Aggregation> <https://example.org/3/records/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567> .
+        <https://example.org/resource/aggregation/demo-001> <http://www.europeana.eu/schemas/edm/aggregatedCHO> <https://example.org/resource/cho/demo-001> <https://example.org/3/records/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567> .
+        <https://example.org/resource/aggregation/demo-001> <http://www.europeana.eu/schemas/edm/dataProvider> "Example Museum"@en <https://example.org/3/records/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567> .
+        <https://example.org/resource/aggregation/demo-001> <http://www.europeana.eu/schemas/edm/provider> "Deutsche Digitale Bibliothek" <https://example.org/3/records/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567> .
+        <https://example.org/resource/aggregation/demo-001> <http://www.europeana.eu/schemas/edm/isShownAt> <https://www.deutsche-digitale-bibliothek.de/item/demo-001> <https://example.org/3/records/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567> .
+        <https://example.org/resource/aggregation/demo-001> <http://www.europeana.eu/schemas/edm/rights> <http://creativecommons.org/publicdomain/mark/1.0/> <https://example.org/3/records/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567> .
+
+    EnrichedEdmNQuads:
+      summary: Enriched EDM record as N-Quads with the record URL as graph name
+      value: |-
+        <https://example.org/resource/cho/demo-002> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.europeana.eu/schemas/edm/ProvidedCHO> <https://example.org/3/records/234567ABCDEFGHIJKLMNOPQRSTUVWXYZ> .
+        <https://example.org/resource/cho/demo-002> <http://purl.org/dc/elements/1.1/title> "Portrait of Ada Lovelace"@en <https://example.org/3/records/234567ABCDEFGHIJKLMNOPQRSTUVWXYZ> .
+        <https://example.org/resource/cho/demo-002> <http://purl.org/dc/elements/1.1/creator> <https://example.org/resource/agent/demo-002> <https://example.org/3/records/234567ABCDEFGHIJKLMNOPQRSTUVWXYZ> .
+        <https://example.org/resource/cho/demo-002> <http://purl.org/dc/terms/spatial> <https://example.org/resource/place/demo-002> <https://example.org/3/records/234567ABCDEFGHIJKLMNOPQRSTUVWXYZ> .
+        <https://example.org/resource/cho/demo-002> <http://www.europeana.eu/schemas/edm/type> "IMAGE" <https://example.org/3/records/234567ABCDEFGHIJKLMNOPQRSTUVWXYZ> .
+        <https://example.org/resource/agent/demo-002> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.europeana.eu/schemas/edm/Agent> <https://example.org/3/records/234567ABCDEFGHIJKLMNOPQRSTUVWXYZ> .
+        <https://example.org/resource/agent/demo-002> <http://www.w3.org/2004/02/skos/core#prefLabel> "Ada Lovelace"@en <https://example.org/3/records/234567ABCDEFGHIJKLMNOPQRSTUVWXYZ> .
+        <https://example.org/resource/place/demo-002> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.europeana.eu/schemas/edm/Place> <https://example.org/3/records/234567ABCDEFGHIJKLMNOPQRSTUVWXYZ> .
+        <https://example.org/resource/place/demo-002> <http://www.w3.org/2004/02/skos/core#prefLabel> "London"@en <https://example.org/3/records/234567ABCDEFGHIJKLMNOPQRSTUVWXYZ> .
+        <https://example.org/resource/place/demo-002> <http://www.w3.org/2003/01/geo/wgs84_pos#lat> "51.5074" <https://example.org/3/records/234567ABCDEFGHIJKLMNOPQRSTUVWXYZ> .
+        <https://example.org/resource/place/demo-002> <http://www.w3.org/2003/01/geo/wgs84_pos#long> "-0.1278" <https://example.org/3/records/234567ABCDEFGHIJKLMNOPQRSTUVWXYZ> .
+        <https://example.org/resource/web/demo-002> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.europeana.eu/schemas/edm/WebResource> <https://example.org/3/records/234567ABCDEFGHIJKLMNOPQRSTUVWXYZ> .
+        <https://example.org/resource/web/demo-002> <http://purl.org/dc/elements/1.1/format> "image/jpeg" <https://example.org/3/records/234567ABCDEFGHIJKLMNOPQRSTUVWXYZ> .
+        <https://example.org/resource/web/demo-002> <http://www.europeana.eu/schemas/edm/rights> <http://creativecommons.org/publicdomain/mark/1.0/> <https://example.org/3/records/234567ABCDEFGHIJKLMNOPQRSTUVWXYZ> .
+        <https://example.org/resource/aggregation/demo-002> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.openarchives.org/ore/terms/Aggregation> <https://example.org/3/records/234567ABCDEFGHIJKLMNOPQRSTUVWXYZ> .
+        <https://example.org/resource/aggregation/demo-002> <http://www.europeana.eu/schemas/edm/aggregatedCHO> <https://example.org/resource/cho/demo-002> <https://example.org/3/records/234567ABCDEFGHIJKLMNOPQRSTUVWXYZ> .
+        <https://example.org/resource/aggregation/demo-002> <http://www.europeana.eu/schemas/edm/isShownBy> <https://example.org/resource/web/demo-002> <https://example.org/3/records/234567ABCDEFGHIJKLMNOPQRSTUVWXYZ> .
+        <https://example.org/resource/aggregation/demo-002> <http://www.europeana.eu/schemas/edm/dataProvider> "Example Museum"@en <https://example.org/3/records/234567ABCDEFGHIJKLMNOPQRSTUVWXYZ> .
+        <https://example.org/resource/aggregation/demo-002> <http://www.europeana.eu/schemas/edm/provider> "Deutsche Digitale Bibliothek" <https://example.org/3/records/234567ABCDEFGHIJKLMNOPQRSTUVWXYZ> .
+
+    DdbDisplayDocument:
+      summary: DDB display profile
+      value:
+        recordId: ABCDEFGHIJKLMNOPQRSTUVWXYZ234567
+        profile: ddb
+        profileVersion: '1.0'
+        profileUri: /profiles/display/ddb/v1
+        data:
+          title: Example cultural heritage object
+          objectType: IMAGE
+          provider: Example Museum
+          itemUrl: https://www.deutsche-digitale-bibliothek.de/item/demo-001
+
+    CccDisplayDocument:
+      summary: CCC display profile
+      value:
+        recordId: ABCDEFGHIJKLMNOPQRSTUVWXYZ234567
+        profile: ccc
+        profileVersion: '1.0'
+        profileUri: /profiles/display/ccc/v1
+        data:
+          title: Example cultural heritage object
+          type: IMAGE
+          institution: Example Museum
+
+    ApdDisplayDocument:
+      summary: APD display profile
+      value:
+        recordId: ABCDEFGHIJKLMNOPQRSTUVWXYZ234567
+        profile: apd
+        profileVersion: '1.0'
+        profileUri: /profiles/display/apd/v1
+        data:
+          label: Example cultural heritage object
+          category: IMAGE
+          dataProvider: Example Museum
+
+    RecordRepresentations:
+      summary: Available representations for one record
+      value:
+        recordId: ABCDEFGHIJKLMNOPQRSTUVWXYZ234567
+        items:
+          - id: edm
+            role: CANONICAL
+            href: /3/records/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567/content
+            mediaTypes:
+              - application/rdf+xml
+              - application/ld+json
+              - text/turtle
+              - application/n-triples
+              - application/n-quads
+              - application/rdf+json
+              - application/trig
+              - application/trix
+              - application/rdf+thrift
+              - application/rdf+protobuf
+            profileUri: /profiles/edm/ddb-v3
+            profileVersion: ddb-v3
+            generatedOnDemand: false
+          - id: source
+            role: SOURCE
+            href: /3/records/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567/source
+            mediaTypes:
+              - application/xml
+            format: LIDO
+            formatUri: https://lido-schema.org/
+            formatVersion: '1.1'
+            profile: ddb-lido-1
+            profileUri: /profiles/source/lido/ddb/1
+            profileVersion: '1'
+            generatedOnDemand: false
+          - id: display-ddb
+            role: DERIVED
+            href: /3/records/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567/display?profile=ddb
+            mediaTypes:
+              - application/json
+            profileUri: /profiles/display/ddb/v1
+            profileVersion: '1.0'
+            generatedOnDemand: true
+          - id: display-ccc
+            role: DERIVED
+            href: /3/records/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567/display?profile=ccc
+            mediaTypes:
+              - application/json
+            profileUri: /profiles/display/ccc/v1
+            profileVersion: '1.0'
+            generatedOnDemand: true
+          - id: display-apd
+            role: DERIVED
+            href: /3/records/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567/display?profile=apd
+            mediaTypes:
+              - application/json
+            profileUri: /profiles/display/apd/v1
+            profileVersion: '1.0'
+            generatedOnDemand: true
+
+  parameters:
+    RecordId:
+      name: recordId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/RecordIdValue'
+      description: Externally assigned record ID, RFC 4648 Base32 without padding, 32 characters
+    DisplayProfile:
+      name: profile
+      in: query
+      required: false
+      description: >-
+        Frontend projection profile. The default is ddb. Profile revisions remain
+        backward compatible within API v3; incompatible revisions require a new
+        profile identifier.
+      schema:
+        type: string
+        enum: [ddb, ccc, apd]
+        default: ddb
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      required: false
+      description: Return 304 when the selected representation matches
+      schema:
+        type: string
+    IfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: State ETag for optimistic concurrency control
+      schema:
+        type: string
+    RequiredIfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: Current state ETag required for this mutation
+      schema:
+        type: string
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: >-
+        Canonical lowercase UUID scoped to client, method, and normalized URI.
+        Identical retries are replayed for seven days; reuse with a different request
+        fingerprint returns 409. UUIDv7 is recommended. Never encode sensitive data.
+      schema:
+        type: string
+        format: uuid
+        minLength: 36
+        maxLength: 36
+        pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+        example: 018f6c1a-7b2d-7f3e-a9c1-4b5d6e7f8091
+    PurgeReason:
+      name: X-Purge-Reason
+      in: header
+      required: true
+      description: >-
+        Required audit reason for an irreversible administrative purge. Use a ticket
+        reference, short code, or text; never include secrets or unnecessary personal
+        data.
+      schema:
+        type: string
+        minLength: 3
+        maxLength: 512
+        pattern: '.*\S.*'
+        example: privacy-case-2026-0042
+    IfModifiedSince:
+      name: If-Modified-Since
+      in: header
+      required: false
+      description: Used only when If-None-Match is absent
+      schema:
+        type: string
+        format: http-date
+    AcceptEncoding:
+      name: Accept-Encoding
+      in: header
+      required: false
+      description: >-
+        Supported response content codings are gzip and identity. Quality values are
+        honored. If neither coding is acceptable, the server returns 406.
+      schema:
+        type: string
+        example: gzip, identity;q=0.5
+    RequestContentEncoding:
+      name: Content-Encoding
+      in: header
+      required: false
+      description: >-
+        Content coding of the complete request body. gzip and identity are supported;
+        identity is assumed when the header is absent. Limits apply after decoding.
+      schema:
+        type: string
+        enum: [gzip, identity]
+        default: identity
+
+  headers:
+    ContentLength:
+      required: false
+      description: Byte length when the selected representation is materialized
+      schema:
+        type: integer
+        format: int64
+        minimum: 0
+    Location:
+      required: true
+      description: Created resource or asynchronous status monitor
+      schema:
+        type: string
+        format: uri-reference
+    ETag:
+      required: true
+      description: >-
+        Entity tag for the selected media type and content coding. Strong tags differ
+        between identity and gzip representations; weak tags may be shared only when
+        their weak comparison semantics are sufficient.
+      schema:
+        type: string
+    LastModified:
+      required: true
+      schema:
+        type: string
+        format: http-date
+    CacheControl:
+      required: true
+      schema:
+        type: string
+    ContentEncoding:
+      required: false
+      description: >-
+        Content coding applied to the response representation. The header is absent
+        for identity. Content-Length, when present, is the encoded byte length.
+      schema:
+        type: string
+        const: gzip
+    VaryAcceptEncoding:
+      required: true
+      schema:
+        type: string
+        const: Accept, Accept-Encoding
+    ProfileLink:
+      required: true
+      description: RFC 8288 Link with rel="profile" for the selected representation
+      schema:
+        type: string
+    SourceLinks:
+      required: true
+      description: >-
+        RFC 8288 Link values. Exactly one rel="type" target is the public,
+        authoritative metadata-format URI. An optional rel="profile" target identifies
+        additional DDB/API constraints. Example: <https://lido-schema.org/>;
+        rel="type", </profiles/source/lido/ddb/1>;
+        rel="profile".
+      schema:
+        type: string
+    ContentSha256:
+      required: true
+      description: Hexadecimal SHA-256 of the canonical uncompressed RDF/XML content
+      schema:
+        type: string
+        pattern: '^[a-f0-9]{64}$'
+    SourceSha256:
+      required: true
+      description: Hexadecimal SHA-256 of the original uncompressed source bytes
+      schema:
+        type: string
+        pattern: '^[a-f0-9]{64}$'
+    RequestId:
+      required: true
+      description: Correlation ID for this HTTP request
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+    RetryAfter:
+      description: >-
+        Recommended retry time. A non-negative delay in seconds is preferred; an
+        HTTP-date can be used when an absolute time is required.
+      schema:
+        # HTTP field values are textual on the wire. Modelling both lexical forms as a
+        # string avoids an anonymous primitive oneOf that Java generators cannot represent.
+        type: string
+        minLength: 1
+        examples:
+          - '120'
+          - 'Wed, 21 Oct 2015 07:28:00 GMT'
+
+  requestBodies:
+    RecordWriteRequest:
+      required: true
+      description: >-
+        Canonical RDF/XML is required and the content part has the fixed media type
+        application/rdf+xml; no other RDF input serialization is accepted. The outer
+        request remains multipart/form-data so record metadata can be transmitted
+        without custom headers. An optional non-RDF source part preserves the exact
+        original XML. sourceMediaType, sourceFormat, sourceFormatUri, and
+        sourceFormatVersion are then required in metadata. sourceProfile and
+        sourceProfileUri are optional and must occur together. These conditional
+        constraints are enforced by the application.
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [metadata, content]
+            properties:
+              metadata:
+                $ref: '#/components/schemas/RecordWriteMetadata'
+              content:
+                type: string
+                format: binary
+                description: UTF-8 encoded RDF/XML document
+              source:
+                type: string
+                format: binary
+                description: >-
+                  Optional exact original LIDO, EAD, METS, MODS, or other XML. This is
+                  retained provenance, not an alternative RDF record input.
+          encoding:
+            metadata:
+              contentType: application/json
+            content:
+              contentType: application/rdf+xml
+            source:
+              contentType: application/xml, application/mets+xml, application/mods+xml
+    RecordLifecyclePatchRequest:
+      required: true
+      description: >-
+        A merge patch for the lifecycle status only. DELETED creates a tombstone;
+        PUBLISHED restores the latest retained non-deleted content. A deletionReason
+        is required when creating a tombstone and must be the absolute IRI of a
+        concept in a controlled vocabulary. An optional deletionComment is public
+        tombstone metadata and must not contain confidential or personal data.
+      content:
+        application/merge-patch+json:
+          schema:
+            $ref: '#/components/schemas/RecordLifecyclePatch'
+
+  schemas:
+    RdfRepresentation:
+      type: string
+      format: binary
+      description: >-
+        Streamed RDF bytes. The response Content-Type selects RDF/XML, JSON-LD,
+        Turtle, N-Triples, N-Quads, RDF/JSON, TriG, TriX, RDF Thrift, or RDF
+        Protobuf. RDF/XML is returned byte-for-byte from storage; only another
+        selected media type causes parsing and serialization with Apache Jena RIOT.
+
+    RdfXmlDocument:
+      type: string
+      format: binary
+      description: >-
+        UTF-8 RDF/XML bytes. RDF is an open graph format and is therefore represented
+        as a streamed binary body rather than as a generated Java object model.
+
+    DisplayDocument:
+      type: object
+      additionalProperties: false
+      description: >-
+        Stable envelope for a frontend-specific projection. The versioned profile
+        URI defines the open data object. Volatile generation timestamps are
+        deliberately excluded so identical projections have identical bytes.
+      required:
+        - recordId
+        - profile
+        - profileVersion
+        - profileUri
+        - data
+      properties:
+        recordId:
+          $ref: '#/components/schemas/RecordIdValue'
+        profile:
+          type: string
+          enum: [ddb, ccc, apd]
+        profileVersion:
+          type: string
+          minLength: 1
+          maxLength: 32
+        profileUri:
+          type: string
+          format: uri-reference
+        data:
+          type: object
+          additionalProperties: true
+          description: Payload governed by profileUri
+
+    RecordRepresentationList:
+      type: object
+      additionalProperties: false
+      required: [recordId, items]
+      properties:
+        recordId:
+          $ref: '#/components/schemas/RecordIdValue'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecordRepresentation'
+
+    RecordRepresentation:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - role
+        - href
+        - mediaTypes
+        - generatedOnDemand
+      properties:
+        id:
+          type: string
+          pattern: '^[a-z][a-z0-9-]{0,63}$'
+        role:
+          type: string
+          enum: [CANONICAL, SOURCE, DERIVED]
+        href:
+          type: string
+          format: uri-reference
+        mediaTypes:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+        format:
+          type: string
+          pattern: '^[A-Z][A-Z0-9_-]{0,31}$'
+          description: Short notation for the public metadata format; required for SOURCE
+        formatUri:
+          type: string
+          format: uri
+          description: Public authoritative metadata-format URI; required for SOURCE
+        formatVersion:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Source format version; required for SOURCE
+        profile:
+          type: string
+          pattern: '^[a-z][a-z0-9-]{0,63}$'
+          description: Optional short notation for an application profile
+        profileUri:
+          type: string
+          format: uri-reference
+          description: Optional URI for constraints beyond the base metadata format
+        profileVersion:
+          type: string
+          minLength: 1
+          maxLength: 128
+        generatedOnDemand:
+          type: boolean
+        contentLength:
+          type: integer
+          format: int64
+          minimum: 0
+        sha256:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        etag:
+          type: string
+
+    RecordIdValue:
+      type: string
+      pattern: '^[A-Z2-7]{32}$'
+      minLength: 32
+      maxLength: 32
+      description: >-
+        Externally assigned, globally unique DDB ID. The API validates and stores
+        the identifier but never derives or replaces it. Records, datasets and
+        organizations each have their own independent DDB ID.
+
+    SourceFormatCode:
+      type: string
+      pattern: '^[A-Z][A-Z0-9_-]{0,31}$'
+      examples: [LIDO, EAD, METS, MODS]
+      description: >-
+        Short notation for a public metadata format. It is not the format identifier;
+        sourceFormatUri carries the authoritative public URI. New registered formats
+        do not require a new API version.
+
+    RecordWriteMetadata:
+      type: object
+      additionalProperties: false
+      required: [recordId, datasetIds, providerId, sourceId, publicationStatus, profileVersion]
+      properties:
+        recordId:
+          $ref: '#/components/schemas/RecordIdValue'
+          description: Immutable ID supplied by the owning system
+        datasetIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/RecordIdValue'
+          description: DDB IDs of all datasets containing this record
+        providerId:
+          $ref: '#/components/schemas/RecordIdValue'
+          description: DDB ID of the organization providing the record
+        aggregatorId:
+          $ref: '#/components/schemas/RecordIdValue'
+          description: Optional DDB ID of the organization aggregating the provider's data
+        sourceId:
+          type: string
+          minLength: 1
+          maxLength: 2048
+        publicationStatus:
+          type: string
+          enum: [DRAFT, PUBLISHED]
+        profileVersion:
+          type: string
+          minLength: 1
+          maxLength: 128
+        clientRecordReference:
+          type: string
+          maxLength: 256
+        sourceMediaType:
+          type: string
+          enum: [application/xml, application/mets+xml, application/mods+xml]
+          description: Required when the multipart request contains source
+        sourceFormat:
+          $ref: '#/components/schemas/SourceFormatCode'
+        sourceFormatUri:
+          type: string
+          format: uri
+          examples:
+            - https://lido-schema.org/
+            - https://www.loc.gov/ead/
+            - https://www.loc.gov/standards/mets/
+            - https://www.loc.gov/standards/mods/
+          description: >-
+            Required with source. Public authoritative metadata-format URI, never a
+            DDB/API profile URI.
+        sourceFormatVersion:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Required with source; exact format or schema version
+        sourceProfile:
+          type: string
+          pattern: '^[a-z][a-z0-9-]{0,63}$'
+          description: Optional DDB/API application-profile notation
+        sourceProfileUri:
+          type: string
+          format: uri-reference
+          description: >-
+            Optional URI for constraints beyond the public metadata format; must
+            occur together with sourceProfile
+
+    RecordLifecyclePatch:
+      type: object
+      additionalProperties: false
+      required: [publicationStatus]
+      properties:
+        publicationStatus:
+          type: string
+          enum: [PUBLISHED, DELETED]
+          description: >-
+            DELETED creates a tombstone. PUBLISHED restores the latest retained
+            non-deleted content when the current state is DELETED.
+        deletionReason:
+          type: string
+          format: uri
+          description: >-
+            Required when publicationStatus is DELETED. Absolute IRI of a concept
+            in the deletion-reason vocabulary selected by the API operator.
+        deletionComment:
+          type: string
+          minLength: 1
+          maxLength: 512
+          pattern: '.*\S.*'
+          description: >-
+            Optional public, human-readable explanation. Must not contain
+            confidential or personal data.
+      allOf:
+        - if:
+            properties:
+              publicationStatus:
+                const: DELETED
+          then:
+            required: [deletionReason]
+
+    WriteOperation:
+      type: object
+      additionalProperties: false
+      required: [operationId, status, createdAt]
+      properties:
+        operationId:
+          type: string
+          pattern: '^[0-9A-HJKMNP-TV-Z]{26}$'
+        status:
+          type: string
+          enum:
+            - STAGED
+            - PENDING_PUBLICATION
+            - PUBLISHED
+            - PENDING_PURGE
+            - PURGED
+            - FAILED
+        createdAt:
+          type: string
+          format: date-time
+        recordId:
+          anyOf:
+            - $ref: '#/components/schemas/RecordIdValue'
+            - type: 'null'
+        problem:
+          $ref: '#/components/schemas/Problem'
+
+    ValidationReport:
+      type: object
+      additionalProperties: false
+      required:
+        - conforms
+        - validationStatus
+        - profileVersion
+        - contentSha256
+        - contentLength
+        - errors
+        - warnings
+      properties:
+        conforms:
+          type: boolean
+        validationStatus:
+          type: string
+          enum: [VALID, VALID_WITH_WARNINGS, INVALID]
+        profileVersion:
+          type: string
+        contentSha256:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        contentLength:
+          type: integer
+          format: int64
+          minimum: 0
+        extractedMetadata:
+          type: object
+          additionalProperties: true
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationIssue'
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationIssue'
+
+    ValidationIssue:
+      type: object
+      additionalProperties: false
+      required: [code, message, severity]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        severity:
+          type: string
+          enum: [WARNING, ERROR]
+        focusNode:
+          type: string
+        path:
+          type: string
+        line:
+          type: integer
+          minimum: 1
+        column:
+          type: integer
+          minimum: 1
+
+    BatchGetRequest:
+      type: object
+      additionalProperties: false
+      required: [recordIds, include]
+      properties:
+        recordIds:
+          type: array
+          minItems: 1
+          maxItems: 1000
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/RecordIdValue'
+        include:
+          type: string
+          description: >-
+            METADATA returns NDJSON. CONTENT returns multipart/mixed whose successful
+            parts are always application/rdf+xml.
+          enum: [METADATA, CONTENT]
+
+    BatchGetContentPart:
+      type: object
+      additionalProperties: false
+      description: >-
+        Logical schema for one multipart/mixed response part. Header-named properties
+        are MIME part headers. A successful part contains the canonical stored
+        RDF/XML; a 404 or 410 part contains Problem Details instead.
+      required: [contentId, recordId, status]
+      properties:
+        contentId:
+          type: string
+          description: MIME Content-ID, unique within the response
+          x-mime-header: Content-ID
+        recordId:
+          $ref: '#/components/schemas/RecordIdValue'
+          x-mime-header: X-Record-Id
+        status:
+          type: integer
+          enum: [200, 404, 410]
+          x-mime-header: X-Part-Status
+        etag:
+          type: string
+          x-mime-header: ETag
+        content:
+          type: string
+          format: binary
+          contentMediaType: application/rdf+xml
+          description: Present only for status 200
+          x-mime-content-type: application/rdf+xml
+        problem:
+          $ref: '#/components/schemas/Problem'
+          description: Present only for status 404 or 410
+          x-mime-content-type: application/problem+json
+      allOf:
+        - if:
+            properties:
+              status:
+                const: 200
+          then:
+            required: [etag, content]
+          else:
+            required: [problem]
+
+    BatchGetItem:
+      type: object
+      additionalProperties: false
+      required: [recordId, status]
+      properties:
+        recordId:
+          $ref: '#/components/schemas/RecordIdValue'
+        status:
+          type: integer
+          enum: [200, 404, 410]
+        metadata:
+          $ref: '#/components/schemas/DcatCatalogRecord'
+        problem:
+          $ref: '#/components/schemas/Problem'
+
+    BatchWriteRecordEnvelope:
+      type: object
+      additionalProperties: false
+      description: >-
+        Logical schema for one outer multipart/mixed part. Header-named properties
+        are MIME part headers, not top-level HTTP headers. metadata, content, and
+        source represent the nested multipart/related parts. OpenAPI tooling must use
+        this schema together with the normative wire description and example.
+      required: [contentId, idempotencyKey, metadata, content]
+      properties:
+        contentId:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: Outer MIME Content-ID, unique within the request
+          x-mime-header: Content-ID
+        idempotencyKey:
+          type: string
+          format: uuid
+          minLength: 36
+          maxLength: 36
+          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+          description: Per-record idempotency key
+          x-mime-header: Idempotency-Key
+        ifMatch:
+          type: string
+          description: Current state ETag for replacement
+          x-mime-header: If-Match
+        ifNoneMatch:
+          type: string
+          const: '*'
+          description: Required for creation; the only permitted value is an asterisk
+          x-mime-header: If-None-Match
+        metadata:
+          $ref: '#/components/schemas/RecordWriteMetadata'
+          description: >-
+            Required inner part with Content-Type application/json and the Content-ID
+            selected by the multipart/related start parameter
+          x-mime-content-type: application/json
+        content:
+          type: string
+          format: binary
+          description: Required inner part with Content-Type application/rdf+xml
+          contentMediaType: application/rdf+xml
+          x-mime-content-type: application/rdf+xml
+        source:
+          type: string
+          format: binary
+          description: >-
+            Optional retained source inner part. Its Content-Type must equal the
+            sourceMediaType declared by metadata.
+      allOf:
+        - oneOf:
+            - required: [ifMatch]
+              not:
+                required: [ifNoneMatch]
+            - required: [ifNoneMatch]
+              not:
+                required: [ifMatch]
+
+    BatchWriteItem:
+      type: object
+      additionalProperties: false
+      required: [contentId, status]
+      properties:
+        contentId:
+          type: string
+          description: >-
+            Normalized value of the request part's Content-ID header, without angle
+            brackets
+          minLength: 1
+          maxLength: 256
+        status:
+          type: integer
+          enum: [200, 201, 400, 403, 404, 409, 412, 413, 415, 422, 428, 429, 503]
+        recordId:
+          $ref: '#/components/schemas/RecordIdValue'
+        etag:
+          type: string
+          description: Current state ETag for a successful item
+        problem:
+          $ref: '#/components/schemas/Problem'
+
+    DcatCatalogRecord:
+      type: object
+      additionalProperties: false
+      description: >-
+        The single administrative metadata representation for a record. It is a compacted JSON-LD
+        1.1 document whose root is dcat:CatalogRecord. Its versioned external context uses only
+        DCAT 3, Dublin Core, FOAF, ADMS, SKOS, PROV-O, EARL and EDM terms.
+        DDB URLs identify resources and application profiles, but define no vocabulary terms.
+      required:
+        - '@context'
+        - '@id'
+        - '@type'
+        - primaryTopic
+        - createdAt
+        - modifiedAt
+      properties:
+        '@context':
+          type: string
+          format: uri-reference
+          description: Absolute IRI of the versioned JSON-LD 1.1 context document
+        '@id':
+          type: string
+          format: uri-reference
+          description: IRI identifying this dcat:CatalogRecord metadata entity
+        '@type':
+          type: string
+          const: dcat:CatalogRecord
+        primaryTopic:
+          $ref: '#/components/schemas/DcatDataset'
+        createdAt:
+          type: string
+          format: date-time
+          description: dcterms:issued date of the catalog record
+        modifiedAt:
+          type: string
+          format: date-time
+          description: dcterms:modified date of the catalog record
+    DcatDataset:
+      type: object
+      additionalProperties: false
+      description: >-
+        The dataset described by the surrounding dcat:CatalogRecord. In this API each
+        record is a DCAT dataset; EDM is used only for facts that DCAT cannot express.
+      required:
+        - '@id'
+        - '@type'
+        - recordId
+        - datasets
+        - provider
+        - publicationStatus
+        - validationAssertion
+      properties:
+        '@id':
+          type: string
+          format: uri-reference
+        '@type':
+          type: string
+          const: dcat:Dataset
+        recordId:
+          $ref: '#/components/schemas/RecordIdValue'
+          description: dcterms:identifier assigned by the DDB
+        datasets:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            format: uri-reference
+          description: dcterms:isPartOf IRIs of all datasets containing the record
+        provider:
+          type: string
+          format: uri-reference
+          description: >-
+            dcterms:publisher IRI of the providing organization, derived from its own DDB ID
+        aggregator:
+          type: string
+          format: uri-reference
+          description: edm:intermediateProvider IRI of the aggregating organization
+        sourceIdentifier:
+          $ref: '#/components/schemas/AdmsIdentifier'
+        publicationStatus:
+          type: string
+          format: uri
+          enum:
+            - http://publications.europa.eu/resource/authority/dataset-status/DEVELOP
+            - http://publications.europa.eu/resource/authority/dataset-status/COMPLETED
+            - http://publications.europa.eu/resource/authority/dataset-status/WITHDRAWN
+          description: adms:status using the EU Dataset Status controlled vocabulary
+        invalidatedAtTime:
+          type: [string, 'null']
+          format: date-time
+          description: >-
+            prov:invalidatedAtTime of a tombstone. WITHDRAWN together with this value
+            represents internal lifecycle state DELETED; WITHDRAWN without it is only
+            a withdrawn record.
+        deletionReason:
+          type: string
+          format: uri
+          description: dcterms:type IRI from the controlled deletion-reason vocabulary
+        deletionComment:
+          type: string
+          maxLength: 512
+          description: Optional public dcterms:description of the deletion
+        validationAssertion:
+          $ref: '#/components/schemas/EarlValidationAssertion'
+          description: Reverse earl:subject relationship to the record's validation assertion
+
+    AdmsIdentifier:
+      type: object
+      additionalProperties: false
+      required: ['@type', notation]
+      properties:
+        '@type':
+          type: string
+          const: adms:Identifier
+        notation:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          description: skos:notation containing the identifier assigned by the source system
+
+    EarlValidationAssertion:
+      type: object
+      additionalProperties: false
+      required: ['@id', '@type', test, mode, result]
+      properties:
+        '@id':
+          type: string
+          format: uri-reference
+        '@type':
+          type: string
+          const: earl:Assertion
+        test:
+          type: string
+          format: uri-reference
+          description: earl:test IRI of the applied EDM profile
+        mode:
+          type: string
+          const: earl:automatic
+        result:
+          $ref: '#/components/schemas/EarlTestResult'
+
+    EarlTestResult:
+      type: object
+      additionalProperties: false
+      required: ['@type', outcome]
+      properties:
+        '@type':
+          type: string
+          const: earl:TestResult
+        outcome:
+          type: string
+          enum: [earl:passed, earl:failed, earl:untested]
+          description: earl:outcome from the standard EARL outcome vocabulary
+        info:
+          type: string
+          description: earl:info; present when a conforming record has validation warnings
+
+    Problem:
+      type: object
+      additionalProperties: true
+      required: [type, title, status, requestId]
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+        requestId:
+          type: string
+        code:
+          type: string
+        errors:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [detail]
+            properties:
+              detail:
+                type: string
+              pointer:
+                type: string
+
+  responses:
+    BadRequest:
+      description: Invalid request, parameter, or cursor
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Unauthorized:
+      description: Supplied credential is invalid, or a protected operation has none
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Forbidden:
+      description: Client is authenticated but not authorized
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NotFound:
+      description: Resource is unknown or intentionally hidden
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NotAcceptable:
+      description: None of the requested response media types can be provided
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Conflict:
+      description: Conflict with the current state or idempotency key
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    PreconditionFailed:
+      description: If-Match or If-None-Match does not match the current state
+      headers:
+        ETag:
+          $ref: '#/components/headers/ETag'
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    PreconditionRequired:
+      description: If-Match or If-None-Match is required for this write operation
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Gone:
+      description: Record deleted, or cursor or artifact expired or no longer available
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    ContentTooLarge:
+      description: Request content exceeds the byte limit
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    UnsupportedMediaType:
+      description: Request media type is not supported
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    UnprocessableContent:
+      description: Syntax accepted but semantics or validation failed
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    TooManyRequests:
+      description: Request rejected by the gateway rate limiter
+    ServiceUnavailable:
+      description: Service or required dependency is temporarily unavailable
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'

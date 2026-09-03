@@ -1,0 +1,104 @@
+server:
+  port: ${GATEWAY_PORT:8081}
+  shutdown: graceful
+
+spring:
+  config:
+    # Load the shared local .env when the gateway runs from Maven or the IDE. Values already
+    # present in the process environment take precedence; deployed containers need no file.
+    import:
+      - optional:file:.env[.properties]
+      - optional:file:../.env[.properties]
+  application:
+    name: ddb-api-v3-gateway
+  profiles:
+    active: ${APP_PROFILE:dev}
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  cloud:
+    gateway:
+      server:
+        webflux:
+          metrics:
+            enabled: true
+          # Spring Cloud Gateway 5.x prefix. These names also define the public
+          # header contract mirrored below for the Bucket4j limiter.
+          redis-rate-limiter:
+            include-headers: true
+            remaining-header: X-RateLimit-Remaining
+            replenish-rate-header: X-RateLimit-Replenish-Rate
+            burst-capacity-header: X-RateLimit-Burst-Capacity
+            requested-tokens-header: X-RateLimit-Requested-Tokens
+          routes:
+            - id: records
+              uri: ${API_SERVICE_URI:http://127.0.0.1:8080}
+              predicates:
+                - Path=/3/**
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    rate-limiter: "#{@bucket4jRateLimiter}"
+                    key-resolver: "#{@clientIdKeyResolver}"
+                    bucket4j-rate-limiter.capacity: ${RATE_LIMIT_BURST_CAPACITY:20}
+                    bucket4j-rate-limiter.refillTokens: ${RATE_LIMIT_REPLENISH_RATE:10}
+                    bucket4j-rate-limiter.refillPeriod: ${RATE_LIMIT_REFILL_PERIOD:1s}
+                    bucket4j-rate-limiter.requestedTokens: ${RATE_LIMIT_REQUESTED_TOKENS:1}
+                    bucket4j-rate-limiter.headerName: ${spring.cloud.gateway.server.webflux.redis-rate-limiter.remaining-header}
+                # SCG 5.0.3's Bucket4jRateLimiter exposes only the remaining-token
+                # header. Built-in response filters add the other immutable route
+                # settings to successful responses without custom Java code.
+                - name: SetResponseHeader
+                  args:
+                    name: X-RateLimit-Replenish-Rate
+                    value: "${RATE_LIMIT_REPLENISH_RATE:10}"
+                - name: SetResponseHeader
+                  args:
+                    name: X-RateLimit-Burst-Capacity
+                    value: "${RATE_LIMIT_BURST_CAPACITY:20}"
+                - name: SetResponseHeader
+                  args:
+                    name: X-RateLimit-Requested-Tokens
+                    value: "${RATE_LIMIT_REQUESTED_TOKENS:1}"
+            - id: documentation
+              uri: ${API_SERVICE_URI:http://127.0.0.1:8080}
+              predicates:
+                - Path=/,/openapi/**,/swagger-ui.html,/webjars/**,/contexts/**
+          # Global framework CORS handling also answers OPTIONS requests that do not
+          # match a route predicate. Credentials stay disabled because wildcard
+          # origins and credentialed browser requests are mutually exclusive.
+          globalcors:
+            add-to-simple-url-handler-mapping: true
+            cors-configurations:
+              '[/**]':
+                allowed-origins: "*"
+                allowed-methods: "*"
+                allowed-headers: "*"
+                exposed-headers:
+                  - X-RateLimit-Remaining
+                  - X-RateLimit-Replenish-Rate
+                  - X-RateLimit-Burst-Capacity
+                  - X-RateLimit-Requested-Tokens
+                  - Retry-After
+                allow-credentials: false
+                max-age: 3600
+
+ddb:
+  gateway:
+    client-id:
+      allow-header: ${CLIENT_ID_HEADER_ENABLED:true}
+      header-name: ${CLIENT_ID_HEADER_NAME:X-Client-Id}
+      # Anonymous traffic is isolated from authenticated client buckets. Only the socket peer
+      # is used; forwarded headers require a separately configured trusted-proxy strategy.
+      allow-remote-address: ${ANONYMOUS_RATE_LIMIT_BY_REMOTE_ADDRESS:true}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState

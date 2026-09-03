@@ -1,0 +1,36 @@
+spring:
+  # H2, HikariCP, JdbcClient and SQL initialization are provided by Spring Boot.
+  # Only Cassandra auto-configuration is disabled in development.
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.cassandra.autoconfigure.CassandraAutoConfiguration
+      - org.springframework.boot.data.cassandra.autoconfigure.DataCassandraAutoConfiguration
+      - org.springframework.boot.data.cassandra.autoconfigure.DataCassandraRepositoriesAutoConfiguration
+      - org.springframework.boot.data.cassandra.autoconfigure.DataCassandraReactiveRepositoriesAutoConfiguration
+  datasource:
+    # File storage survives application restarts. The relative default is resolved
+    # against the process working directory; use H2_DATABASE_PATH for a fixed path.
+    url: jdbc:h2:file:${H2_DATABASE_PATH:./data/ddb-api-v3}
+    username: ${H2_DATABASE_USERNAME:sa}
+    password: ${H2_DATABASE_PASSWORD:}
+  sql:
+    init:
+      # The scripts are idempotent and can therefore run on every start. Their explicit
+      # locations keep the H2 and Cassandra schemas clearly separated.
+      mode: always
+      schema-locations: classpath:db/h2/schema.sql
+      data-locations: classpath:db/h2/data.sql
+  h2:
+    console:
+      # Development aid only. H2 accepts connections from this process, not remotely.
+      enabled: ${H2_CONSOLE_ENABLED:true}
+      path: /h2-console
+      settings:
+        web-allow-others: false
+
+management:
+  endpoint:
+    health:
+      group:
+        readiness:
+          include: readinessState,db

@@ -1,0 +1,40 @@
+spring:
+  # H2 is packaged only to make local startup self-contained. Production activates
+  # Cassandra exclusively and therefore does not create a JDBC DataSource.
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration
+  cassandra:
+    contact-points: ${CASSANDRA_CONTACT_POINTS}
+    local-datacenter: ${CASSANDRA_LOCAL_DATACENTER}
+    keyspace-name: ${CASSANDRA_KEYSPACE:ddb_api_v3}
+    username: ${CASSANDRA_USERNAME}
+    password: ${CASSANDRA_PASSWORD}
+    connection:
+      connect-timeout: ${CASSANDRA_CONNECT_TIMEOUT:5s}
+      init-query-timeout: ${CASSANDRA_INIT_QUERY_TIMEOUT:5s}
+    request:
+      timeout: ${CASSANDRA_REQUEST_TIMEOUT:2s}
+      consistency: ${CASSANDRA_CONSISTENCY:LOCAL_QUORUM}
+      throttler:
+        type: concurrency-limiting
+        max-concurrent-requests: ${CASSANDRA_MAX_CONCURRENT_REQUESTS:1024}
+        max-queue-size: ${CASSANDRA_MAX_QUEUED_REQUESTS:2048}
+    schema-action: none
+    session-name: ddb-api-v3-service
+
+management:
+  endpoint:
+    health:
+      group:
+        readiness:
+          include: readinessState,cassandra
+
+ddb:
+  # Canonical DDB identifiers are the safe default in every environment. Deployments
+  # may override the complete origin (including a shared base path) when necessary.
+  resource-base-url: ${DDB_RESOURCE_BASE_URL:https://www.deutsche-digitale-bibliothek.de}
+  api:
+    # JSON-LD identifiers must name the externally visible API, not an individual container.
+    # Requiring this value in production prevents accidental localhost IRIs in API responses.
+    public-base-url: ${DDB_API_PUBLIC_BASE_URL}

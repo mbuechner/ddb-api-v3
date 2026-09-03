@@ -1,0 +1,50 @@
+name: ddb-api-v3
+
+services:
+  api-service:
+    build:
+      context: ./api-service
+    environment:
+      # One deployment profile is valid for both applications.
+      APP_PROFILE: dev
+      SERVER_PORT: ${SERVER_PORT:-8080}
+      DDB_API_PUBLIC_BASE_URL: ${DDB_API_PUBLIC_BASE_URL:-http://localhost:${GATEWAY_HOST_PORT:-8081}}
+      DDB_RESOURCE_BASE_URL: ${DDB_RESOURCE_BASE_URL:-https://www.deutsche-digitale-bibliothek.de}
+      DDB_API_MAX_RECORDS: ${DDB_API_MAX_RECORDS:-10000}
+      DDB_API_UPLOAD_MAX_FILE_SIZE: ${DDB_API_UPLOAD_MAX_FILE_SIZE:-1MB}
+      DDB_API_UPLOAD_MAX_REQUEST_SIZE: ${DDB_API_UPLOAD_MAX_REQUEST_SIZE:-10MB}
+      H2_DATABASE_PATH: /app/data/ddb-api-v3
+      H2_DATABASE_USERNAME: ${H2_DATABASE_USERNAME:-sa}
+      H2_DATABASE_PASSWORD: ${H2_DATABASE_PASSWORD:-}
+      H2_CONSOLE_ENABLED: "false"
+    expose:
+      - "${SERVER_PORT:-8080}"
+    volumes:
+      - h2-data:/app/data
+    restart: unless-stopped
+    stop_grace_period: 30s
+
+  api-gateway:
+    build:
+      context: ./api-gateway
+    environment:
+      APP_PROFILE: dev
+      GATEWAY_PORT: ${GATEWAY_PORT:-8081}
+      API_SERVICE_URI: http://api-service:${SERVER_PORT:-8080}
+      RATE_LIMIT_REPLENISH_RATE: ${RATE_LIMIT_REPLENISH_RATE:-10}
+      RATE_LIMIT_REFILL_PERIOD: ${RATE_LIMIT_REFILL_PERIOD:-1s}
+      RATE_LIMIT_BURST_CAPACITY: ${RATE_LIMIT_BURST_CAPACITY:-20}
+      RATE_LIMIT_REQUESTED_TOKENS: ${RATE_LIMIT_REQUESTED_TOKENS:-1}
+      CLIENT_ID_HEADER_ENABLED: ${CLIENT_ID_HEADER_ENABLED:-true}
+      CLIENT_ID_HEADER_NAME: ${CLIENT_ID_HEADER_NAME:-X-Client-Id}
+      ANONYMOUS_RATE_LIMIT_BY_REMOTE_ADDRESS: ${ANONYMOUS_RATE_LIMIT_BY_REMOTE_ADDRESS:-true}
+    ports:
+      - "127.0.0.1:${GATEWAY_HOST_PORT:-8081}:${GATEWAY_PORT:-8081}"
+    depends_on:
+      api-service:
+        condition: service_started
+    restart: unless-stopped
+    stop_grace_period: 30s
+
+volumes:
+  h2-data:

@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["images", "cassandra", "ingress", "apiService", "gateway", "redis"],
+  "properties": {
+    "images": {
+      "type": "object",
+      "required": ["apiService", "gateway", "pullPolicy"],
+      "properties": {
+        "apiService": { "$ref": "#/definitions/image" },
+        "gateway": { "$ref": "#/definitions/image" },
+        "pullPolicy": { "const": "Always" },
+        "pullSecrets": { "type": "array" }
+      }
+    },
+    "cassandra": {
+      "type": "object",
+      "required": ["contactPoints", "localDatacenter", "keyspace", "username", "password"],
+      "properties": {
+        "contactPoints": { "type": "string", "minLength": 1 },
+        "localDatacenter": { "type": "string", "minLength": 1 },
+        "keyspace": { "type": "string", "minLength": 1 },
+        "username": { "type": "string" },
+        "password": { "type": "string" }
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "required": ["enabled", "host"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "host": { "type": "string", "minLength": 1 },
+        "className": { "type": "string" },
+        "tlsSecretName": { "type": "string" }
+      }
+    },
+    "apiService": { "$ref": "#/definitions/workload" },
+    "gateway": {
+      "allOf": [
+        { "$ref": "#/definitions/workload" },
+        {
+          "type": "object",
+          "required": ["service"],
+          "properties": {
+            "service": {
+              "type": "object",
+              "required": ["type", "port"],
+              "properties": {
+                "type": { "type": "string", "enum": ["ClusterIP", "LoadBalancer", "NodePort"] },
+                "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "redis": {
+      "type": "object",
+      "required": ["image", "auth", "serviceAccount", "extraSecretRedisConfigs", "extraSecretSentinelConfigs", "haMode", "storage"],
+      "properties": {
+        "image": {
+          "type": "object",
+          "required": ["registry", "repository", "tag", "pullPolicy"],
+          "properties": {
+            "registry": { "type": "string", "minLength": 1 },
+            "repository": { "type": "string", "minLength": 1 },
+            "tag": { "type": "string", "minLength": 1 },
+            "pullPolicy": { "const": "Always" }
+          }
+        },
+        "auth": {
+          "type": "object",
+          "required": ["username", "secretName"],
+          "properties": {
+            "username": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+            "secretName": { "type": "string", "minLength": 1 }
+          }
+        },
+        "serviceAccount": {
+          "type": "object",
+          "required": ["create", "name"],
+          "properties": {
+            "create": { "const": false },
+            "name": { "type": "string", "minLength": 1 }
+          }
+        },
+        "extraSecretRedisConfigs": { "type": "string", "minLength": 1 },
+        "extraSecretSentinelConfigs": { "type": "string", "minLength": 1 },
+        "haMode": {
+          "type": "object",
+          "required": ["enabled", "masterGroupName", "replicas", "quorum"],
+          "properties": {
+            "enabled": { "const": true },
+            "masterGroupName": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+$" },
+            "replicas": { "type": "integer", "minimum": 3 },
+            "quorum": { "type": "integer", "minimum": 2 }
+          }
+        },
+        "storage": {
+          "type": "object",
+          "required": ["requestedSize", "persistentVolumeClaimRetentionPolicy"],
+          "properties": {
+            "requestedSize": { "type": "string", "minLength": 1 },
+            "persistentVolumeClaimRetentionPolicy": {
+              "type": "object",
+              "required": ["whenScaled", "whenDeleted"],
+              "properties": {
+                "whenScaled": { "const": "Retain" },
+                "whenDeleted": { "const": "Retain" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "image": {
+      "type": "object",
+      "required": ["repository", "tag"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "tag": { "type": "string", "minLength": 1 }
+      }
+    },
+    "workload": {
+      "type": "object",
+      "required": ["replicaCount", "autoscaling", "resources"],
+      "properties": {
+        "replicaCount": { "type": "integer", "minimum": 1 },
+        "extraEnv": { "type": "object", "additionalProperties": { "type": ["string", "number", "boolean"] } },
+        "autoscaling": {
+          "type": "object",
+          "required": ["enabled", "minReplicas", "maxReplicas", "targetCPUUtilizationPercentage"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "minReplicas": { "type": "integer", "minimum": 1 },
+            "maxReplicas": { "type": "integer", "minimum": 1 },
+            "targetCPUUtilizationPercentage": { "type": "integer", "minimum": 1, "maximum": 100 }
+          }
+        }
+      }
+    }
+  }
+}
