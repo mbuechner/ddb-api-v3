@@ -73,6 +73,49 @@ apiService:
     DDB_API_MAX_RECORDS: "20000"
 ```
 
+## Cassandra
+
+Cassandra wird bewusst nicht als Abhängigkeit dieses Anwendungs-Charts
+installiert. Datenbank und Anwendung behalten dadurch getrennte Lebenszyklen.
+Für einen produktiven Cassandra-Cluster auf Kubernetes oder OpenShift wird der
+[K8ssandra Operator](https://docs.k8ssandra.io/install/) empfohlen:
+
+```bash
+helm repo add k8ssandra https://helm.k8ssandra.io/stable
+helm repo update k8ssandra
+helm install k8ssandra-operator k8ssandra/k8ssandra-operator \
+  --namespace k8ssandra-operator \
+  --create-namespace
+```
+
+Der Operator installiert zunächst die benötigten Controller. Der eigentliche
+Cassandra-Cluster wird anschließend als `K8ssandraCluster`-Ressource angelegt.
+Wer nur Cassandra ohne die zusätzlichen K8ssandra-Betriebsfunktionen benötigt,
+kann stattdessen den schlankeren Cass Operator installieren:
+
+```bash
+helm install cass-operator k8ssandra/cass-operator \
+  --namespace cass-operator \
+  --create-namespace
+```
+
+Der ältere Chart `k8ssandra/k8ssandra` ist veraltet und sollte nicht für neue
+Installationen verwendet werden. Groundhog2k bietet derzeit keinen
+Cassandra-Chart an. Unter OpenShift erfordert die Operator-Installation Rechte
+zum Anlegen von CRDs und eine geeignete StorageClass.
+
+Nach dem Anlegen des Cassandra-Clusters wird dessen interne Service-Adresse im
+DDB-Chart konfiguriert, beispielsweise:
+
+```yaml
+cassandra:
+  contactPoints: cluster-dc1-service.cassandra.svc:9042
+  localDatacenter: dc1
+  keyspace: ddb_api_v3
+  username: ddb_api
+  password: geheim
+```
+
 ## Redis Sentinel
 
 Der Subchart startet drei Redis-Nodes. Einer ist Primary, zwei sind Replicas;

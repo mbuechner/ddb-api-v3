@@ -99,7 +99,10 @@ Helm-Chart gespeichert.
 werden Cassandra und Redis über Umgebungsvariablen angebunden. Der Helm-Chart
 installiert Redis dagegen automatisch im Cluster; dort muss nur Cassandra
 extern bereitgestellt werden. Die vollständige Variablenreferenz steht in
-[.env.example](.env.example).
+[.env.example](.env.example). Für eine Cassandra-Installation auf Kubernetes
+oder OpenShift wird der separat betriebene K8ssandra Operator empfohlen; die
+[Helm-Dokumentation](charts/ddb-api-v3/README.md#cassandra) enthält die
+Installationsbefehle.
 
 ## Gemeinsame Profile
 
