@@ -93,17 +93,17 @@ Domains vorkommen; externe Identifier bleiben unverändert.
 Veröffentlichte Ressourcen-IRIs bleiben auch bei einem API-Versionswechsel
 stabil und dauerhaft auflösbar. `303 See Other` verweist auf ihre Beschreibung.
 
-| Ressource                   | IRI bzw. Dokumentadresse                                                            | Auflösung                                                                                                      |
-| --------------------------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Portalseite des DDB-Objekts | `https://www.deutsche-digitale-bibliothek.de/item/{id}`                             | Bei `Accept: text/html`: HTML; bei `Accept: application/rdf+xml`: `303` (...) → `/3/items/{id}`                |
-| Sammlung                    | `https://www.deutsche-digitale-bibliothek.de/collection/{id}` (noch offen)          | Auflösung und Abgrenzung zur Portalseite noch festzulegen                                                      |
-| Record                      | `https://api.deutsche-digitale-bibliothek.de/records/{id}`                          | `303` → `/3/records/{id}`                                                                                      |
-| DDB-Objekt                  | `https://api.deutsche-digitale-bibliothek.de/items/{id}`                            | Bei `Accept: text/html`: `303` → Portalseite; bei `Accept: application/rdf+xml`: `303` (...) → `/3/items/{id}` |
-| Datenset                    | `https://api.deutsche-digitale-bibliothek.de/datasets/{id}`                         | `303` → `/3/datasets/{id}`                                                                                     |
-| Katalog                     | `https://api.deutsche-digitale-bibliothek.de/catalog`                               | `303` → `/3/catalog`                                                                                           |
-| Record-Suche                | `https://api.deutsche-digitale-bibliothek.de/services/records`                      | `303` → `/3/catalog`; Dienstbeschreibung mit `dcat:endpointURL`                                                |
-| Datensetsuche               | `https://api.deutsche-digitale-bibliothek.de/services/datasets`                     | `303` → `/3/catalog`; Dienstbeschreibung mit `dcat:endpointURL`                                                |
-| Organisation                | `https://www.deutsche-digitale-bibliothek.de/organization/{id}`                     | Auflösung noch festzulegen                                                                                     |
+| Ressource                   | IRI bzw. Dokumentadresse                                                   | Auflösung                                                                                                    |
+| --------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Portalseite des DDB-Objekts | `https://www.deutsche-digitale-bibliothek.de/item/{id}`                    | Bei `Accept: text/html`: HTML; bei `Accept: application/rdf+xml` (…): `303` → `/3/items/{id}`                |
+| Sammlung                    | `https://www.deutsche-digitale-bibliothek.de/collection/{id}` (noch offen) | Auflösung und Abgrenzung zur Portalseite noch festzulegen                                                    |
+| Record                      | `https://api.deutsche-digitale-bibliothek.de/records/{id}`                 | `303` → `/3/records/{id}`                                                                                    |
+| DDB-Objekt                  | `https://api.deutsche-digitale-bibliothek.de/items/{id}`                   | Bei `Accept: text/html`: `303` → Portalseite; bei `Accept: application/rdf+xml` (…): `303` → `/3/items/{id}` |
+| Datenset                    | `https://api.deutsche-digitale-bibliothek.de/datasets/{id}`                | `303` → `/3/datasets/{id}`                                                                                   |
+| Katalog                     | `https://api.deutsche-digitale-bibliothek.de/catalog`                      | `303` → `/3/catalog`                                                                                         |
+| Record-Suche                | `https://api.deutsche-digitale-bibliothek.de/services/records`             | `303` → `/3/catalog`; Dienstbeschreibung mit `dcat:endpointURL`                                              |
+| Datensetsuche               | `https://api.deutsche-digitale-bibliothek.de/services/datasets`            | `303` → `/3/catalog`; Dienstbeschreibung mit `dcat:endpointURL`                                              |
+| Organisation                | `https://www.deutsche-digitale-bibliothek.de/organization/{id}`            | Auflösung noch festzulegen                                                                                   |
 
 Die Zielpfade beziehen sich auf `https://api.deutsche-digitale-bibliothek.de`.
 Die API-IRI identifiziert das DDB-Objekt, die Portalseite dessen HTML-Darstellung.
