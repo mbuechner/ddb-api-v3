@@ -79,28 +79,25 @@ und Beispiel beschrieben.
 
 ### Stabile IRIs und Auflösung
 
-Records, Katalog, Datendienste und Distributions werden unter
-`https://api.deutsche-digitale-bibliothek.de/` identifiziert, DDB-Objekte,
-Datensets und Datenpartner unter `https://www.deutsche-digitale-bibliothek.de/`.
 Veröffentlichte Ressourcen-IRIs bleiben auch bei einem API-Versionswechsel
-stabil und dauerhaft auflösbar. `303 See Other` verweist auf ihre Beschreibung,
-ohne ihre Identität zu ändern.
+stabil und dauerhaft auflösbar. `303 See Other` verweist auf ihre Beschreibung.
 
-| Versionlose IRI                                                 | Auflösung                                                                                |
-| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `https://api.deutsche-digitale-bibliothek.de/records/{id}`      | `303` auf `/3/records/{id}`                                                              |
-| `https://api.deutsche-digitale-bibliothek.de/catalog`           | `303` auf `/3/catalog`                                                                   |
-| `https://api.deutsche-digitale-bibliothek.de/services/records`  | `303` auf `/3/catalog`; dort steht die Dienstbeschreibung mit `dcat:endpointURL`         |
-| `https://api.deutsche-digitale-bibliothek.de/services/datasets` | `303` auf `/3/catalog`; dort steht die Dienstbeschreibung mit `dcat:endpointURL`         |
-| `https://www.deutsche-digitale-bibliothek.de/dataset/{id}`      | `303` auf `/3/datasets/{id}`; eine separate HTML-Beschreibung kann später ergänzt werden |
-| `https://www.deutsche-digitale-bibliothek.de/item/{id}`         | HTML direkt; bei `Accept: application/rdf+xml` erfolgt `303` auf `/3/items/{id}`         |
+| Ressource                   | IRI bzw. Dokumentadresse                                                                 | Auflösung                                                                                                |
+| --------------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Record                      | `https://api.deutsche-digitale-bibliothek.de/records/{id}`                               | `303` → `/3/records/{id}`                                                                                |
+| DDB-Objekt                  | `https://api.deutsche-digitale-bibliothek.de/items/{id}`                                 | Bei `Accept: text/html`: `303` → Portalseite; bei `Accept: application/rdf+xml`: `303` → `/3/items/{id}` |
+| Portalseite des DDB-Objekts | `https://www.deutsche-digitale-bibliothek.de/item/{id}`                                  | HTML                                                                                                     |
+| Datenset                    | `https://www.deutsche-digitale-bibliothek.de/dataset/{id}`                               | `303` → `/3/datasets/{id}`                                                                               |
+| RDF/XML-Distribution        | `https://api.deutsche-digitale-bibliothek.de/datasets/{id}/distributions/xml/current`    | `303` → `/3/datasets/{id}`; Distributionsbeschreibung mit `dcat:accessURL`                               |
+| Source-XML-Distribution     | `https://api.deutsche-digitale-bibliothek.de/datasets/{id}/distributions/source/current` | `303` → `/3/datasets/{id}`; optionale Distributionsbeschreibung                                          |
+| Katalog                     | `https://api.deutsche-digitale-bibliothek.de/catalog`                                    | `303` → `/3/catalog`                                                                                     |
+| Record-Suche                | `https://api.deutsche-digitale-bibliothek.de/services/records`                           | `303` → `/3/catalog`; Dienstbeschreibung mit `dcat:endpointURL`                                          |
+| Datensetsuche               | `https://api.deutsche-digitale-bibliothek.de/services/datasets`                          | `303` → `/3/catalog`; Dienstbeschreibung mit `dcat:endpointURL`                                          |
+| Organisation                | `https://www.deutsche-digitale-bibliothek.de/organization/{id}`                          | Auflösung noch festzulegen                                                                               |
 
 Die Zielpfade beziehen sich auf `https://api.deutsche-digitale-bibliothek.de`.
+Die API-IRI identifiziert das DDB-Objekt, die Portalseite dessen HTML-Darstellung.
 Vom `Accept`-Header abhängige Antworten tragen `Vary: Accept`.
-Die direkte HTML-Auslieferung unter der IRI des DDB-Objekts ist eine bewusste
-Modellierungsunschärfe aus Kompatibilitätsgründen. Die semantisch klarere
-Alternative wäre eine separate HTML-Dokumentadresse mit ebenfalls `303`
-von der IRI des DDB-Objekts.
 
 ## 3. Record
 
@@ -127,15 +124,15 @@ bereitgestellt. Frühere Einzelstände sind nicht öffentlich abrufbar.
   "@type": "dcat:CatalogRecord",
   "recordProfile": "https://api.deutsche-digitale-bibliothek.de/profiles/record-metadata/ddb-v1",
   "primaryTopic": {
-    "@id": "https://www.deutsche-digitale-bibliothek.de/item/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567",
+    "@id": "https://api.deutsche-digitale-bibliothek.de/items/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567",
     "@type": [
       "dcat:Resource",
       "ore:Aggregation"
     ],
     "identifier": "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567",
     "isPartOf": [
-      "https://www.deutsche-digitale-bibliothek.de/dataset/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
-      "https://www.deutsche-digitale-bibliothek.de/dataset/EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE"
+      "https://www.deutsche-digitale-bibliothek.de/dataset/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "https://www.deutsche-digitale-bibliothek.de/dataset/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
     ],
     "sourceIdentifier": {
       "@type": "adms:Identifier",
@@ -149,8 +146,7 @@ bereitgestellt. Frühere Einzelstände sind nicht öffentlich abrufbar.
 }
 ```
 
-`isPartOf` ist wiederholbar. Gezeigt sind der DDB-Gesamtbestand, das
-verpflichtende Lieferdatenset und ein weiteres Datenset.
+`isPartOf` ist wiederholbar; gezeigt sind der DDB-Gesamtbestand und das Lieferdatenset.
 
 | Feld               | RDF-Begriff          | Bedeutung                                                                                   |
 | ------------------ | -------------------- | ------------------------------------------------------------------------------------------- |
@@ -190,16 +186,15 @@ bei unbekannter oder endgültig entfernter Identität mit `404`.
   "@type": "dcat:CatalogRecord",
   "recordProfile": "https://api.deutsche-digitale-bibliothek.de/profiles/record-metadata/ddb-v1",
   "primaryTopic": {
-    "@id": "https://www.deutsche-digitale-bibliothek.de/item/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567",
+    "@id": "https://api.deutsche-digitale-bibliothek.de/items/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567",
     "@type": [
       "dcat:Resource",
       "ore:Aggregation"
     ],
     "identifier": "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567",
     "isPartOf": [
-      "https://www.deutsche-digitale-bibliothek.de/dataset/ddb-gesamtbestand",
-      "https://www.deutsche-digitale-bibliothek.de/dataset/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
-      "https://www.deutsche-digitale-bibliothek.de/dataset/EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE"
+      "https://www.deutsche-digitale-bibliothek.de/dataset/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "https://www.deutsche-digitale-bibliothek.de/dataset/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
     ],
     "sourceIdentifier": {
       "@type": "adms:Identifier",
@@ -235,7 +230,7 @@ für „Auf Wunsch des Datenpartners entfernt“.
 
 **Identitäten:**
 
-- DDB-Objekt: `https://www.deutsche-digitale-bibliothek.de/item/{id}` vom
+- DDB-Objekt: `https://api.deutsche-digitale-bibliothek.de/items/{id}` vom
   Typ `dcat:Resource` und `ore:Aggregation`.
 - Kulturobjekt: IRI aus dem RDF/EDM-Inhalt vom Typ `edm:ProvidedCHO`.
 
@@ -259,7 +254,7 @@ Kernbeziehung und ist kein vollständiges Validierungsbeispiel.
     xmlns:ore="http://www.openarchives.org/ore/terms/"
     xmlns:skos="http://www.w3.org/2004/02/skos/core#">
 
-  <ore:Aggregation rdf:about="https://www.deutsche-digitale-bibliothek.de/item/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567">
+  <ore:Aggregation rdf:about="https://api.deutsche-digitale-bibliothek.de/items/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567">
     <rdf:type rdf:resource="http://www.w3.org/ns/dcat#Resource"/>
     <dcterms:conformsTo rdf:resource="https://api.deutsche-digitale-bibliothek.de/profiles/edm/ddb-v3"/>
     <edm:aggregatedCHO rdf:resource="https://provider.example/objects/demo-001"/>
@@ -373,11 +368,11 @@ nicht der Stand ihrer separat abrufbaren Metadaten.
 ```json
 {
   "@context": "https://api.deutsche-digitale-bibliothek.de/contexts/ddb-api-v1.jsonld",
-  "@id": "https://www.deutsche-digitale-bibliothek.de/dataset/EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE",
+  "@id": "https://www.deutsche-digitale-bibliothek.de/dataset/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
   "@type": "dcat:Dataset",
   "hasPart": [
-    "https://www.deutsche-digitale-bibliothek.de/item/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567",
-    "https://www.deutsche-digitale-bibliothek.de/item/ZYXWVUTSRQPONMLKJIHGFEDCBA765432"
+    "https://api.deutsche-digitale-bibliothek.de/items/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567",
+    "https://api.deutsche-digitale-bibliothek.de/items/ZYXWVUTSRQPONMLKJIHGFEDCBA765432"
   ]
 }
 ```
@@ -385,10 +380,6 @@ nicht der Stand ihrer separat abrufbaren Metadaten.
 `hasPart` ist wiederholbar. Der Folgecursor kann im HTTP-`Link`-Header stehen.
 Die Gültigkeitsdauer der Cursor und die Darstellung der gemeinsamen
 Änderungskennung im API-Vertrag sind noch festzulegen.
-
-Der DDB-Gesamtbestand ist das reguläre Datenset
-`/3/datasets/ddb-gesamtbestand`; sein Dump liegt entsprechend unter
-`/3/datasets/ddb-gesamtbestand/dumps/current`.
 
 ## 6. Datensetdump
 
@@ -445,8 +436,6 @@ ausgewiesenen Ablaufzeitpunkt vollständig abrufbar.
 `parts` ist wiederholbar; das veröffentlichte Manifest listet alle Teile auf.
 Jede RDF/XML-Datei heißt `{DDB-ID}.xml`; ZIP-Einträge enthalten keine
 Verzeichnispfade. Innerhalb eines Dumps kommt jede DDB-ID genau einmal vor.
-Diese Veröffentlichungs- und Verfügbarkeitsregeln gelten auch für optionale
-Source-XML-Dumps.
 
 Die Aufbewahrungsdauer ist noch festzulegen; die Beispieldaten schreiben
 keine Frist vor.
@@ -541,7 +530,7 @@ Für Record- und Datensetsuche gilt:
     "@id": "https://api.deutsche-digitale-bibliothek.de/records/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567",
     "@type": "dcat:CatalogRecord",
     "primaryTopic": {
-      "@id": "https://www.deutsche-digitale-bibliothek.de/item/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567",
+      "@id": "https://api.deutsche-digitale-bibliothek.de/items/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567",
       "identifier": "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
     },
     "modified": "2026-09-04T09:30:00Z"
@@ -549,7 +538,7 @@ Für Record- und Datensetsuche gilt:
     "@id": "https://api.deutsche-digitale-bibliothek.de/records/ZYXWVUTSRQPONMLKJIHGFEDCBA765432",
     "@type": "dcat:CatalogRecord",
     "primaryTopic": {
-      "@id": "https://www.deutsche-digitale-bibliothek.de/item/ZYXWVUTSRQPONMLKJIHGFEDCBA765432",
+      "@id": "https://api.deutsche-digitale-bibliothek.de/items/ZYXWVUTSRQPONMLKJIHGFEDCBA765432",
       "identifier": "ZYXWVUTSRQPONMLKJIHGFEDCBA765432"
     },
     "modified": "2026-09-03T14:20:00Z"
@@ -580,9 +569,9 @@ Regeln in Abschnitt 8.
   "@id": "https://api.deutsche-digitale-bibliothek.de/catalog",
   "@type": "dcat:Catalog",
   "dataset": [{
-    "@id": "https://www.deutsche-digitale-bibliothek.de/dataset/ddb-gesamtbestand",
+    "@id": "https://www.deutsche-digitale-bibliothek.de/dataset/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
     "@type": "dcat:Dataset",
-    "identifier": "ddb-gesamtbestand",
+    "identifier": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
     "title": "DDB-Gesamtbestand",
     "description": "Alle öffentlich verfügbaren DDB-Objekte."
   }, {
