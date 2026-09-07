@@ -57,6 +57,7 @@ flowchart TB
 | **Record**                   | `dcat:CatalogRecord`; administrative Metadaten zu genau einem DDB-Objekt.                                 |
 | **Record-Metadatenprofil**   | Regelwerk für Struktur, Pflichtangaben und zulässige Werte der administrativen Record-Metadaten.          |
 | **Record-Suche**             | `dcat:DataService`; API-Zugang zur gefilterten Suche nach öffentlichen Records.                           |
+| **Sammlung**                 | Fachlich begründete Zusammenstellung von Kulturobjekten, unabhängig von ihrer Bereitstellung als Daten.   |
 | **Source-XML**               | Unverändertes, vom Datenpartner geliefertes XML-Dokument.                                                 |
 | **Tombstone**                | Reduzierter Record für ein nicht mehr ausgeliefertes DDB-Objekt.                                          |
 
@@ -79,19 +80,30 @@ und Beispiel beschrieben.
 
 ### Stabile IRIs und Auflösung
 
+Die DDB unterscheidet bei der IRI-Vergabe:
+
+- `api.deutsche-digitale-bibliothek.de`: Records, DDB-Aggregationen, Datensets,
+  Distributions, Katalog und Datendienste.
+- `www.deutsche-digitale-bibliothek.de`: fachliche Ressourcen wie Sammlungen
+  und Organisationen sowie deren gesondert zu betrachtende Portalseiten.
+
+Dies ist eine Namenskonvention, keine RDF-Typisierung. Im RDF/EDM können beide
+Domains vorkommen; externe Identifier bleiben unverändert.
+
 Veröffentlichte Ressourcen-IRIs bleiben auch bei einem API-Versionswechsel
 stabil und dauerhaft auflösbar. `303 See Other` verweist auf ihre Beschreibung.
 
-| Ressource                   | IRI bzw. Dokumentadresse                                                                 | Auflösung                                                                                                |
-| --------------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Record                      | `https://api.deutsche-digitale-bibliothek.de/records/{id}`                               | `303` → `/3/records/{id}`                                                                                |
-| DDB-Objekt                  | `https://api.deutsche-digitale-bibliothek.de/items/{id}`                                 | Bei `Accept: text/html`: `303` → Portalseite; bei `Accept: application/rdf+xml`: `303` → `/3/items/{id}` |
-| Portalseite des DDB-Objekts | `https://www.deutsche-digitale-bibliothek.de/item/{id}`                                  | HTML                                                                                                     |
-| Datenset                    | `https://www.deutsche-digitale-bibliothek.de/dataset/{id}`                               | `303` → `/3/datasets/{id}`                                                                               |
-| Katalog                     | `https://api.deutsche-digitale-bibliothek.de/catalog`                                    | `303` → `/3/catalog`                                                                                     |
-| Record-Suche                | `https://api.deutsche-digitale-bibliothek.de/services/records`                           | `303` → `/3/catalog`; Dienstbeschreibung mit `dcat:endpointURL`                                          |
-| Datensetsuche               | `https://api.deutsche-digitale-bibliothek.de/services/datasets`                          | `303` → `/3/catalog`; Dienstbeschreibung mit `dcat:endpointURL`                                          |
-| Organisation                | `https://www.deutsche-digitale-bibliothek.de/organization/{id}`                          | Auflösung noch festzulegen                                                                               |
+| Ressource                   | IRI bzw. Dokumentadresse                                                            | Auflösung                                                                                                      |
+| --------------------------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Portalseite des DDB-Objekts | `https://www.deutsche-digitale-bibliothek.de/item/{id}`                             | Bei `Accept: text/html`: HTML; bei `Accept: application/rdf+xml`: `303` (...) → `/3/items/{id}`                |
+| Sammlung                    | `https://www.deutsche-digitale-bibliothek.de/collection/{id}` (noch offen)          | Auflösung und Abgrenzung zur Portalseite noch festzulegen                                                      |
+| Record                      | `https://api.deutsche-digitale-bibliothek.de/records/{id}`                          | `303` → `/3/records/{id}`                                                                                      |
+| DDB-Objekt                  | `https://api.deutsche-digitale-bibliothek.de/items/{id}`                            | Bei `Accept: text/html`: `303` → Portalseite; bei `Accept: application/rdf+xml`: `303` (...) → `/3/items/{id}` |
+| Datenset                    | `https://api.deutsche-digitale-bibliothek.de/datasets/{id}`                         | `303` → `/3/datasets/{id}`                                                                                     |
+| Katalog                     | `https://api.deutsche-digitale-bibliothek.de/catalog`                               | `303` → `/3/catalog`                                                                                           |
+| Record-Suche                | `https://api.deutsche-digitale-bibliothek.de/services/records`                      | `303` → `/3/catalog`; Dienstbeschreibung mit `dcat:endpointURL`                                                |
+| Datensetsuche               | `https://api.deutsche-digitale-bibliothek.de/services/datasets`                     | `303` → `/3/catalog`; Dienstbeschreibung mit `dcat:endpointURL`                                                |
+| Organisation                | `https://www.deutsche-digitale-bibliothek.de/organization/{id}`                     | Auflösung noch festzulegen                                                                                     |
 
 Die Zielpfade beziehen sich auf `https://api.deutsche-digitale-bibliothek.de`.
 Die API-IRI identifiziert das DDB-Objekt, die Portalseite dessen HTML-Darstellung.
@@ -117,7 +129,7 @@ bereitgestellt. Frühere Einzelstände sind nicht öffentlich abrufbar.
 
 ```json
 {
-  "@context": "https://api.deutsche-digitale-bibliothek.de/contexts/ddb-api-v1.jsonld",
+  "@context": "https://api.deutsche-digitale-bibliothek.de/contexts/ddb-api-v3.jsonld",
   "@id": "https://api.deutsche-digitale-bibliothek.de/records/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567",
   "@type": "dcat:CatalogRecord",
   "recordProfile": "https://api.deutsche-digitale-bibliothek.de/profiles/record-metadata/ddb-v1",
@@ -129,8 +141,8 @@ bereitgestellt. Frühere Einzelstände sind nicht öffentlich abrufbar.
     ],
     "identifier": "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567",
     "isPartOf": [
-      "https://www.deutsche-digitale-bibliothek.de/dataset/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-      "https://www.deutsche-digitale-bibliothek.de/dataset/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+      "https://api.deutsche-digitale-bibliothek.de/datasets/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "https://api.deutsche-digitale-bibliothek.de/datasets/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
     ],
     "sourceIdentifier": {
       "@type": "adms:Identifier",
@@ -179,7 +191,7 @@ bei unbekannter oder endgültig entfernter Identität mit `404`.
 
 ```json
 {
-  "@context": "https://api.deutsche-digitale-bibliothek.de/contexts/ddb-api-v1.jsonld",
+  "@context": "https://api.deutsche-digitale-bibliothek.de/contexts/ddb-api-v3.jsonld",
   "@id": "https://api.deutsche-digitale-bibliothek.de/records/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567",
   "@type": "dcat:CatalogRecord",
   "recordProfile": "https://api.deutsche-digitale-bibliothek.de/profiles/record-metadata/ddb-v1",
@@ -191,8 +203,8 @@ bei unbekannter oder endgültig entfernter Identität mit `404`.
     ],
     "identifier": "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567",
     "isPartOf": [
-      "https://www.deutsche-digitale-bibliothek.de/dataset/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-      "https://www.deutsche-digitale-bibliothek.de/dataset/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+      "https://api.deutsche-digitale-bibliothek.de/datasets/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "https://api.deutsche-digitale-bibliothek.de/datasets/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
     ],
     "sourceIdentifier": {
       "@type": "adms:Identifier",
@@ -248,30 +260,31 @@ Kernbeziehung und ist kein vollständiges Validierungsbeispiel.
     xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
     xmlns:dc="http://purl.org/dc/elements/1.1/"
     xmlns:dcterms="http://purl.org/dc/terms/"
+    xmlns:dcat="http://www.w3.org/ns/dcat#"
+    xmlns:foaf="http://xmlns.com/foaf/0.1/"
     xmlns:edm="http://www.europeana.eu/schemas/edm/"
-    xmlns:ore="http://www.openarchives.org/ore/terms/"
-    xmlns:skos="http://www.w3.org/2004/02/skos/core#">
-
-  <ore:Aggregation rdf:about="https://api.deutsche-digitale-bibliothek.de/items/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567">
-    <rdf:type rdf:resource="http://www.w3.org/ns/dcat#Resource"/>
-    <dcterms:conformsTo rdf:resource="https://api.deutsche-digitale-bibliothek.de/profiles/edm/ddb-v3"/>
-    <edm:aggregatedCHO rdf:resource="https://provider.example/objects/demo-001"/>
-    <edm:dataProvider rdf:resource="https://www.deutsche-digitale-bibliothek.de/organization/CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"/>
-    <edm:provider rdf:resource="https://www.deutsche-digitale-bibliothek.de/organization/DDB"/>
-  </ore:Aggregation>
-
-  <edm:ProvidedCHO rdf:about="https://provider.example/objects/demo-001">
-    <dc:title xml:lang="de">Beispielobjekt</dc:title>
-    <dc:title xml:lang="en">Example object</dc:title>
-  </edm:ProvidedCHO>
-
-  <edm:Agent rdf:about="https://www.deutsche-digitale-bibliothek.de/organization/CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC">
-    <skos:prefLabel xml:lang="de">Beispielmuseum</skos:prefLabel>
-  </edm:Agent>
-
-  <edm:Agent rdf:about="https://www.deutsche-digitale-bibliothek.de/organization/DDB">
-    <skos:prefLabel xml:lang="de">Deutsche Digitale Bibliothek</skos:prefLabel>
-  </edm:Agent>
+    xmlns:ore="http://www.openarchives.org/ore/terms/">
+    <!-- DDB-Katalog -->
+    <dcat:Catalog rdf:about="https://api.deutsche-digitale-bibliothek.de/catalog">
+        <dcat:record rdf:resource="https://api.deutsche-digitale-bibliothek.de/records/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"/>
+        <dcat:resource rdf:resource="https://api.deutsche-digitale-bibliothek.de/items/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567#aggregation"/>
+    </dcat:Catalog>
+    <!-- Metadatensatz -->
+    <dcat:CatalogRecord rdf:about="https://api.deutsche-digitale-bibliothek.de/records/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567">
+        <foaf:primaryTopic rdf:resource="https://api.deutsche-digitale-bibliothek.de/items/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567#aggregation"/>
+        <dcterms:conformsTo rdf:resource="https://api.deutsche-digitale-bibliothek.de/profiles/edm/ddb-v3"/>
+    </dcat:CatalogRecord>
+    <!-- Bereitstellungskontext -->
+    <ore:Aggregation rdf:about="https://api.deutsche-digitale-bibliothek.de/items/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567#aggregation">
+        <rdf:type rdf:resource="http://www.w3.org/ns/dcat#Resource"/>
+        <edm:aggregatedCHO rdf:resource="https://www.deutsche-digitale-bibliothek.de/item/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"/>
+        <edm:dataProvider rdf:resource="https://www.deutsche-digitale-bibliothek.de/organization/CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"/>
+        <edm:provider rdf:resource="https://www.wikidata.org/entity/Q621630"/>
+    </ore:Aggregation>
+    <!-- Kulturerbeobjekt -->
+    <edm:ProvidedCHO rdf:about="https://www.deutsche-digitale-bibliothek.de/item/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567">
+        <dc:title xml:lang="de">Beispielobjekt</dc:title>
+    </edm:ProvidedCHO>
 </rdf:RDF>
 ```
 
@@ -284,7 +297,7 @@ Kernbeziehung und ist kein vollständiges Validierungsbeispiel.
 **API-Endpunkt:** `/3/datasets/{datasetId}`
 
 **Identität:**
-`https://www.deutsche-digitale-bibliothek.de/dataset/{datasetId}` vom Typ
+`https://api.deutsche-digitale-bibliothek.de/datasets/{datasetId}` vom Typ
 `dcat:Dataset`.
 
 **Bedeutung:** Ein Datenset ist ein dauerhaft identifizierter logischer Bestand von
@@ -293,12 +306,20 @@ DDB-Objekten. Jedes
 seiner Lieferung; weitere dynamische oder kuratierte Datensets sind möglich.
 Ein technischer Import ist kein Datenset.
 
+Eine Sammlung beschreibt den fachlichen Zusammenhang von Kulturobjekten;
+ein Datenset kann die Daten einer oder mehrerer Sammlungen ganz oder teilweise
+abbilden. Zu einer Sammlung können mehrere Datensets gehören.
+Sammlungszugehörigkeit betrifft das Kulturobjekt, Datensetzugehörigkeit das
+DDB-Objekt. Änderungen an Lieferungen oder Dumps ändern nicht automatisch die
+Sammlung. Ihre RDF-Modellierung und die Verknüpfung zum Datenset sind noch
+mit dem DDB-EDM-Anwendungsprofil abzustimmen.
+
 **Beispiel:**
 
 ```json
 {
-  "@context": "https://api.deutsche-digitale-bibliothek.de/contexts/ddb-api-v1.jsonld",
-  "@id": "https://www.deutsche-digitale-bibliothek.de/dataset/EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE",
+  "@context": "https://api.deutsche-digitale-bibliothek.de/contexts/ddb-api-v3.jsonld",
+  "@id": "https://api.deutsche-digitale-bibliothek.de/datasets/EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE",
   "@type": "dcat:Dataset",
   "identifier": "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE",
   "title": "Veröffentlichte Bildobjekte des 19. Jahrhunderts",
@@ -345,7 +366,7 @@ der Auswahlregel, nicht der Zusammensetzung.
 **API-Endpunkt:**
 `/3/datasets/{datasetId}/items?limit={limit}&cursor={cursor}`
 
-**Identität:** `https://www.deutsche-digitale-bibliothek.de/dataset/{datasetId}`
+**Identität:** `https://api.deutsche-digitale-bibliothek.de/datasets/{datasetId}`
 vom Typ `dcat:Dataset`. Die Antwort beschreibt dasselbe Datenset, keine eigene
 Ressource für die Zusammensetzung.
 
@@ -365,8 +386,8 @@ nicht der Stand ihrer separat abrufbaren Metadaten.
 
 ```json
 {
-  "@context": "https://api.deutsche-digitale-bibliothek.de/contexts/ddb-api-v1.jsonld",
-  "@id": "https://www.deutsche-digitale-bibliothek.de/dataset/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+  "@context": "https://api.deutsche-digitale-bibliothek.de/contexts/ddb-api-v3.jsonld",
+  "@id": "https://api.deutsche-digitale-bibliothek.de/datasets/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
   "@type": "dcat:Dataset",
   "hasPart": [
     "https://api.deutsche-digitale-bibliothek.de/items/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567",
@@ -409,7 +430,7 @@ ausgewiesenen Ablaufzeitpunkt vollständig abrufbar.
 
 ```json
 {
-  "dataset": "https://www.deutsche-digitale-bibliothek.de/dataset/EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE",
+  "dataset": "https://api.deutsche-digitale-bibliothek.de/datasets/EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE",
   "distribution": "https://api.deutsche-digitale-bibliothek.de/datasets/EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE/distributions/xml/current",
   "dumpId": "20260904T030000Z-001",
   "manifestURL": "https://api.deutsche-digitale-bibliothek.de/3/datasets/EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE/dumps/20260904T030000Z-001/manifest.json",
@@ -456,7 +477,7 @@ desselben Katalogs (Abschnitt 8).
 
 ```json
 {
-  "@context": "https://api.deutsche-digitale-bibliothek.de/contexts/ddb-api-v1.jsonld",
+  "@context": "https://api.deutsche-digitale-bibliothek.de/contexts/ddb-api-v3.jsonld",
   "@id": "https://api.deutsche-digitale-bibliothek.de/catalog",
   "@type": "dcat:Catalog",
   "title": "Katalog der öffentlichen DDB-Ressourcen",
@@ -470,8 +491,8 @@ desselben Katalogs (Abschnitt 8).
   "issued": "2026-01-01T00:00:00Z",
   "modified": "2026-09-04T08:00:00Z",
   "dataset": [
-    "https://www.deutsche-digitale-bibliothek.de/dataset/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-    "https://www.deutsche-digitale-bibliothek.de/dataset/EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE"
+    "https://api.deutsche-digitale-bibliothek.de/datasets/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "https://api.deutsche-digitale-bibliothek.de/datasets/EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE"
   ],
   "service": [{
     "@id": "https://api.deutsche-digitale-bibliothek.de/services/records",
@@ -521,7 +542,7 @@ Für Record- und Datensetsuche gilt:
 
 ```json
 {
-  "@context": "https://api.deutsche-digitale-bibliothek.de/contexts/ddb-api-v1.jsonld",
+  "@context": "https://api.deutsche-digitale-bibliothek.de/contexts/ddb-api-v3.jsonld",
   "@id": "https://api.deutsche-digitale-bibliothek.de/catalog",
   "@type": "dcat:Catalog",
   "record": [{
@@ -563,17 +584,17 @@ Regeln in Abschnitt 8.
 
 ```json
 {
-  "@context": "https://api.deutsche-digitale-bibliothek.de/contexts/ddb-api-v1.jsonld",
+  "@context": "https://api.deutsche-digitale-bibliothek.de/contexts/ddb-api-v3.jsonld",
   "@id": "https://api.deutsche-digitale-bibliothek.de/catalog",
   "@type": "dcat:Catalog",
   "dataset": [{
-    "@id": "https://www.deutsche-digitale-bibliothek.de/dataset/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "@id": "https://api.deutsche-digitale-bibliothek.de/datasets/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
     "@type": "dcat:Dataset",
     "identifier": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
     "title": "DDB-Gesamtbestand",
     "description": "Alle öffentlich verfügbaren DDB-Objekte."
   }, {
-    "@id": "https://www.deutsche-digitale-bibliothek.de/dataset/EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE",
+    "@id": "https://api.deutsche-digitale-bibliothek.de/datasets/EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE",
     "@type": "dcat:Dataset",
     "identifier": "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE",
     "title": "Veröffentlichte Bildobjekte des 19. Jahrhunderts",
@@ -586,9 +607,9 @@ Detailendpunkt eines Treffers: `/3/datasets/{datasetId}`.
 
 ## 10. Context
 
-**API-Endpunkt:** `/contexts/ddb-api-v1.jsonld`
+**API-Endpunkt:** `/contexts/ddb-api-v3.jsonld`
 
-**Identität:** `https://api.deutsche-digitale-bibliothek.de/contexts/ddb-api-v1.jsonld`
+**Identität:** `https://api.deutsche-digitale-bibliothek.de/contexts/ddb-api-v3.jsonld`
 identifiziert das versionierte JSON-LD-Context-Dokument.
 
 **Bedeutung:** Ein Context ist eine Zuordnung von JSON-LD-Bezeichnern zu
