@@ -45,7 +45,7 @@
         <openapi-generator.version>7.25.0</openapi-generator.version>
         <swagger-ui.version>5.32.14</swagger-ui.version>
         <maven-compiler-plugin.version>3.16.0</maven-compiler-plugin.version>
-        <maven-surefire-plugin.version>3.5.6</maven-surefire-plugin.version>
+        <maven-surefire-plugin.version>3.6.0</maven-surefire-plugin.version>
         <versions-maven-plugin.version>2.21.0</versions-maven-plugin.version>
         <!-- Required for Surefire's late replacement in the Mockito javaagent argument. -->
         <argLine/>
