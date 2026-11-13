@@ -1,4 +1,4 @@
-# Image locations, Cassandra and the public endpoint are the only values that
+# Image locations, S3 storage and the public endpoint are the only values that
 # normally need adapting. Application defaults live in the chart templates;
 # extraEnv remains available for exceptional Spring configuration overrides.
 images:
@@ -13,14 +13,22 @@ images:
   pullPolicy: Always
   pullSecrets: []
 
-cassandra:
-  contactPoints: cassandra.example.internal:9042
-  localDatacenter: datacenter1
-  keyspace: ddb_api_v3
-  # Required on the first installation. The generated Secret deliberately
-  # retains the initially installed credentials on later upgrades.
-  username: ""
-  password: ""
+s3:
+  endpoint: https://seaweedfs.example.internal:8333
+  region: eu-central-1
+  bucket: ddb-records
+  pathStyleAccess: true
+  connectionTimeout: 2s
+  readTimeout: 10s
+  # Production buckets are provisioned by the storage operator.
+  createBucket: false
+  # Use an existing Secret with S3_ACCESS_KEY and S3_SECRET_KEY to manage
+  # credentials outside Helm. Leave empty to generate a retained Secret.
+  existingSecret: ""
+  # Used when existingSecret is empty. Updating both values rotates the Secret
+  # and rolls the API pods; Helm release values also contain these credentials.
+  accessKey: ""
+  secretKey: ""
 
 ingress:
   enabled: true
@@ -31,9 +39,9 @@ ingress:
   tlsSecretName: ""
 
 apiService:
+  # Canonical origin for RDF graph names, independent of ingress.host.
+  baseUrl: https://api.deutsche-digitale-bibliothek.de
   replicaCount: 3
-  # Required only when ingress.enabled=false; otherwise derived from the Ingress.
-  publicBaseUrl: ""
   resources:
     requests: { cpu: 250m, memory: 512Mi }
     limits: { memory: 1Gi }

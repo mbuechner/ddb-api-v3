@@ -1,6 +1,36 @@
 name: ddb-api-v3
 
 services:
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.53
+    command:
+      - mini
+      - -dir=/data
+      - -ip=seaweedfs
+      - -ip.bind=0.0.0.0
+      - -s3.port=8333
+      - -s3.port.iceberg=0
+      - -s3.port.lance=0
+      - -webdav=false
+      - -admin.ui=false
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:-ddb-dev}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:-ddb-dev-secret}
+      S3_BUCKET: ${S3_BUCKET:-ddb-records}
+    ports:
+      - "127.0.0.1:${S3_HOST_PORT:-8333}:8333"
+    volumes:
+      - seaweedfs-data:/data
+    healthcheck:
+      # The image ships curl. S3's anonymous root may return 403; the API checks bucket access.
+      test: ["CMD-SHELL", "curl -fsS --max-time 1 http://127.0.0.1:8888/ >/dev/null && curl -sS --max-time 1 http://127.0.0.1:8333/ >/dev/null"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    restart: unless-stopped
+    stop_grace_period: 30s
+
   api-service:
     build:
       context: ./api-service
@@ -8,19 +38,22 @@ services:
       # One deployment profile is valid for both applications.
       APP_PROFILE: dev
       SERVER_PORT: ${SERVER_PORT:-8080}
-      DDB_API_PUBLIC_BASE_URL: ${DDB_API_PUBLIC_BASE_URL:-http://localhost:${GATEWAY_HOST_PORT:-8081}}
-      DDB_RESOURCE_BASE_URL: ${DDB_RESOURCE_BASE_URL:-https://www.deutsche-digitale-bibliothek.de}
-      DDB_API_MAX_RECORDS: ${DDB_API_MAX_RECORDS:-10000}
+      DDB_API_BASE_URL: ${DDB_API_BASE_URL:-https://api.deutsche-digitale-bibliothek.de}
       DDB_API_UPLOAD_MAX_FILE_SIZE: ${DDB_API_UPLOAD_MAX_FILE_SIZE:-1MB}
-      DDB_API_UPLOAD_MAX_REQUEST_SIZE: ${DDB_API_UPLOAD_MAX_REQUEST_SIZE:-10MB}
-      H2_DATABASE_PATH: /app/data/ddb-api-v3
-      H2_DATABASE_USERNAME: ${H2_DATABASE_USERNAME:-sa}
-      H2_DATABASE_PASSWORD: ${H2_DATABASE_PASSWORD:-}
-      H2_CONSOLE_ENABLED: "false"
+      S3_ENDPOINT: http://seaweedfs:8333
+      S3_REGION: ${S3_REGION:-eu-central-1}
+      S3_BUCKET: ${S3_BUCKET:-ddb-records}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-ddb-dev}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-ddb-dev-secret}
+      S3_PATH_STYLE_ACCESS: ${S3_PATH_STYLE_ACCESS:-true}
+      S3_CONNECTION_TIMEOUT: ${S3_CONNECTION_TIMEOUT:-2s}
+      S3_READ_TIMEOUT: ${S3_READ_TIMEOUT:-10s}
+      S3_CREATE_BUCKET: ${S3_CREATE_BUCKET:-true}
     expose:
       - "${SERVER_PORT:-8080}"
-    volumes:
-      - h2-data:/app/data
+    depends_on:
+      seaweedfs:
+        condition: service_healthy
     restart: unless-stopped
     stop_grace_period: 30s
 
@@ -47,4 +80,4 @@ services:
     stop_grace_period: 30s
 
 volumes:
-  h2-data:
+  seaweedfs-data:

@@ -36,8 +36,12 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- printf "%s-config" (include "ddb-api-v3.fullname" .) }}
 {{- end }}
 
-{{- define "ddb-api-v3.cassandraSecretName" -}}
-{{- printf "%s-cassandra" (include "ddb-api-v3.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- define "ddb-api-v3.s3SecretName" -}}
+{{- if .Values.s3.existingSecret -}}
+{{- .Values.s3.existingSecret -}}
+{{- else -}}
+{{- printf "%s-s3" (include "ddb-api-v3.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end -}}
 {{- end }}
 
 {{- define "ddb-api-v3.redisSecretName" -}}
@@ -65,15 +69,5 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- .Release.Name | trunc 63 | trimSuffix "-" -}}
 {{- else -}}
 {{- printf "%s-redis" .Release.Name | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
-{{- end }}
-
-{{- define "ddb-api-v3.publicBaseUrl" -}}
-{{- if .Values.apiService.publicBaseUrl -}}
-{{- .Values.apiService.publicBaseUrl -}}
-{{- else if .Values.ingress.enabled -}}
-{{- ternary "https" "http" (ne .Values.ingress.tlsSecretName "") }}://{{ required "ingress.host is required" .Values.ingress.host }}
-{{- else -}}
-{{- required "apiService.publicBaseUrl is required when ingress.enabled=false" .Values.apiService.publicBaseUrl -}}
 {{- end -}}
 {{- end }}

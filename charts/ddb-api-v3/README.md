@@ -1,6 +1,6 @@
 # DDB API v3 Helm Chart
 
-Der Chart installiert die vollständige Anwendung:
+Der Chart installiert die Anwendung und Redis; SeaweedFS wird extern betrieben:
 
 ```text
 Ingress
@@ -9,7 +9,7 @@ Gateway Deployment ---- Redis Sentinel Service
    |                         |
 API-Service             3 Redis-Nodes
    |                    (1 Primary, 2 Replicas,
-Cassandra                je 1 Sentinel-Sidecar)
+SeaweedFS S3             je 1 Sentinel-Sidecar)
 ```
 
 Gateway und API-Service lassen sich unabhängig horizontal skalieren. Alle
@@ -28,7 +28,7 @@ Probes und Persistenz. Er startet dafür das unveränderte Docker-Official-Image
 
 ## Konfiguration
 
-Im Normalfall müssen nur Images, Cassandra und der öffentliche Host angepasst
+Im Normalfall müssen nur Images, S3-Speicher und der öffentliche Host angepasst
 werden:
 
 Standardmäßig verwendet der Chart die öffentlichen GHCR-Pakete
@@ -45,22 +45,28 @@ images:
     repository: registry.example.org/ddb/ddb-api-v3-gateway
     tag: "1.0.0"
 
-cassandra:
-  contactPoints: cassandra.database.svc:9042
-  localDatacenter: datacenter1
-  keyspace: ddb_api_v3
-  username: ddb_api
-  password: geheim
+s3:
+  endpoint: https://seaweedfs.storage.svc:8333
+  region: eu-central-1
+  bucket: ddb-records
+  existingSecret: ddb-api-v3-s3-credentials
 
 ingress:
   host: api.example.org
   tlsSecretName: api-example-org-tls
+
+apiService:
+  baseUrl: https://api.example.org
 ```
 
 Redis-Adressen, Sentinel-Mastername und Authentifizierung setzt der Chart
-automatisch. Die öffentliche API-Basis-URL wird aus Host und TLS-Konfiguration
-abgeleitet. Ist der Ingress deaktiviert, muss `apiService.publicBaseUrl`
-explizit gesetzt werden.
+automatisch. Host und TLS-Konfiguration des Ingress bestimmen den öffentlichen
+Einstiegspunkt. `apiService.baseUrl` legt unabhängig davon die Basis für Named
+Graphs fest und wird als `DDB_API_BASE_URL` an die Anwendung übergeben. Standard
+ist `https://api.deutsche-digitale-bibliothek.de`. Erlaubt ist ein HTTP(S)-Origin
+mit optionalem Port und abschließendem Slash; Request-Header verändern die Basis
+nicht. Eine Änderung gilt für spätere `POST`- und `PUT`-Schreibzugriffe. Bereits
+gespeicherte Graphnamen bleiben beim Lesen erhalten.
 
 Seltene Spring-Einstellungen können weiterhin gezielt überschrieben werden:
 
@@ -70,51 +76,49 @@ gateway:
     RATE_LIMIT_BURST_CAPACITY: "50"
 apiService:
   extraEnv:
-    DDB_API_MAX_RECORDS: "20000"
+    DDB_API_UPLOAD_MAX_FILE_SIZE: "2MB"
 ```
 
-## Cassandra
+## SeaweedFS S3
 
-Cassandra wird bewusst nicht als Abhängigkeit dieses Anwendungs-Charts
-installiert. Datenbank und Anwendung behalten dadurch getrennte Lebenszyklen.
-Für einen produktiven Cassandra-Cluster auf Kubernetes oder OpenShift wird der
-[K8ssandra Operator](https://docs.k8ssandra.io/install/) empfohlen:
+Record-Daten liegen ausschließlich in einem extern betriebenen SeaweedFS-S3-
+Bucket. Der Chart installiert keinen einzelnen Storage-Pod als Ersatz für einen
+produktiven Storage-Cluster. Endpunkt, Region und Bucket stehen unter `s3`;
+`pathStyleAccess: true` ermöglicht den Zugriff ohne DNS-Eintrag pro Bucket.
+`connectionTimeout` und `readTimeout` begrenzen die S3-Aufrufe.
 
-```bash
-helm repo add k8ssandra https://helm.k8ssandra.io/stable
-helm repo update k8ssandra
-helm install k8ssandra-operator k8ssandra/k8ssandra-operator \
-  --namespace k8ssandra-operator \
-  --create-namespace
-```
+Den Bucket vor der Installation anlegen und der API-Identität Lese- und Schreibrechte
+für dessen RDF-Objekte sowie Zugriff für `HeadBucket` geben.
+`createBucket` bleibt in Produktion standardmäßig `false`. Der Storage-Endpunkt
+muss atomare bedingte PUTs mit `If-Match` und `If-None-Match` unterstützen; die
+lokale Entwicklungsumgebung ist auf SeaweedFS 4.53 fixiert. Die
+[SeaweedFS-Dokumentation](https://github.com/seaweedfs/seaweedfs/wiki/S3-Conditional-Operations)
+beschreibt diese Operationen. Die Readiness-Probe des API-Service prüft den
+Bucket-Zugriff über den Health-Indikator `s3Storage`.
 
-Der Operator installiert zunächst die benötigten Controller. Der eigentliche
-Cassandra-Cluster wird anschließend als `K8ssandraCluster`-Ressource angelegt.
-Wer nur Cassandra ohne die zusätzlichen K8ssandra-Betriebsfunktionen benötigt,
-kann stattdessen den schlankeren Cass Operator installieren:
+Empfohlen ist `s3.existingSecret` mit einem vorab im Release-Namespace angelegten
+Secret. Es muss die Schlüssel `S3_ACCESS_KEY` und `S3_SECRET_KEY` enthalten.
+Alternativ erzeugt der Chart aus `s3.accessKey` und `s3.secretKey` selbst ein
+Secret. Zugangsdaten stehen ausschließlich im Secret und nicht in der ConfigMap.
+Bei chartverwalteten Zugangsdaten führen geänderte Values zu einem neuen Secret
+und einem automatischen Rollout der API-Pods. Bei `existingSecret` nach einer
+Rotation selbst `kubectl rollout restart deployment/<API-Deployment>` ausführen:
+bereits laufende Prozesse lesen geänderte Secret-Umgebungsvariablen nicht neu.
 
-```bash
-helm install cass-operator k8ssandra/cass-operator \
-  --namespace cass-operator \
-  --create-namespace
-```
-
-Der ältere Chart `k8ssandra/k8ssandra` ist veraltet und sollte nicht für neue
-Installationen verwendet werden. Groundhog2k bietet derzeit keinen
-Cassandra-Chart an. Unter OpenShift erfordert die Operator-Installation Rechte
-zum Anlegen von CRDs und eine geeignete StorageClass.
-
-Nach dem Anlegen des Cassandra-Clusters wird dessen interne Service-Adresse im
-DDB-Chart konfiguriert, beispielsweise:
-
-```yaml
-cassandra:
-  contactPoints: cluster-dc1-service.cassandra.svc:9042
-  localDatacenter: dc1
-  keyspace: ddb_api_v3
-  username: ddb_api
-  password: geheim
-```
+RDF wird vor jedem Speichern mit Apache Jena validiert. `Content-Type` wählt
+das Eingabeformat; alle Triples werden im Named Graph
+`{apiService.baseUrl}/records/{recordId}` vereinigt, standardmäßig
+`https://api.deutsche-digitale-bibliothek.de/records/{recordId}`, und als
+unkomprimiertes Jelly RDF (`application/x-jelly-rdf`) direkt unter
+`{recordId}/record` gespeichert. `GET` liest Jelly und liefert über `Accept`
+ein von Jena unterstütztes Ausgabeformat; ohne Vorgabe TriG. Weitere Namen, etwa
+`{recordId}/item`, werden durch künftig implementierte API-Methoden festgelegt;
+sie sind kein frei wählbarer Parameter der aktuellen Record-API. Es gibt kein
+internes Metadatenmodell und keine zusätzlichen JSON-Manifeste. Die Region ist
+standardmäßig `eu-central-1`. Details stehen im
+[Projekt-README](../../README.md#speicherung-in-seaweedfs). Eine Migration aus
+rohen RDF/XML-Objekten oder dem früheren Manifest-/Blob-Layout muss vor dem
+Umschalten gesondert erfolgen.
 
 ## Redis Sentinel
 
@@ -142,13 +146,17 @@ Redis-Ressourcen und Speicher lassen sich direkt über `redis.resources`,
 
 ## Secrets und Persistenz
 
-Der DDB-Chart erzeugt die Cassandra- und Redis-Secrets. Das zufällige
-Redis-Passwort schützt den Gateway-Benutzer und Sentinel und wird bei Upgrades
-aus dem vorhandenen Secret übernommen. Eine NetworkPolicy erlaubt Zugriffe auf
-Redis und Sentinel nur von den Redis-Pods und den Gateway-Pods desselben
-Namespaces.
+Der DDB-Chart erzeugt das Redis-Secret und optional ein S3-Secret. Bei
+`s3.existingSecret` verwaltet dessen Eigentümer die S3-Zugangsdaten; andernfalls
+verwendet der Chart die expliziten S3-Values und rollt bei Änderungen die API-Pods.
+Zur Rotation müssen Storage-Konto und die verwendeten Kubernetes-Zugangsdaten
+zusammenpassen.
+Das zufällige Redis-Passwort schützt den Gateway-Benutzer und Sentinel und wird
+ebenfalls aus dem vorhandenen Secret übernommen. Eine NetworkPolicy erlaubt
+Zugriffe auf Redis und Sentinel nur von den Redis-Pods und den Gateway-Pods
+desselben Namespaces.
 
-Die Secrets tragen `helm.sh/resource-policy: keep`. Die Redis-StatefulSet-PVCs
+Die vom Chart erzeugten Secrets tragen `helm.sh/resource-policy: keep`. Die Redis-StatefulSet-PVCs
 verwenden außerdem `whenDeleted: Retain` und `whenScaled: Retain`. Secrets,
 Redis-Daten und Sentinel-Zustand bleiben deshalb nach `helm uninstall`
 erhalten. Für eine erneute Installation sollten Release-Name und Namespace
@@ -181,9 +189,8 @@ helm repo add ddb-api-v3 https://mbuechner.github.io/ddb-api-v3
 helm repo update ddb-api-v3
 helm upgrade --install ddb-api-v3 ddb-api-v3/ddb-api-v3 \
   --namespace ddb-api-v3 \
-  --set-string cassandra.contactPoints=cassandra.database.svc:9042 \
-  --set-string cassandra.username="$CASSANDRA_USERNAME" \
-  --set-string cassandra.password="$CASSANDRA_PASSWORD" \
+  --set-string s3.endpoint=https://seaweedfs.storage.svc:8333 \
+  --set-string s3.existingSecret=ddb-api-v3-s3-credentials \
   --set-string ingress.host=api.example.org \
   --wait --timeout 10m
 
@@ -231,8 +238,9 @@ helm upgrade --install ddb-api-v3 ./charts/ddb-api-v3 \
   --namespace ddb-api-v3 --create-namespace \
   --values values-production.yaml
 
-helm lint charts/ddb-api-v3
-helm template ddb-api-v3 charts/ddb-api-v3 --namespace ddb-api-v3
+helm lint charts/ddb-api-v3 --set-string s3.existingSecret=ddb-api-v3-s3-credentials
+helm template ddb-api-v3 charts/ddb-api-v3 --namespace ddb-api-v3 \
+  --set-string s3.existingSecret=ddb-api-v3-s3-credentials
 ```
 
 Nach der Installation lassen sich Rollout und Sentinel-Zustand direkt prüfen.

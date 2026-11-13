@@ -22,6 +22,10 @@ spec:
     metadata:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if not .Values.s3.existingSecret }}
+        # Secret env vars are snapshots: rotate keys, roll pods.
+        checksum/s3-credentials: {{ list .Values.s3.accessKey .Values.s3.secretKey | toJson | sha256sum }}
+        {{- end }}
         {{- with .Values.pod.annotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -53,7 +57,7 @@ spec:
             - configMapRef:
                 name: {{ include "ddb-api-v3.configMapName" . }}
             - secretRef:
-                name: {{ include "ddb-api-v3.cassandraSecretName" . }}
+                name: {{ include "ddb-api-v3.s3SecretName" . }}
           {{- with .Values.apiService.extraEnv }}
           env:
             {{- range $name, $value := . }}
@@ -81,6 +85,8 @@ spec:
             httpGet:
               path: /actuator/health/readiness
               port: http
+            # S3's health request has a two-second deadline.
+            timeoutSeconds: 3
             periodSeconds: 5
             failureThreshold: 3
           resources:

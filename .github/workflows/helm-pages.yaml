@@ -90,7 +90,7 @@ jobs:
           helm dependency build "$chart_dir"
           helm dependency list "$chart_dir"
           helm lint "$chart_dir" \
-            --set-string cassandra.username=lint,cassandra.password=lint
+            --set-string s3.accessKey=lint,s3.secretKey=lint
 
           mkdir -p _site
           helm package "$chart_dir" --destination _site --app-version "$image_tag"

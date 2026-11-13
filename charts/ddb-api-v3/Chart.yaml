@@ -1,8 +1,8 @@
 apiVersion: v2
 name: ddb-api-v3
-description: DDB API v3 with scalable services and Redis Sentinel high availability
+description: DDB API v3 with SeaweedFS S3 persistence and Redis Sentinel high availability
 type: application
-version: 0.5.0
+version: 0.6.0
 appVersion: "0.1.0-SNAPSHOT"
 kubeVersion: ">=1.26.0-0"
 home: https://github.com/mbuechner/ddb-api-v3
