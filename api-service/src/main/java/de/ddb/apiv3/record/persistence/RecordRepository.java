@@ -18,7 +18,6 @@
 package de.ddb.apiv3.record.persistence;
 
 import de.ddb.apiv3.record.StoredRecord;
-import de.ddb.apiv3.record.StoredRecordContent;
 
 import java.util.Optional;
 
@@ -39,14 +38,6 @@ public interface RecordRepository {
      * @return the record, or an empty value when it does not exist
      */
     Optional<StoredRecord> findById(String recordId);
-
-    /**
-     * Reads the canonical RDF/XML independently from the administrative metadata lookup.
-     *
-     * @param recordId validated record identifier
-     * @return content and the metadata needed for lifecycle and cache handling
-     */
-    Optional<StoredRecordContent> findContentById(String recordId);
 
     /**
      * Creates a record only if its stable identifier is not present yet.

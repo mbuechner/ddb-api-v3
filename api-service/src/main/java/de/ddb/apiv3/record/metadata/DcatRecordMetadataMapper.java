@@ -18,10 +18,11 @@
 package de.ddb.apiv3.record.metadata;
 
 import de.ddb.apiv3.generated.model.AdmsIdentifier;
-import de.ddb.apiv3.generated.model.DcatCatalogRecord;
-import de.ddb.apiv3.generated.model.DcatDataset;
+import de.ddb.apiv3.generated.model.AdministrativeRecord;
+import de.ddb.apiv3.generated.model.DdbObjectMetadata;
 import de.ddb.apiv3.generated.model.EarlTestResult;
 import de.ddb.apiv3.generated.model.EarlValidationAssertion;
+import de.ddb.apiv3.generated.model.RecordInvalidation;
 import de.ddb.apiv3.record.StoredRecordMetadata;
 import java.net.URI;
 import java.util.LinkedHashSet;
@@ -31,7 +32,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.util.UriComponentsBuilder;
 
-/** Creates the public DCAT 3 JSON-LD representation from host-neutral stored metadata. */
+/** Creates the public administrative JSON-LD document from host-neutral stored metadata. */
 @Component
 public final class DcatRecordMetadataMapper {
 
@@ -44,21 +45,23 @@ public final class DcatRecordMetadataMapper {
             @Value("${ddb.resource-base-url}") String resourceBaseUrl) {
         this.apiBaseUrl = normalizeBaseUrl(apiBaseUrl, "ddb.api.public-base-url");
         this.resourceBaseUrl = normalizeBaseUrl(resourceBaseUrl, "ddb.resource-base-url");
-        this.contextIri = iri(this.apiBaseUrl, "contexts", RecordMetadataContextDocument.FILE_NAME).toString();
+        this.contextIri = iri(this.apiBaseUrl, "contexts", RecordMetadataContextDocument.CURRENT_FILE_NAME).toString();
     }
 
     /**
-     * Projects stored facts into compact JSON-LD using DCAT and its established supporting vocabularies.
-     * Europeana EDM remains available for facts that cannot be represented adequately by DCAT.
+     * Projects administrative facts into BIBFRAME/FOAF and object facts into the existing EDM aggregation.
      * The DDB URLs identify resources and validation criteria; none of them defines vocabulary terms.
      *
      * @param metadata deployment-neutral stored metadata
-     * @return DCAT catalog record with absolute IRIs for the configured API and resource origins
+     * @return administrative record with explicit links in both directions
      */
-    public DcatCatalogRecord toDcatCatalogRecord(StoredRecordMetadata metadata) {
-        URI apiRecordIri = iri(apiBaseUrl, "3", "records", metadata.recordId());
+    public AdministrativeRecord toAdministrativeRecord(StoredRecordMetadata metadata) {
+        URI recordEndpointIri = iri(apiBaseUrl, "3", "records", metadata.recordId());
+        URI apiRecordIri = URI.create(fragment(recordEndpointIri, "metadata"));
         URI itemIri = iri(resourceBaseUrl, "item", metadata.recordId());
-        Set<String> datasetIris = resourceIris("dataset", metadata.datasetIds());
+        Set<URI> datasetIris = datasetIris(metadata, false);
+        Set<URI> recordDatasetIris = datasetIris(metadata, true);
+        String providerIri = iri(resourceBaseUrl, "organization", metadata.providerId()).toString();
         String aggregatorIri = metadata.aggregatorId() == null
                 ? null
                 : iri(resourceBaseUrl, "organization", metadata.aggregatorId()).toString();
@@ -71,47 +74,60 @@ public final class DcatRecordMetadataMapper {
                         ? "Validation passed with warnings."
                         : null);
         EarlValidationAssertion validationAssertion = new EarlValidationAssertion()
-                .atId(fragment(apiRecordIri, "validation"))
+                .atId(fragment(recordEndpointIri, "validation"))
                 .atType(EarlValidationAssertion.AtTypeEnum.EARL_ASSERTION)
+                .subject(recordEndpointIri)
                 .test(profileIri)
                 .mode(EarlValidationAssertion.ModeEnum.EARL_AUTOMATIC)
                 .result(testResult);
 
-        DcatDataset resource = new DcatDataset()
-                .atId(itemIri.toString())
-                .atType(DcatDataset.AtTypeEnum.DCAT_DATASET)
+        DdbObjectMetadata resource = new DdbObjectMetadata()
+                .atId(itemIri)
+                .atType(DdbObjectMetadata.AtTypeEnum.ORE_AGGREGATION)
                 .recordId(metadata.recordId())
                 .datasets(datasetIris)
-                .provider(iri(resourceBaseUrl, "organization", metadata.providerId()).toString())
-                .aggregator(aggregatorIri)
-                .sourceIdentifier(sourceIdentifier(metadata.sourceId()))
-                .publicationStatus(publicationStatus(metadata.publicationStatus()))
+                .isPrimaryTopicOf(Set.of(apiRecordIri))
+                .adminMetadata(Set.of(apiRecordIri))
+                .provider(URI.create(providerIri))
+                .aggregator(aggregatorIri == null ? null : URI.create(aggregatorIri))
+                .sourceIdentifier(sourceIdentifier(metadata.sourceId(), providerIri))
                 .invalidatedAtTime(metadata.isTombstone() ? metadata.deletedAt() : null)
-                .deletionReason(deletionReason(metadata))
-                .deletionComment(metadata.isTombstone() ? metadata.deletionComment() : null)
-                .validationAssertion(validationAssertion);
+                .wasInvalidatedBy(metadata.isTombstone() ? new RecordInvalidation()
+                        .atId(URI.create(fragment(recordEndpointIri, "deletion")))
+                        .atType(RecordInvalidation.AtTypeEnum.PROV_ACTIVITY)
+                        .deletionReason(deletionReason(metadata))
+                        .deletionComment(metadata.deletionComment()) : null);
 
-        return new DcatCatalogRecord()
-                .atContext(contextIri)
-                .atId(fragment(apiRecordIri, "metadata"))
-                .atType(DcatCatalogRecord.AtTypeEnum.DCAT_CATALOG_RECORD)
+        return new AdministrativeRecord()
+                .atContext(URI.create(contextIri))
+                .atId(apiRecordIri)
+                .atType(Set.of(AdministrativeRecord.AtTypeEnum.BF_ADMIN_METADATA,
+                        AdministrativeRecord.AtTypeEnum.FOAF_DOCUMENT))
                 .primaryTopic(resource)
+                .adminMetadataFor(itemIri)
+                .datasets(recordDatasetIris)
+                .recordProfile(iri(apiBaseUrl, "profiles", "record-metadata", "ddb-v2"))
+                .publicationStatus(publicationStatus(metadata.publicationStatus()))
+                .validationAssertion(validationAssertion)
                 .createdAt(metadata.createdAt())
                 .modifiedAt(metadata.modifiedAt());
     }
 
-    private Set<String> resourceIris(String resourceType, java.util.List<String> ids) {
-        Set<String> result = new LinkedHashSet<>();
-        ids.stream()
-                .map(id -> iri(resourceBaseUrl, resourceType, id).toString())
-                .forEach(result::add);
+    private Set<URI> datasetIris(StoredRecordMetadata metadata, boolean records) {
+        Set<URI> result = new LinkedHashSet<>();
+        Set<String> ids = new LinkedHashSet<>();
+        ids.add("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+        ids.addAll(metadata.datasetIds());
+        ids.stream().map(id -> records ? iri(resourceBaseUrl, "dataset", id, "records")
+                : iri(resourceBaseUrl, "dataset", id)).forEach(result::add);
         return result;
     }
 
-    private static AdmsIdentifier sourceIdentifier(String sourceId) {
+    private static AdmsIdentifier sourceIdentifier(String sourceId, String providerIri) {
         return sourceId == null
                 ? null
-                : new AdmsIdentifier().atType(AdmsIdentifier.AtTypeEnum.ADMS_IDENTIFIER).notation(sourceId);
+                : new AdmsIdentifier().atType(AdmsIdentifier.AtTypeEnum.ADMS_IDENTIFIER).notation(sourceId)
+                        .creator(URI.create(providerIri));
     }
 
     private static URI deletionReason(StoredRecordMetadata metadata) {
@@ -126,14 +142,14 @@ public final class DcatRecordMetadataMapper {
         return reason;
     }
 
-    private static DcatDataset.PublicationStatusEnum publicationStatus(
+    private static AdministrativeRecord.PublicationStatusEnum publicationStatus(
             StoredRecordMetadata.PublicationStatus status) {
         return switch (status) {
-            case DRAFT -> DcatDataset.PublicationStatusEnum
+            case DRAFT -> AdministrativeRecord.PublicationStatusEnum
                     .HTTP_PUBLICATIONS_EUROPA_EU_RESOURCE_AUTHORITY_DATASET_STATUS_DEVELOP;
-            case PUBLISHED -> DcatDataset.PublicationStatusEnum
+            case PUBLISHED -> AdministrativeRecord.PublicationStatusEnum
                     .HTTP_PUBLICATIONS_EUROPA_EU_RESOURCE_AUTHORITY_DATASET_STATUS_COMPLETED;
-            case WITHDRAWN, DELETED -> DcatDataset.PublicationStatusEnum
+            case WITHDRAWN, DELETED -> AdministrativeRecord.PublicationStatusEnum
                     .HTTP_PUBLICATIONS_EUROPA_EU_RESOURCE_AUTHORITY_DATASET_STATUS_WITHDRAWN;
         };
     }

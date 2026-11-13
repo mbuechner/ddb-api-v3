@@ -31,6 +31,8 @@ public final class RecordMetadataContextDocument {
 
     public static final String FILE_NAME = "record-metadata-v1.jsonld";
     public static final String PATH = "/contexts/" + FILE_NAME;
+    public static final String CURRENT_FILE_NAME = "ddb-api-v3-2.jsonld";
+    public static final String CURRENT_PATH = "/contexts/" + CURRENT_FILE_NAME;
 
     private final Resource resource;
 

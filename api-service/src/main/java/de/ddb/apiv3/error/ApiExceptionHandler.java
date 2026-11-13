@@ -99,14 +99,13 @@ public class ApiExceptionHandler {
                 "RECORD_ALREADY_EXISTS", request, List.of());
     }
 
-    /** Maps explicit endpoint states such as a tombstone (410) or failed negotiation (406). */
+    /** Maps explicit endpoint failures such as a conflicting ID or failed write precondition. */
     @ExceptionHandler(ResponseStatusException.class)
     ResponseEntity<Problem> handleResponseStatus(ResponseStatusException exception,
                                                   HttpServletRequest request) {
         HttpStatusCode statusCode = exception.getStatusCode();
         HttpStatus status = HttpStatus.resolve(statusCode.value());
         String code = switch (statusCode.value()) {
-            case 410 -> "RECORD_GONE";
             case 406 -> "NOT_ACCEPTABLE";
             default -> status == null ? "HTTP_STATUS_" + statusCode.value() : status.name();
         };

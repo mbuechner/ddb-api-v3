@@ -29,16 +29,18 @@ import java.nio.charset.StandardCharsets;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.ActiveProfiles;
 
 /**
  * Verifies request and response compression at the embedded Jetty boundary.
  *
  * <p>MockMvc bypasses the servlet container and cannot establish this behavior, so the tests use
- * a real random-port server and the JDK HTTP client. They protect byte preservation, the
- * representation-specific strong ETag and decompression of a complete gzip multipart entity.
+ * a real random-port server and the JDK HTTP client. They protect metadata response compression,
+ * encoding-specific strong ETags and decompression of a complete gzip multipart entity.
  * Other content codings are not implied by these tests.</p>
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
@@ -64,10 +66,13 @@ class HttpCompressionIntegrationTest {
     @LocalServerPort
     private int port;
 
+    @Autowired
+    private JdbcClient jdbcClient;
+
     @Test
     void compressesResponsesAndKeepsStrongEtagsRepresentationSpecific() throws Exception {
-        HttpRequest request = HttpRequest.newBuilder(uri("/3/records/" + DEMO_ID + "/content"))
-                .header("Accept", "application/rdf+xml")
+        HttpRequest request = HttpRequest.newBuilder(uri("/3/records/" + DEMO_ID))
+                .header("Accept", "application/ld+json")
                 .header("Accept-Encoding", "gzip")
                 .GET()
                 .build();
@@ -79,7 +84,7 @@ class HttpCompressionIntegrationTest {
         assertThat(response.headers().firstValue("Vary").orElse("")).contains("Accept-Encoding");
         assertThat(response.headers().firstValue("ETag").orElse("")).endsWith("--gzip\"");
         assertThat(gunzip(response.body()))
-                .isEqualTo(readIdentityContent(DEMO_ID));
+                .isEqualTo(readIdentityMetadata(DEMO_ID));
     }
 
     @Test
@@ -98,13 +103,16 @@ class HttpCompressionIntegrationTest {
         assertThat(response.statusCode()).isEqualTo(201);
         assertThat(response.headers().firstValue("Location"))
                 .contains("/3/records/" + UPLOAD_ID);
-        assertThat(readIdentityContent(UPLOAD_ID))
-                .isEqualTo(RDF_XML.getBytes(StandardCharsets.UTF_8));
+        assertThat(jdbcClient.sql("SELECT rdf_xml FROM record_metadata_by_id WHERE record_id = :recordId")
+                        .param("recordId", UPLOAD_ID)
+                        .query((row, rowNumber) -> row.getBytes("rdf_xml"))
+                        .single())
+                .containsExactly(RDF_XML.getBytes(StandardCharsets.UTF_8));
     }
 
-    private byte[] readIdentityContent(String recordId) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder(uri("/3/records/" + recordId + "/content"))
-                .header("Accept", "application/rdf+xml")
+    private byte[] readIdentityMetadata(String recordId) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(uri("/3/records/" + recordId))
+                .header("Accept", "application/ld+json")
                 .header("Accept-Encoding", "identity")
                 .GET()
                 .build();

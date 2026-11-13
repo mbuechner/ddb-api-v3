@@ -55,10 +55,10 @@ public record StoredRecordMetadata(
         ValidationStatus validationStatus) {
 
     /**
-     * Whether this state is a tombstone rather than an RDF record that may be served.
+     * Whether this state represents a record tombstone.
      *
      * <p>A tombstone deliberately keeps the stable record identity and administrative change
-     * metadata while making the retained content unavailable through the read API.</p>
+     * metadata independently of whether its RDF payload is retained.</p>
      */
     public boolean isTombstone() {
         return publicationStatus == PublicationStatus.DELETED;

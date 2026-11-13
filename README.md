@@ -5,13 +5,42 @@ Spring-Cloud-Gateway. Lokal speichert der Service in H2; Produktion verwendet
 eine externe Cassandra-Datenbank. Das Gateway begrenzt Zugriffe lokal im
 Prozess und produktiv verteilt über Redis.
 
+Die API-Dokumentation und der OpenAPI-Vertrag liegen im eigenständigen Projekt
+[apiv3-spec](../apiv3-spec/README.md). Beide Projekte werden nebeneinander ausgecheckt:
+
+```text
+apiv3-impl/   Implementierung, Tests und Betrieb
+apiv3-spec/   Dokumentation, OpenAPI und JSON-LD-Contexts
+```
+
+Der Vertrag wird im Spezifikationsprojekt gepflegt. Die Implementierung enthält
+unter [api-service/src/main/openapi/openapi.yaml](api-service/src/main/openapi/openapi.yaml)
+eine bewusst manuell übernommene Kopie. Codegenerierung und die unter
+`/openapi/openapi.yaml` ausgelieferte Datei verwenden diese Kopie.
+Build, Docker und CI funktionieren damit unabhängig vom Spezifikationsprojekt.
+
+Zum Übernehmen eines neuen Vertragsstands aus dem Implementierungsverzeichnis:
+
+```bash
+cp ../apiv3-spec/openapi/openapi.yaml api-service/src/main/openapi/openapi.yaml
+mvn clean verify
+```
+
+Falls der verwendete JSON-LD-Context ebenfalls aktualisiert werden muss, kann er
+aus `../apiv3-spec/contexts/` nach
+`api-service/src/main/resources/static/contexts/` kopiert werden. Versionierte
+Context-URLs behalten ihren Inhalt; semantische Änderungen benötigen eine neue
+Datei und die dazu passende Implementierung.
+
 ## Implementierungsstand
 
-Implementiert sind das Erstellen und Aktualisieren eines Records, der Abruf der
-administrativen DCAT-Metadaten sowie `GET` und `HEAD` des RDF-Inhalts. Die
-OpenAPI-Spezifikation beschreibt darüber hinaus den geplanten vollständigen
-API-v3-Vertrag; noch nicht implementierte Operationen antworten mit
-`501 Not Implemented`.
+Die Records-API umfasst `POST /3/records` sowie `GET`, `HEAD`, `PUT` und `DELETE`
+auf `/3/records/{recordId}`. Implementiert sind das Erstellen und Aktualisieren
+eines Records und der Abruf der administrativen JSON-LD-Metadaten mit `GET`.
+`HEAD` und `DELETE` sind noch nicht implementiert und antworten mit
+`501 Not Implemented`. RDF/XML und optionale Quelldaten werden beim Schreiben
+weiterhin geprüft beziehungsweise gespeichert; separate Abruf-, Batch- und
+Validierungsendpunkte sind nicht Teil der API.
 
 Die OpenAPI-Spezifikation deklariert OAuth2-Scopes, die Anwendung enthält aber
 noch keinen Resource Server. Schreibzugriffe dürfen deshalb nicht öffentlich
@@ -135,10 +164,11 @@ API-Service deshalb nicht horizontal skalierbar.
 mvn clean verify
 ```
 
-- [OpenAPI-Vertrag](api-service/src/main/openapi/openapi.yaml)
-- [Administrative Metadaten und URLs](docs/metadata.md)
-- [RDF-Inhalte und Jena-Konvertierung](docs/content.md)
-- [Persistenz](docs/persistence.md)
-- [Rate Limiting](docs/rate-limiting.md)
+- [OpenAPI-Vertrag](../apiv3-spec/openapi/openapi.yaml)
+- [Metadatenmodell und Endpunktreferenz: Übersicht](../apiv3-spec/docs/metadata-model.md)
+- [Administrative Metadaten und URLs](../apiv3-spec/docs/metadata.md)
+- [Persistenz](../apiv3-spec/docs/persistence.md)
+- [Rate Limiting](../apiv3-spec/docs/rate-limiting.md)
 - [Kubernetes-/Helm-Bereitstellung](charts/ddb-api-v3/README.md)
-- [Entwicklungskonventionen](docs/development-conventions.md)
+- [Entwicklungskonventionen](../apiv3-spec/docs/development-conventions.md)
+- [Metadaten-Dokumentation und Diagramme pflegen](../apiv3-spec/docs/maintenance/metadata-model.md)

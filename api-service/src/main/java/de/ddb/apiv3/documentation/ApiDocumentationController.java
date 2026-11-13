@@ -82,4 +82,12 @@ public class ApiDocumentationController {
                 .body(metadataContext.resource());
     }
 
+    /** The revised profile has its own immutable URL; the legacy context remains unchanged. */
+    @GetMapping(value = RecordMetadataContextDocument.CURRENT_PATH, produces = "application/ld+json")
+    public ResponseEntity<Resource> currentRecordMetadataContext() {
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.maxAge(365, TimeUnit.DAYS).cachePublic().immutable())
+                .body(new ClassPathResource("static/contexts/" + RecordMetadataContextDocument.CURRENT_FILE_NAME));
+    }
+
 }

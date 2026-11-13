@@ -139,6 +139,7 @@
             <resource>
                 <directory>src/main/resources</directory>
             </resource>
+            <!-- Snapshot copied from the independent apiv3-spec project. -->
             <resource>
                 <directory>src/main/openapi</directory>
                 <targetPath>static/openapi</targetPath>

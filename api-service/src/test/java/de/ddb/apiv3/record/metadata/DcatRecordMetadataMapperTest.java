@@ -19,7 +19,7 @@ package de.ddb.apiv3.record.metadata;
 
 import de.ddb.apiv3.record.StoredRecordMetadata;
 
-import de.ddb.apiv3.generated.model.DcatCatalogRecord;
+import de.ddb.apiv3.generated.model.AdministrativeRecord;
 import java.net.URI;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -47,23 +47,24 @@ class DcatRecordMetadataMapperTest {
 
     @Test
     void separatesApiMetadataFromStableDdbResourceIdentifiers() {
-        DcatCatalogRecord result = mapper.toDcatCatalogRecord(metadata(
+        AdministrativeRecord result = mapper.toAdministrativeRecord(metadata(
                 StoredRecordMetadata.PublicationStatus.PUBLISHED,
                 StoredRecordMetadata.ValidationStatus.VALID));
 
-        assertThat(result.getAtId())
+        assertThat(result.getAtId().toString())
                 .isEqualTo("https://metadata.example/api/3/records/" + RECORD_ID + "#metadata");
-        assertThat(result.getAtContext())
-                .isEqualTo("https://metadata.example/api/contexts/record-metadata-v1.jsonld");
-        assertThat(result.getPrimaryTopic().getAtId())
+        assertThat(result.getAtContext().toString())
+                .isEqualTo("https://metadata.example/api/contexts/ddb-api-v3-2.jsonld");
+        assertThat(result.getPrimaryTopic().getAtId().toString())
                 .isEqualTo("https://resources.example/catalog/item/" + RECORD_ID);
-        assertThat(result.getPrimaryTopic().getDatasets()).containsExactly(
+        assertThat(result.getPrimaryTopic().getDatasets()).extracting(URI::toString).containsExactly(
+                "https://resources.example/catalog/dataset/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
                 "https://resources.example/catalog/dataset/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
                 "https://resources.example/catalog/dataset/EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE");
-        assertThat(result.getPrimaryTopic().getProvider())
+        assertThat(result.getPrimaryTopic().getProvider().toString())
                 .isEqualTo(
                         "https://resources.example/catalog/organization/CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC");
-        assertThat(result.getPrimaryTopic().getAggregator())
+        assertThat(result.getPrimaryTopic().getAggregator().toString())
                 .isEqualTo(
                         "https://resources.example/catalog/organization/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     }
@@ -77,21 +78,20 @@ class DcatRecordMetadataMapperTest {
     })
     void mapsLifecycleToTheEuDatasetStatusVocabulary(
             StoredRecordMetadata.PublicationStatus status, String expectedConcept) {
-        DcatCatalogRecord result =
-                mapper.toDcatCatalogRecord(metadata(status, StoredRecordMetadata.ValidationStatus.VALID));
+        AdministrativeRecord result =
+                mapper.toAdministrativeRecord(metadata(status, StoredRecordMetadata.ValidationStatus.VALID));
 
-        assertThat(result.getPrimaryTopic().getPublicationStatus().getValue().toString())
+        assertThat(result.getPublicationStatus().getValue().toString())
                 .isEqualTo("http://publications.europa.eu/resource/authority/dataset-status/" + expectedConcept);
         if (status == StoredRecordMetadata.PublicationStatus.DELETED) {
             assertThat(result.getPrimaryTopic().getInvalidatedAtTime()).isEqualTo(NOW);
-            assertThat(result.getPrimaryTopic().getDeletionReason())
+            assertThat(result.getPrimaryTopic().getWasInvalidatedBy().getDeletionReason())
                     .isEqualTo(URI.create("https://example.org/deletion-reasons/provider-request"));
-            assertThat(result.getPrimaryTopic().getDeletionComment())
+            assertThat(result.getPrimaryTopic().getWasInvalidatedBy().getDeletionComment())
                     .isEqualTo("Vom Datenpartner zurueckgezogen.");
         } else {
             assertThat(result.getPrimaryTopic().getInvalidatedAtTime()).isNull();
-            assertThat(result.getPrimaryTopic().getDeletionReason()).isNull();
-            assertThat(result.getPrimaryTopic().getDeletionComment()).isNull();
+            assertThat(result.getPrimaryTopic().getWasInvalidatedBy()).isNull();
         }
     }
 
@@ -123,21 +123,21 @@ class DcatRecordMetadataMapperTest {
                 null,
                 StoredRecordMetadata.ValidationStatus.VALID);
 
-        DcatCatalogRecord result = mapper.toDcatCatalogRecord(inconsistentMetadata);
+        AdministrativeRecord result = mapper.toAdministrativeRecord(inconsistentMetadata);
 
         assertThat(result.getPrimaryTopic().getInvalidatedAtTime()).isNull();
     }
 
     @Test
     void requiresAnAbsoluteDeletionReasonForATombstone() {
-        assertThatThrownBy(() -> mapper.toDcatCatalogRecord(metadata(
+        assertThatThrownBy(() -> mapper.toAdministrativeRecord(metadata(
                         StoredRecordMetadata.PublicationStatus.DELETED,
                         StoredRecordMetadata.ValidationStatus.VALID,
                         URI.create("provider-request"))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("A tombstone requires an absolute deletionReason IRI");
 
-        assertThatThrownBy(() -> mapper.toDcatCatalogRecord(metadata(
+        assertThatThrownBy(() -> mapper.toAdministrativeRecord(metadata(
                         StoredRecordMetadata.PublicationStatus.DELETED,
                         StoredRecordMetadata.ValidationStatus.VALID,
                         null)))
@@ -154,10 +154,12 @@ class DcatRecordMetadataMapperTest {
     })
     void mapsValidationToEarl(
             StoredRecordMetadata.ValidationStatus status, String expectedOutcome, boolean expectsInfo) {
-        DcatCatalogRecord result =
-                mapper.toDcatCatalogRecord(metadata(StoredRecordMetadata.PublicationStatus.PUBLISHED, status));
+        AdministrativeRecord result =
+                mapper.toAdministrativeRecord(metadata(StoredRecordMetadata.PublicationStatus.PUBLISHED, status));
 
-        var testResult = result.getPrimaryTopic().getValidationAssertion().getResult();
+        var testResult = result.getValidationAssertion().getResult();
+        assertThat(result.getValidationAssertion().getSubject())
+                .isEqualTo(URI.create("https://metadata.example/api/3/records/" + RECORD_ID));
         assertThat(testResult.getOutcome().getValue()).isEqualTo(expectedOutcome);
         assertThat(testResult.getInfo() != null).isEqualTo(expectsInfo);
     }

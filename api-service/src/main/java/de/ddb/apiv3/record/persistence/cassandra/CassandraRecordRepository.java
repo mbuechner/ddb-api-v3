@@ -23,7 +23,6 @@ import com.datastax.oss.driver.api.core.cql.BoundStatement;
 import com.datastax.oss.driver.api.core.cql.Row;
 import com.datastax.oss.driver.api.core.cql.SimpleStatement;
 import de.ddb.apiv3.record.StoredRecord;
-import de.ddb.apiv3.record.StoredRecordContent;
 import de.ddb.apiv3.record.persistence.RecordRepository;
 import de.ddb.apiv3.record.persistence.StoredRecordMetadataJsonCodec;
 import java.nio.ByteBuffer;
@@ -56,11 +55,6 @@ public class CassandraRecordRepository implements RecordRepository {
               FROM record_metadata_by_id
              WHERE record_id = ?
             """);
-    private static final SimpleStatement FIND_CONTENT_BY_ID = SimpleStatement.newInstance("""
-            SELECT metadata_json, rdf_xml
-              FROM record_metadata_by_id
-             WHERE record_id = ?
-            """);
     private static final SimpleStatement CREATE = SimpleStatement.newInstance("""
             INSERT INTO record_metadata_by_id
                 (record_id, metadata_json, rdf_xml, source_xml, etag, last_modified)
@@ -80,7 +74,6 @@ public class CassandraRecordRepository implements RecordRepository {
 
     private final CqlSession session;
     private final PreparedStatement findById;
-    private final PreparedStatement findContentById;
     private final PreparedStatement create;
     private final PreparedStatement replace;
     private final StoredRecordMetadataJsonCodec metadataCodec;
@@ -88,7 +81,6 @@ public class CassandraRecordRepository implements RecordRepository {
     public CassandraRecordRepository(CqlSession session, StoredRecordMetadataJsonCodec metadataCodec) {
         this.session = session;
         this.findById = session.prepare(FIND_BY_ID);
-        this.findContentById = session.prepare(FIND_CONTENT_BY_ID);
         this.create = session.prepare(CREATE);
         this.replace = session.prepare(REPLACE);
         this.metadataCodec = metadataCodec;
@@ -105,14 +97,6 @@ public class CassandraRecordRepository implements RecordRepository {
     public Optional<StoredRecord> findById(String recordId) {
         return Optional.ofNullable(session.execute(findById.bind(recordId)).one())
                 .map(this::mapRecord);
-    }
-
-    @Override
-    public Optional<StoredRecordContent> findContentById(String recordId) {
-        return Optional.ofNullable(session.execute(findContentById.bind(recordId)).one())
-                .map(row -> new StoredRecordContent(
-                        metadataCodec.decode(row.getString("metadata_json")),
-                        toByteArray(row.getByteBuffer("rdf_xml"))));
     }
 
     @Override
@@ -153,16 +137,5 @@ public class CassandraRecordRepository implements RecordRepository {
                 metadataCodec.decode(row.getString("metadata_json")),
                 row.getString("etag"),
                 OffsetDateTime.ofInstant(row.getInstant("last_modified"), ZoneOffset.UTC));
-    }
-
-    private static byte[] toByteArray(ByteBuffer value) {
-        // Tombstones may deliberately retain metadata without retaining the RDF payload.
-        if (value == null) {
-            return null;
-        }
-        ByteBuffer copy = value.asReadOnlyBuffer();
-        byte[] bytes = new byte[copy.remaining()];
-        copy.get(bytes);
-        return bytes;
     }
 }

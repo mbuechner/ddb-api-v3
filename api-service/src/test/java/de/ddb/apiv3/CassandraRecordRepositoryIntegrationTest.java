@@ -71,7 +71,6 @@ class CassandraRecordRepositoryIntegrationTest {
 
     private static final String RECORD_ID = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
     private static final String CREATED_ID = "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC";
-    private static final String TOMBSTONE_ID = "TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT";
     private static final OffsetDateTime LAST_MODIFIED =
             OffsetDateTime.of(2026, 1, 1, 12, 0, 0, 0, ZoneOffset.UTC);
     private static final byte[] RDF_XML = """
@@ -159,37 +158,6 @@ class CassandraRecordRepositoryIntegrationTest {
     }
 
     @Test
-    void readsCanonicalRdfXmlWithContentMetadata() {
-        assertThat(repository.findContentById(RECORD_ID))
-                .hasValueSatisfying(content -> {
-                    assertThat(content.rdfXml()).containsExactly(RDF_XML);
-                    assertThat(content.metadata().recordId()).isEqualTo(RECORD_ID);
-                });
-    }
-
-    @Test
-    void readsATombstoneWithoutRetainedRdfBytes() throws Exception {
-        StoredRecordMetadata tombstone = tombstone(TOMBSTONE_ID);
-        session.execute(SimpleStatement.newInstance("""
-                        INSERT INTO record_metadata_by_id
-                            (record_id, metadata_json, rdf_xml, etag, last_modified)
-                        VALUES (?, ?, ?, ?, ?)
-                        """,
-                TOMBSTONE_ID,
-                objectMapper.writeValueAsString(tombstone),
-                null,
-                "\"tombstone\"",
-                LAST_MODIFIED.toInstant()));
-
-        assertThat(repository.findContentById(TOMBSTONE_ID))
-                .get()
-                .satisfies(content -> {
-                    assertThat(content.metadata().isTombstone()).isTrue();
-                    assertThat(content.rdfXml()).isNull();
-                });
-    }
-
-    @Test
     void createsAnUnknownIdButNeverOverwritesIt() {
         byte[] source = "retained source".getBytes(StandardCharsets.UTF_8);
         StoredRecord record = new StoredRecord(
@@ -206,7 +174,8 @@ class CassandraRecordRepositoryIntegrationTest {
                 .get()
                 .extracting(StoredRecord::etag)
                 .isEqualTo("\"created\"");
-        assertThat(readSource(CREATED_ID)).containsExactly(source);
+        assertThat(readPayload(CREATED_ID, "rdf_xml")).containsExactly(RDF_XML);
+        assertThat(readPayload(CREATED_ID, "source_xml")).containsExactly(source);
     }
 
     @Test
@@ -218,55 +187,25 @@ class CassandraRecordRepositoryIntegrationTest {
         assertThat(repository.replace(record, replacement, null, "\"stale\"")).isFalse();
         assertThat(repository.findById(RECORD_ID)).get().extracting(StoredRecord::etag)
                 .isEqualTo("\"record-demo-001-v1\"");
+        assertThat(readPayload(RECORD_ID, "rdf_xml")).containsExactly(RDF_XML);
 
         assertThat(repository.replace(record, replacement, null, "\"record-demo-001-v1\""))
                 .isTrue();
-        assertThat(repository.findContentById(RECORD_ID))
-                .get()
-                .satisfies(content -> assertThat(content.rdfXml()).containsExactly(replacement));
-        assertThat(readSource(RECORD_ID)).isNull();
+        assertThat(readPayload(RECORD_ID, "rdf_xml")).containsExactly(replacement);
+        assertThat(readPayload(RECORD_ID, "source_xml")).isNull();
     }
 
-    private byte[] readSource(String recordId) {
+    private byte[] readPayload(String recordId, String column) {
         Row row = session.execute(SimpleStatement.newInstance(
-                        "SELECT source_xml FROM record_metadata_by_id WHERE record_id = ?", recordId))
+                        "SELECT rdf_xml, source_xml FROM record_metadata_by_id WHERE record_id = ?", recordId))
                 .one();
         assertThat(row).isNotNull();
-        ByteBuffer source = row.getByteBuffer("source_xml");
-        if (source == null) {
+        ByteBuffer payload = row.getByteBuffer(column);
+        if (payload == null) {
             return null;
         }
-        byte[] bytes = new byte[source.remaining()];
-        source.get(bytes);
+        byte[] bytes = new byte[payload.remaining()];
+        payload.get(bytes);
         return bytes;
-    }
-
-    private static StoredRecordMetadata tombstone(String recordId) {
-        StoredRecordMetadata published = metadata(recordId);
-        return new StoredRecordMetadata(
-                published.recordId(),
-                published.datasetIds(),
-                published.providerId(),
-                published.aggregatorId(),
-                published.sourceId(),
-                published.createdAt(),
-                LAST_MODIFIED,
-                LAST_MODIFIED,
-                java.net.URI.create("https://example.org/deletion-reasons/provider-request"),
-                "Removed by the provider.",
-                StoredRecordMetadata.PublicationStatus.DELETED,
-                published.profileVersion(),
-                null,
-                null,
-                null,
-                published.sourceMediaType(),
-                published.sourceFormat(),
-                published.sourceFormatUri(),
-                published.sourceFormatVersion(),
-                published.sourceProfile(),
-                published.sourceProfileUri(),
-                published.sourceLength(),
-                published.sourceSha256(),
-                published.validationStatus());
     }
 }

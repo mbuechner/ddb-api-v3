@@ -18,11 +18,9 @@
 package de.ddb.apiv3.record.api;
 
 import de.ddb.apiv3.generated.api.RecordsApiDelegate;
-import de.ddb.apiv3.generated.model.DcatCatalogRecord;
+import de.ddb.apiv3.generated.model.AdministrativeRecord;
 import de.ddb.apiv3.generated.model.RecordWriteMetadata;
 import de.ddb.apiv3.record.StoredRecord;
-import de.ddb.apiv3.record.content.RecordContentService;
-import de.ddb.apiv3.record.content.RecordContentService.Representation;
 import de.ddb.apiv3.record.metadata.DcatRecordMetadataMapper;
 import de.ddb.apiv3.record.metadata.RecordMetadataService;
 import de.ddb.apiv3.record.write.RecordUploadService;
@@ -33,13 +31,10 @@ import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
-import org.springframework.core.io.ByteArrayResource;
-import org.springframework.core.io.Resource;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ETag;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -48,7 +43,7 @@ import org.springframework.web.multipart.MultipartFile;
  * Handwritten HTTP adapter for the generated Records API.
  *
  * <p>The generated controller owns mappings and validation. Endpoint-specific behavior lives in
- * the adjacent {@code metadata} and {@code content} packages, keeping this adapter limited to HTTP
+ * the adjacent {@code metadata} and {@code write} packages, keeping this adapter limited to HTTP
  * headers and conditional request handling.</p>
  */
 @Service
@@ -56,26 +51,23 @@ public final class RecordsApiDelegateImpl implements RecordsApiDelegate {
 
     private final RecordMetadataService metadataService;
     private final DcatRecordMetadataMapper metadataMapper;
-    private final RecordContentService contentService;
     private final RecordUploadService uploadService;
     private final HttpServletRequest request;
 
     public RecordsApiDelegateImpl(
             RecordMetadataService metadataService,
             DcatRecordMetadataMapper metadataMapper,
-            RecordContentService contentService,
             RecordUploadService uploadService,
             HttpServletRequest request) {
         this.metadataService = metadataService;
         this.metadataMapper = metadataMapper;
-        this.contentService = contentService;
         this.uploadService = uploadService;
         this.request = request;
     }
 
     /** Validates and atomically creates an uploaded RDF/XML record. */
     @Override
-    public ResponseEntity<DcatCatalogRecord> createRecord(
+    public ResponseEntity<AdministrativeRecord> createRecord(
             RecordWriteMetadata metadata,
             MultipartFile content,
             UUID idempotencyKey,
@@ -86,12 +78,12 @@ public final class RecordsApiDelegateImpl implements RecordsApiDelegate {
         HttpHeaders headers = metadataHeaders(record);
         headers.setLocation(URI.create("/3/records/" + record.metadata().recordId()));
         return new ResponseEntity<>(
-                metadataMapper.toDcatCatalogRecord(record.metadata()), headers, HttpStatus.CREATED);
+                metadataMapper.toAdministrativeRecord(record.metadata()), headers, HttpStatus.CREATED);
     }
 
     /** Updates a record without changing its externally assigned identifier. */
     @Override
-    public ResponseEntity<DcatCatalogRecord> putRecord(
+    public ResponseEntity<AdministrativeRecord> putRecord(
             String recordId,
             String ifMatch,
             RecordWriteMetadata metadata,
@@ -103,14 +95,14 @@ public final class RecordsApiDelegateImpl implements RecordsApiDelegate {
         StoredRecord record = uploadService.update(recordId, metadata, content, source, ifMatch);
         HttpHeaders headers = metadataHeaders(record);
         return new ResponseEntity<>(
-                metadataMapper.toDcatCatalogRecord(record.metadata()),
+                metadataMapper.toAdministrativeRecord(record.metadata()),
                 headers,
                 HttpStatus.OK);
     }
 
-    /** Returns DCAT JSON-LD metadata and applies ETag and Last-Modified preconditions. */
+    /** Returns administrative JSON-LD metadata and applies ETag and Last-Modified preconditions. */
     @Override
-    public ResponseEntity<DcatCatalogRecord> getRecord(
+    public ResponseEntity<AdministrativeRecord> getRecord(
             String recordId,
             String ifNoneMatch,
             String ifModifiedSince,
@@ -122,61 +114,12 @@ public final class RecordsApiDelegateImpl implements RecordsApiDelegate {
             return new ResponseEntity<>(null, headers, HttpStatus.NOT_MODIFIED);
         }
 
-        return new ResponseEntity<>(metadataMapper.toDcatCatalogRecord(record.metadata()), headers, HttpStatus.OK);
-    }
-
-    /**
-     * Returns stored RDF/XML byte-for-byte or the Jena serialization selected by {@code Accept}.
-     */
-    @Override
-    public ResponseEntity<Resource> getRecordContent(
-            String recordId,
-            String ifNoneMatch,
-            String ifModifiedSince,
-            String acceptEncoding) {
-        boolean headRequest = "HEAD".equals(request.getMethod());
-        Representation representation = contentService.getRepresentation(recordId, acceptedMediaTypes());
-        HttpHeaders headers = contentHeaders(representation);
-        if (notModified(representation.etag(), representation.lastModified())) {
-            return new ResponseEntity<>(null, headers, HttpStatus.NOT_MODIFIED);
-        }
-        Resource body = headRequest ? null : new ByteArrayResource(representation.body());
-        return new ResponseEntity<>(body, headers, HttpStatus.OK);
-    }
-
-    /** Returns the same representation headers as GET without invoking a derived serializer. */
-    @Override
-    public ResponseEntity<Void> headRecordContent(
-            String recordId,
-            String ifNoneMatch,
-            String ifModifiedSince,
-            String acceptEncoding) {
-        Representation representation = contentService.getRepresentation(recordId, acceptedMediaTypes());
-        HttpHeaders headers = contentHeaders(representation);
-        HttpStatus status = notModified(representation.etag(), representation.lastModified())
-                ? HttpStatus.NOT_MODIFIED
-                : HttpStatus.OK;
-        return new ResponseEntity<>(null, headers, status);
-    }
-
-    private List<MediaType> acceptedMediaTypes() {
-        return MediaType.parseMediaTypes(request.getHeader(HttpHeaders.ACCEPT));
+        return new ResponseEntity<>(metadataMapper.toAdministrativeRecord(record.metadata()), headers, HttpStatus.OK);
     }
 
     private static HttpHeaders metadataHeaders(StoredRecord record) {
         HttpHeaders headers = commonHeaders(record.etag(), record.lastModified());
         headers.setVary(List.of(HttpHeaders.ACCEPT, HttpHeaders.ACCEPT_ENCODING));
-        return headers;
-    }
-
-    private static HttpHeaders contentHeaders(Representation representation) {
-        HttpHeaders headers = commonHeaders(representation.etag(), representation.lastModified());
-        headers.setContentType(representation.mediaType());
-        headers.setVary(List.of(HttpHeaders.ACCEPT, HttpHeaders.ACCEPT_ENCODING));
-        headers.set("X-Content-SHA256", representation.contentSha256());
-        if (representation.contentLength() != null) {
-            headers.setContentLength(representation.contentLength());
-        }
         return headers;
     }
 

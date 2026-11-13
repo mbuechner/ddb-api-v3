@@ -18,7 +18,6 @@
 package de.ddb.apiv3.record.persistence.h2;
 
 import de.ddb.apiv3.record.StoredRecord;
-import de.ddb.apiv3.record.StoredRecordContent;
 import de.ddb.apiv3.record.persistence.RecordRepository;
 import de.ddb.apiv3.record.persistence.StoredRecordMetadataJsonCodec;
 import java.time.OffsetDateTime;
@@ -35,11 +34,6 @@ public class H2RecordRepository implements RecordRepository {
 
     private static final String FIND_BY_ID = """
             SELECT metadata_json, etag, last_modified
-              FROM record_metadata_by_id
-             WHERE record_id = :recordId
-            """;
-    private static final String FIND_CONTENT_BY_ID = """
-            SELECT metadata_json, rdf_xml
               FROM record_metadata_by_id
              WHERE record_id = :recordId
             """;
@@ -77,17 +71,6 @@ public class H2RecordRepository implements RecordRepository {
                         metadataCodec.decode(resultSet.getString("metadata_json")),
                         resultSet.getString("etag"),
                         resultSet.getObject("last_modified", OffsetDateTime.class)))
-                .optional();
-    }
-
-    @Override
-    public Optional<StoredRecordContent> findContentById(String recordId) {
-        return jdbcClient
-                .sql(FIND_CONTENT_BY_ID)
-                .param("recordId", recordId)
-                .query((resultSet, rowNumber) -> new StoredRecordContent(
-                        metadataCodec.decode(resultSet.getString("metadata_json")),
-                        resultSet.getBytes("rdf_xml")))
                 .optional();
     }
 

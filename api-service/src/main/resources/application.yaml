@@ -9,17 +9,6 @@ server:
     additional-mime-types:
       - application/ld+json
       - application/problem+json
-      - application/rdf+xml
-      - application/n-quads
-      - application/n-triples
-      - application/rdf+json
-      - application/trig
-      - application/trix
-      - application/rdf+thrift
-      - application/rdf+protobuf
-      - application/x-ndjson
-      - multipart/mixed
-      - text/turtle
 
 spring:
   config:
