@@ -92,8 +92,21 @@ jobs:
           helm lint "$chart_dir" \
             --set-string s3.accessKey=lint,s3.secretKey=lint
 
+          # Stable SemVer: major.minor.(run * 1000 + attempt), no --devel needed.
+          chart_version="$(helm show chart "$chart_dir" | awk '$1 == "version:" {print $2; exit}')"
+          [[ "$chart_version" =~ ^([0-9]+)\.([0-9]+)\.[0-9]+$ ]] || {
+            echo "Chart version must be a stable major.minor.patch version" >&2
+            exit 1
+          }
+          chart_line="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+          [[ "$GITHUB_RUN_NUMBER" =~ ^[1-9][0-9]{0,8}$ && "$GITHUB_RUN_ATTEMPT" =~ ^[1-9][0-9]{0,2}$ ]] || {
+            echo "Expected run number 1..999999999 and attempt 1..999" >&2
+            exit 1
+          }
+          package_version="${chart_line}.$((GITHUB_RUN_NUMBER * 1000 + GITHUB_RUN_ATTEMPT))"
           mkdir -p _site
-          helm package "$chart_dir" --destination _site --app-version "$image_tag"
+          helm package "$chart_dir" --destination _site \
+            --version "$package_version" --app-version "$image_tag"
           helm repo index _site --url "${{ steps.pages.outputs.base_url }}"
 
           printf '%s\n' \

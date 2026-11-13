@@ -208,6 +208,14 @@ prüft vor der Veröffentlichung beide Image-Manifeste. Nach Aktivierung von
 **Settings → Pages → Source:
 GitHub Actions** kann der veröffentlichte Chart installiert werden:
 
+Veröffentlichte Pakete verwenden stabile Versionen wie `0.6.42001`:
+Major und Minor stammen aus `Chart.yaml`, den Patch berechnet CI als
+`Workflow-Laufnummer * 1000 + Ausführungsversuch`. Die Quell-Patchnummer wird
+beim Paketieren ersetzt. Versuche sind auf 1 bis 999 begrenzt, damit auch
+Wiederholungen eine eindeutige Version erhalten. Normale Helm-Aufrufe wählen
+diese Pakete ohne Zusatzoption aus; das Pages-Repository enthält jeweils den
+zuletzt veröffentlichten Stand.
+
 ```bash
 helm repo add ddb-api-v3 https://mbuechner.github.io/ddb-api-v3
 helm repo update
