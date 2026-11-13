@@ -31,18 +31,7 @@ public class ClientIdKeyResolverConfiguration {
 
     private static final Pattern CLIENT_ID = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}");
 
-    /**
-     * Uses the authenticated principal whenever an upstream security filter has established one.
-     * A syntactically validated header fallback exists for development and integration testing;
-     * production disables it so an untrusted caller cannot select another client's bucket.
-     * Anonymous traffic can use the direct peer address in a separate namespace; forwarded
-     * address headers are intentionally not trusted or parsed here.
-     *
-     * @param allowHeader whether the development-only client header may be used
-     * @param headerName centrally configured client header name
-     * @param allowRemoteAddress whether anonymous requests may use the direct peer address
-     * @return a resolver producing keys in the {@code client:<client-id>} namespace
-     */
+    /** Principal first, optional dev header second, direct peer IP last. Forwarded IPs never count. */
     @Bean
     KeyResolver clientIdKeyResolver(
             @Value("${ddb.gateway.client-id.allow-header:false}") boolean allowHeader,
@@ -50,7 +39,7 @@ public class ClientIdKeyResolverConfiguration {
             @Value("${ddb.gateway.client-id.allow-remote-address:true}")
                     boolean allowRemoteAddress) {
         return exchange -> exchange.<Principal>getPrincipal()
-                .map(Principal::getName)
+                .map(principal -> principal.getName())
                 .switchIfEmpty(Mono.defer(() -> allowHeader
                         ? Mono.justOrEmpty(exchange.getRequest().getHeaders().getFirst(headerName))
                         : Mono.empty()))

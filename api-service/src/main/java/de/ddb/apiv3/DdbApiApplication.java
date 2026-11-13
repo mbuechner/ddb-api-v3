@@ -17,23 +17,16 @@
  */
 package de.ddb.apiv3;
 
+import de.ddb.apiv3.config.ApiProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 
-/**
- * Starts the DDB API v3 application.
- *
- * <p>HTTP interfaces and transport DTOs are generated from the OpenAPI contract during the
- * Maven build. Application code therefore remains behind the generated delegate boundary.</p>
- */
+/** Boots HTTP, Jena and S3. Record bytes live in SeaweedFS, not in this process. */
 @SpringBootApplication
+@EnableConfigurationProperties(ApiProperties.class)
 public class DdbApiApplication {
 
-    /**
-     * Application entry point.
-     *
-     * @param args Spring Boot command-line arguments
-     */
     public static void main(String[] args) {
         SpringApplication.run(DdbApiApplication.class, args);
     }

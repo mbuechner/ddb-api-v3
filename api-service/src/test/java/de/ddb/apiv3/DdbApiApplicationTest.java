@@ -17,38 +17,54 @@
  */
 package de.ddb.apiv3;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
+import de.ddb.apiv3.storage.RdfDocumentStore;
+import de.ddb.apiv3.storage.s3.S3RdfDocumentStore;
+import de.ddb.apiv3.storage.s3.S3StorageProperties;
+import de.ddb.apiv3.rdf.RdfCodec;
+import de.ddb.apiv3.support.S3TestServer;
+import de.ddb.apiv3.support.S3TestSupport;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.context.ApplicationContext;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.jdbc.Sql;
+import software.amazon.awssdk.services.s3.S3Client;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
-/**
- * Smoke-tests development application startup and repeatable H2 initialization.
- *
- * <p>Running both SQL resources again models an application restart against an existing local
- * database. The fixed seed must remain unique and unchanged; production Cassandra initialization
- * is intentionally covered by its dedicated container test.</p>
- */
-@SpringBootTest(properties = "spring.datasource.url=jdbc:h2:mem:context-test;DB_CLOSE_DELAY=-1")
+/** Confirms that storage survives recreating the adapter without an internal record model. */
+@SpringBootTest
 @ActiveProfiles("dev")
-class DdbApiApplicationTest {
+class DdbApiApplicationTest extends S3TestSupport {
 
     @Autowired
-    private JdbcClient jdbcClient;
+    private ApplicationContext context;
+
+    @Autowired
+    private RdfDocumentStore repository;
+
+    @Autowired
+    private S3Client s3Client;
+
+    @Autowired
+    private S3StorageProperties properties;
+
+    @Autowired
+    private RdfCodec codec;
 
     @Test
-    @Sql({"/db/h2/schema.sql", "/db/h2/data.sql"})
-    void databaseInitializationCanRunAgainWithoutChangingTheSeed() {
-        var seedCount = jdbcClient
-                .sql("SELECT COUNT(*) FROM record_metadata_by_id WHERE record_id = :recordId")
-                .param("recordId", "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567")
-                .query(Long.class)
-                .single();
+    void addressesTheSameStoredRdfThroughAnotherRepositoryInstanceWithoutADatasource() {
+        String id = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        byte[] jelly = codec.toJelly(S3TestServer.DEMO_RDF, "application/rdf+xml",
+                "https://api.deutsche-digitale-bibliothek.de/records/" + id);
+        String originalEtag = repository.create(id, "record", jelly).orElseThrow();
+        var recreatedRepository = new S3RdfDocumentStore(s3Client, properties);
 
-        assertThat(seedCount).isOne();
+        assertThat(recreatedRepository.create(id, "record", jelly)).isEmpty();
+        assertThat(recreatedRepository.replace(id, "record", jelly, originalEtag)).isPresent();
+        assertThat(recreatedRepository.read(id, "record").orElseThrow().asByteArray()).containsExactly(jelly);
+        assertThat(STORAGE.storedRdf(id)).containsExactly(jelly);
+        assertThat(context.getBeansOfType(DataSource.class)).isEmpty();
     }
 }

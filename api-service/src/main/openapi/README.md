@@ -1,21 +1,32 @@
-# OpenAPI-Kopie für die Implementierung
+# OpenAPI-Vertrag der RDF-API
 
-Die maßgebliche Spezifikation wird im eigenständigen Projekt `apiv3-spec` unter
-`openapi/openapi.yaml` gepflegt. Diese lokale Kopie hält Codegenerierung, Tests,
-Container-Build und Swagger UI unabhängig von einem zweiten Checkout.
+`openapi.yaml` beschreibt `GET`, `POST` und `PUT` für `/3/records/{recordId}`.
+Maven validiert die Datei; der Service liefert sie für Swagger UI unverändert
+unter `/openapi/openapi.yaml` aus.
 
-Nach einer Vertragsänderung aus dem Wurzelverzeichnis von `apiv3-impl` kopieren
-und prüfen:
+Nach einer Änderung aus dem Repository-Wurzelverzeichnis prüfen:
 
 ```bash
-cp ../apiv3-spec/openapi/openapi.yaml api-service/src/main/openapi/openapi.yaml
 mvn clean verify
 ```
 
-Unter PowerShell kann statt `cp` auch `Copy-Item` verwendet werden.
-Die aktualisierte Kopie zusammen mit den dazugehörigen Implementierungsänderungen
-einchecken. Änderungen am Vertrag zuerst in `apiv3-spec` vornehmen.
+Die kleinen Controller sind handgeschrieben. `InputStreamResource` hält den
+Request-Body offen, bis der Upload-Service ihn mit Größenlimit einliest.
+Apache Jena liest das durch `Content-Type` gewählte RDF-Format. Alle Triples
+werden im Named Graph `{Basis-URL}/records/{recordId}` vereinigt. Die Basis steht
+in `ddb.api.base-url` beziehungsweise `DDB_API_BASE_URL` und lautet standardmäßig
+`https://api.deutsche-digitale-bibliothek.de`. Sie wird aus der Konfiguration
+gelesen, nicht aus Request-Headern. Das Ergebnis wird als unkomprimiertes Jelly RDF
+gespeichert. `GET` erhält vorhandene Graphnamen und wandelt Jelly
+in das mit `Accept` gewählte Jena-Format um; ohne Vorgabe ist es TriG.
+Dataset-Formate enthalten den Graphnamen, Graph-Formate dessen vollständige Triples.
+Fehler nutzen Springs `ProblemDetail`; eigene Metadaten-DTOs sind nicht nötig.
 
-`templates/` enthält implementierungsspezifische Java-Generatorvorlagen und
-bleibt deshalb hier. Die [API-Dokumentation](../../../../../apiv3-spec/README.md)
-liegt im Spezifikationsprojekt.
+Die Implementierung von `/records` liegt im Package `de.ddb.apiv3.records`.
+Gemeinsame RDF-Verarbeitung liegt unter `rdf`, die Speicherabstraktion
+`RdfDocumentStore` unter `storage` und deren S3-Implementierung unter `storage.s3`.
+Das Package `items` ist bereits dokumentiert; ein Items-Endpunkt ist noch nicht
+implementiert und deshalb nicht Teil dieses Vertrags.
+
+Das separate Projekt `apiv3-spec` kann einen weitergehenden Planungsstand
+enthalten. Änderungen vor einer Übernahme mit diesem RDF-Vertrag abgleichen.

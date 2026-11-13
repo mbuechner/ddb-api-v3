@@ -1,0 +1,137 @@
+/*
+ * Copyright 2026 Michael Büchner, Deutsche Nationalbibliothek
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * This code was generated with assistance from OpenAI ChatGPT.
+ */
+package de.ddb.apiv3.records;
+
+import de.ddb.apiv3.storage.RdfDocumentStore;
+import de.ddb.apiv3.storage.StorageException;
+import de.ddb.apiv3.rdf.RdfCodec;
+import jakarta.validation.constraints.Pattern;
+import java.net.URI;
+import java.util.UUID;
+import org.apache.jena.riot.RDFLanguages;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.ETag;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.InvalidMediaTypeException;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
+
+/** RDF on the wire, Jelly in S3. The record route always owns the same object key. */
+@RestController
+public final class RecordsController {
+
+    private static final String RECORD_PATH = "/3/records/{recordId}";
+    private static final String DDB_ID = "[A-Z2-7]{32}";
+    private static final java.util.regex.Pattern STRONG_ETAG = java.util.regex.Pattern.compile(
+            "\"[\\x21\\x23-\\x7E\\x80-\\xFF]*\"");
+    private final RecordUploadService uploadService;
+    private final RdfDocumentStore repository;
+    private final RdfCodec rdfCodec;
+
+    public RecordsController(RecordUploadService uploadService, RdfDocumentStore repository, RdfCodec rdfCodec) {
+        this.uploadService = uploadService;
+        this.repository = repository;
+        this.rdfCodec = rdfCodec;
+    }
+
+    @PostMapping(path = RECORD_PATH)
+    public ResponseEntity<Void> createRecord(
+            @PathVariable @Pattern(regexp = DDB_ID) String recordId,
+            @RequestBody InputStreamResource body,
+            @RequestHeader(name = HttpHeaders.CONTENT_TYPE, required = false) String contentType) {
+        String etag = uploadService.create(recordId, body, contentType);
+        return ResponseEntity.created(URI.create("/3/records/" + recordId))
+                .eTag(etag)
+                .header("X-Request-Id", UUID.randomUUID().toString())
+                .build();
+    }
+
+    @PutMapping(path = RECORD_PATH)
+    public ResponseEntity<Void> putRecord(
+            @PathVariable @Pattern(regexp = DDB_ID) String recordId,
+            @RequestBody InputStreamResource body,
+            @RequestHeader(name = HttpHeaders.CONTENT_TYPE, required = false) String contentType,
+            @RequestHeader(name = "If-Match", required = false) String ifMatch) {
+        String etag = uploadService.update(recordId, body, contentType, ifMatch);
+        // PUT transforms the representation, so RFC 9110 forbids a response ETag here.
+        return ResponseEntity.noContent()
+                .header("X-Record-ETag", etag)
+                .header("X-Request-Id", UUID.randomUUID().toString())
+                .build();
+    }
+
+    @GetMapping(path = RECORD_PATH)
+    public ResponseEntity<byte[]> getRecord(
+            @PathVariable @Pattern(regexp = DDB_ID) String recordId,
+            @RequestHeader(name = HttpHeaders.ACCEPT, defaultValue = "application/trig") String accept,
+            @RequestHeader(name = HttpHeaders.IF_NONE_MATCH, required = false) String ifNoneMatch) {
+        MediaType outputType;
+        try {
+            outputType = rdfCodec.outputMediaType(MediaType.parseMediaTypes(accept));
+        } catch (InvalidMediaTypeException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Accept is not a valid media type list", exception);
+        }
+        var stored = repository.read(recordId, "record")
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "The record does not exist"));
+        String recordEtag = stored.response().eTag();
+        if (recordEtag == null || !STRONG_ETAG.matcher(recordEtag).matches()
+                || !RdfCodec.JELLY_CONTENT_TYPE.equals(stored.response().contentType())) {
+            throw new StorageException("The stored record has invalid Jelly metadata");
+        }
+
+        // Formats and gzip change bytes. This ETag compares RDF semantics; the strong one is for PUT.
+        String responseEtag = "W/" + recordEtag;
+        boolean notModified = matches(ifNoneMatch, recordEtag);
+        var response = ResponseEntity.status(notModified
+                        ? HttpStatus.NOT_MODIFIED : HttpStatus.OK)
+                .eTag(responseEtag)
+                .header("X-Record-ETag", recordEtag)
+                .header("X-Request-Id", UUID.randomUUID().toString())
+                .varyBy(HttpHeaders.ACCEPT, HttpHeaders.ACCEPT_ENCODING);
+        if (notModified) {
+            return response.build();
+        }
+        return response.contentType(outputType)
+                .body(rdfCodec.fromJelly(stored.asByteArray(),
+                        RDFLanguages.contentTypeToLang(outputType.getType() + "/" + outputType.getSubtype())));
+    }
+
+    private static boolean matches(String ifNoneMatch, String recordEtag) {
+        if (ifNoneMatch == null) {
+            return false;
+        }
+        if ("*".equals(ifNoneMatch.trim())) {
+            return true;
+        }
+        try {
+            return ETag.parse(ifNoneMatch).stream()
+                    .anyMatch(tag -> tag.compare(ETag.create(recordEtag), false));
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
+    }
+}

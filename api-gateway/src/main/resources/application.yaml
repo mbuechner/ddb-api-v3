@@ -21,14 +21,6 @@ spring:
         webflux:
           metrics:
             enabled: true
-          # Spring Cloud Gateway 5.x prefix. These names also define the public
-          # header contract mirrored below for the Bucket4j limiter.
-          redis-rate-limiter:
-            include-headers: true
-            remaining-header: X-RateLimit-Remaining
-            replenish-rate-header: X-RateLimit-Replenish-Rate
-            burst-capacity-header: X-RateLimit-Burst-Capacity
-            requested-tokens-header: X-RateLimit-Requested-Tokens
           routes:
             - id: records
               uri: ${API_SERVICE_URI:http://127.0.0.1:8080}
@@ -43,10 +35,8 @@ spring:
                     bucket4j-rate-limiter.refillTokens: ${RATE_LIMIT_REPLENISH_RATE:10}
                     bucket4j-rate-limiter.refillPeriod: ${RATE_LIMIT_REFILL_PERIOD:1s}
                     bucket4j-rate-limiter.requestedTokens: ${RATE_LIMIT_REQUESTED_TOKENS:1}
-                    bucket4j-rate-limiter.headerName: ${spring.cloud.gateway.server.webflux.redis-rate-limiter.remaining-header}
-                # SCG 5.0.3's Bucket4jRateLimiter exposes only the remaining-token
-                # header. Built-in response filters add the other immutable route
-                # settings to successful responses without custom Java code.
+                    bucket4j-rate-limiter.headerName: X-RateLimit-Remaining
+                # Bucket4j emits the balance; these filters add the fixed bucket settings.
                 - name: SetResponseHeader
                   args:
                     name: X-RateLimit-Replenish-Rate
@@ -62,7 +52,7 @@ spring:
             - id: documentation
               uri: ${API_SERVICE_URI:http://127.0.0.1:8080}
               predicates:
-                - Path=/,/openapi/**,/swagger-ui.html,/webjars/**,/contexts/**
+                - Path=/,/openapi/**,/swagger-ui.html,/webjars/**
           # Global framework CORS handling also answers OPTIONS requests that do not
           # match a route predicate. Credentials stay disabled because wildcard
           # origins and credentialed browser requests are mutually exclusive.
@@ -74,6 +64,11 @@ spring:
                 allowed-methods: "*"
                 allowed-headers: "*"
                 exposed-headers:
+                  # Browsers need the write ETag for the next If-Match request.
+                  - ETag
+                  - X-Record-ETag
+                  - Location
+                  - X-Request-Id
                   - X-RateLimit-Remaining
                   - X-RateLimit-Replenish-Rate
                   - X-RateLimit-Burst-Capacity

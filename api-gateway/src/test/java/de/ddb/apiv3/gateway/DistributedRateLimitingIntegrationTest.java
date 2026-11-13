@@ -56,7 +56,11 @@ class DistributedRateLimitingIntegrationTest {
     private static final DockerImageName REDIS_IMAGE = DockerImageName.parse("redis:8.10.1-alpine");
 
     @Container
-    private static final GenericContainer<?> REDIS = new GenericContainer<>(REDIS_IMAGE).withExposedPorts(6379);
+    private static final GenericContainer<?> REDIS = new GenericContainer<>(REDIS_IMAGE);
+
+    static {
+        REDIS.setExposedPorts(List.of(6379));
+    }
 
     private static final List<ConfigurableApplicationContext> GATEWAYS = new ArrayList<>();
     private static HttpServer backend;
@@ -83,7 +87,7 @@ class DistributedRateLimitingIntegrationTest {
 
     @AfterAll
     static void stopInfrastructure() {
-        GATEWAYS.forEach(ConfigurableApplicationContext::close);
+        GATEWAYS.forEach(gateway -> gateway.close());
         if (backend != null) {
             backend.stop(0);
         }

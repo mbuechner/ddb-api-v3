@@ -1,90 +1,156 @@
 openapi: 3.1.0
 info:
-  title: DDB API v3 - Records
+  title: DDB API v3 - RDF Records
   version: 3.0.0-dev
   contact:
     name: Michael Büchner
     email: m.buechner@dnb.de
     url: https://github.com/mbuechner/ddb-api-v3
   description: >-
-    Standalone development contract for record creation, replacement, permanent
-    deletion, and administrative metadata retrieval. Record uploads accept
-    RDF/XML with optional original source XML. Request bodies and administrative
-    metadata responses support gzip content coding.
+    Receives RDF in any serialization registered with Apache Jena, validates it
+    immediately before storage, and converts it to uncompressed Jelly RDF in
+    SeaweedFS through S3. Reads convert the stored dataset to the requested RDF
+    serialization. Every input triple is stored in the single named graph
+    {baseUrl}/records/{recordId}. The configured ddb.api.base-url (environment
+    DDB_API_BASE_URL) defaults to https://api.deutsche-digitale-bibliothek.de.
+    It is an HTTP(S) origin with an optional port and trailing slash, independent
+    of request headers. Input graph names are replaced by this canonical graph
+    name when writing; reads retain the stored graph name. Record methods
+    use the exact object key {recordId}/record. Other document names are reserved
+    for future API methods and are not selected through this API. No administrative
+    metadata document or storage manifest is created. Requests support gzip content
+    coding. Application-profile validation with SHACL is not implemented.
 servers:
-  # Resolve API calls against the origin serving this contract. Swagger UI therefore works
-  # unchanged on localhost, behind the gateway, and in every deployment environment.
   - url: /
 
 security:
-  - oauth2: [records:read]
+  - oauth2: [records:write]
 
 tags:
   - name: Records
-    description: Record uploads, administrative metadata, and permanent deletion.
+    description: Validate, store and retrieve RDF datasets without an internal record model.
 
 paths:
-  /3/records:
-    post:
+  /3/records/{recordId}:
+    get:
       tags: [Records]
-      operationId: createRecord
-      summary: Create a record
+      operationId: getRecord
+      summary: Retrieve an RDF record in the requested serialization
       description: >-
-        Parses the complete RDF/XML record with Apache Jena RIOT and stores it only
-        when it is valid RDF. The client supplies the globally unique record ID;
-        the API never derives or replaces it. An existing ID returns 409.
-        A 202 response links to the write-operation monitor.
+        Reads uncompressed Jelly RDF from {recordId}/record and converts the complete
+        dataset with Apache Jena. Accept selects an installed RDF writer; without
+        Accept, application/trig is used. The media types below are common examples,
+        not an exhaustive list of registered Jena formats. Dataset formats retain
+        the canonical named graph; graph formats such as RDF/XML and Turtle return
+        all its triples without the graph name.
+        The response ETag is weak because different serializations represent the same
+        stored dataset. Use the strong X-Record-ETag value for a subsequent PUT If-Match.
       security:
-        - oauth2: [records:write]
+        - oauth2: [records:read]
       parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
-        - $ref: '#/components/parameters/RequestContentEncoding'
-        - $ref: '#/components/parameters/AcceptEncoding'
-      requestBody:
-        $ref: '#/components/requestBodies/RecordWriteRequest'
+        - $ref: '#/components/parameters/RecordId'
+        - $ref: '#/components/parameters/IfNoneMatch'
       responses:
-        '201':
-          description: Record has been created
+        '200':
+          description: Complete RDF dataset in the negotiated serialization
           headers:
-            Vary:
-              $ref: '#/components/headers/VaryAcceptEncoding'
-            Content-Encoding:
-              $ref: '#/components/headers/ContentEncoding'
-            Location:
-              $ref: '#/components/headers/Location'
             ETag:
+              $ref: '#/components/headers/WeakETag'
+            X-Record-ETag:
               $ref: '#/components/headers/ETag'
+            Vary:
+              description: Response selection depends on RDF and HTTP content negotiation
+              schema:
+                type: string
+                example: Accept, Accept-Encoding
             X-Request-Id:
               $ref: '#/components/headers/RequestId'
           content:
+            text/turtle:
+              schema:
+                $ref: '#/components/schemas/RdfDocument'
+            application/rdf+xml:
+              schema:
+                $ref: '#/components/schemas/RdfDocument'
             application/ld+json:
               schema:
-                $ref: '#/components/schemas/AdministrativeRecord'
-        '202':
-          description: Accepted; ordered publication continues at the Location monitor
-          headers:
-            Vary:
-              $ref: '#/components/headers/VaryAcceptEncoding'
-            Content-Encoding:
-              $ref: '#/components/headers/ContentEncoding'
-            Location:
-              $ref: '#/components/headers/Location'
-            Retry-After:
-              $ref: '#/components/headers/RetryAfter'
-            X-Request-Id:
-              $ref: '#/components/headers/RequestId'
-          content:
-            application/json:
+                $ref: '#/components/schemas/RdfDocument'
+            application/n-triples:
               schema:
-                $ref: '#/components/schemas/WriteOperation'
+                $ref: '#/components/schemas/RdfDocument'
+            application/n-quads:
+              schema:
+                $ref: '#/components/schemas/RdfDocument'
+            application/trig:
+              schema:
+                $ref: '#/components/schemas/RdfDocument'
+            application/x-jelly-rdf:
+              schema:
+                $ref: '#/components/schemas/RdfDocument'
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/RdfDocument'
+        '304':
+          description: The stored dataset matches If-None-Match; response has no body
+          headers:
+            ETag:
+              $ref: '#/components/headers/WeakETag'
+            X-Record-ETag:
+              $ref: '#/components/headers/ETag'
+            Vary:
+              description: Response selection depends on Accept and Accept-Encoding
+              schema:
+                type: string
+                example: Accept, Accept-Encoding
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '406':
           $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    post:
+      tags: [Records]
+      operationId: createRecord
+      summary: Validate and create an RDF record
+      description: >-
+        Parses the complete request body using its Content-Type with Apache Jena
+        before any storage write. The dataset is converted to uncompressed Jelly
+        RDF and stored directly under {recordId}/record. All input triples are merged
+        into the named graph {baseUrl}/records/{recordId}, using the configured
+        ddb.api.base-url (default: https://api.deutsche-digitale-bibliothek.de).
+        Creation is conditional: an existing object is never overwritten and returns
+        409. The successful response has no body; its ETag identifies the S3 object.
+      parameters:
+        - $ref: '#/components/parameters/RecordId'
+      requestBody:
+        $ref: '#/components/requestBodies/RdfRecord'
+      responses:
+        '201':
+          description: RDF record created
+          headers:
+            Location:
+              description: API location of the record document
+              schema:
+                type: string
+                format: uri-reference
+            ETag:
+              $ref: '#/components/headers/ETag'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '409':
           $ref: '#/components/responses/Conflict'
         '413':
@@ -93,132 +159,6 @@ paths:
           $ref: '#/components/responses/UnsupportedMediaType'
         '422':
           $ref: '#/components/responses/UnprocessableContent'
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
-
-  /3/records/{recordId}:
-    get:
-      tags: [Records]
-      operationId: getRecord
-      summary: Get record metadata
-      description: >-
-        Returns administrative metadata as bf:AdminMetadata and foaf:Document with one EDM aggregation as primary topic. Tombstones remain addressable with
-        the current ETag so an authorized client can replace them conditionally with PUT. They are identified by
-        publicationStatus ending in /WITHDRAWN together with invalidatedAtTime; DELETED is only the internal
-        lifecycle value because the EU Dataset Status vocabulary has no DELETED concept. Published records are public; restricted
-        states require records:read. A permanently purged or unknown ID returns 404.
-      security:
-        - {}
-        - oauth2: [records:read]
-      parameters:
-        - $ref: '#/components/parameters/RecordId'
-        - $ref: '#/components/parameters/IfNoneMatch'
-        - $ref: '#/components/parameters/IfModifiedSince'
-        - $ref: '#/components/parameters/AcceptEncoding'
-      responses:
-        '200':
-          description: Current record state without RDF content
-          headers:
-            ETag:
-              $ref: '#/components/headers/ETag'
-            Last-Modified:
-              $ref: '#/components/headers/LastModified'
-            Cache-Control:
-              $ref: '#/components/headers/CacheControl'
-            Vary:
-              $ref: '#/components/headers/VaryAcceptEncoding'
-            Content-Encoding:
-              $ref: '#/components/headers/ContentEncoding'
-            X-Request-Id:
-              $ref: '#/components/headers/RequestId'
-          content:
-            application/ld+json:
-              schema:
-                $ref: '#/components/schemas/AdministrativeRecord'
-              examples:
-                catalogRecord:
-                  $ref: '#/components/examples/DcatRecordMetadata'
-        '304':
-          description: The current record state has not changed
-          headers:
-            ETag:
-              $ref: '#/components/headers/ETag'
-            Last-Modified:
-              $ref: '#/components/headers/LastModified'
-            Cache-Control:
-              $ref: '#/components/headers/CacheControl'
-            Vary:
-              $ref: '#/components/headers/VaryAcceptEncoding'
-            X-Request-Id:
-              $ref: '#/components/headers/RequestId'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '406':
-          $ref: '#/components/responses/NotAcceptable'
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
-    head:
-      tags: [Records]
-      operationId: headRecord
-      summary: Inspect record metadata headers
-      description: >-
-        Applies the same conditions and authorization as GET without returning the
-        administrative metadata body.
-      security:
-        - {}
-        - oauth2: [records:read]
-      parameters:
-        - $ref: '#/components/parameters/RecordId'
-        - $ref: '#/components/parameters/IfNoneMatch'
-        - $ref: '#/components/parameters/IfModifiedSince'
-        - $ref: '#/components/parameters/AcceptEncoding'
-      responses:
-        '200':
-          description: Headers for the current record state
-          headers:
-            Content-Length:
-              $ref: '#/components/headers/ContentLength'
-            Content-Encoding:
-              $ref: '#/components/headers/ContentEncoding'
-            ETag:
-              $ref: '#/components/headers/ETag'
-            Last-Modified:
-              $ref: '#/components/headers/LastModified'
-            Cache-Control:
-              $ref: '#/components/headers/CacheControl'
-            Vary:
-              $ref: '#/components/headers/VaryAcceptEncoding'
-            X-Request-Id:
-              $ref: '#/components/headers/RequestId'
-        '304':
-          description: The current record state has not changed
-          headers:
-            ETag:
-              $ref: '#/components/headers/ETag'
-            Last-Modified:
-              $ref: '#/components/headers/LastModified'
-            Cache-Control:
-              $ref: '#/components/headers/CacheControl'
-            Vary:
-              $ref: '#/components/headers/VaryAcceptEncoding'
-            X-Request-Id:
-              $ref: '#/components/headers/RequestId'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '406':
-          $ref: '#/components/responses/NotAcceptable'
         '429':
           $ref: '#/components/responses/TooManyRequests'
         '503':
@@ -226,65 +166,38 @@ paths:
     put:
       tags: [Records]
       operationId: putRecord
-      summary: Update a record
+      summary: Validate and replace an RDF record
       description: >-
-        The complete RDF/XML is parsed with Apache Jena RIOT before persistence.
-        The record must already exist and its current ETag is required in If-Match.
-        The ID supplied in the metadata must equal the path ID and is never changed.
-        A 202 response links to the monitor.
-      security:
-        - oauth2: [records:write]
+        Parses the complete request body using its Content-Type with Apache Jena
+        before any storage write. The dataset is converted to uncompressed Jelly
+        RDF, with all triples merged into the named graph
+        {baseUrl}/records/{recordId} using the configured ddb.api.base-url
+        (default: https://api.deutsche-digitale-bibliothek.de), and replaces
+        {recordId}/record only while
+        If-Match matches its current S3 ETag. A missing If-Match returns 428.
+        A stale, weak, invalid or unmatched validator returns 412; an unknown object
+        also fails the write precondition. The successful response has no body.
+        X-Record-ETag identifies the transformed Jelly object for later conditional
+        replacements; PUT does not return ETag.
       parameters:
         - $ref: '#/components/parameters/RecordId'
-        - $ref: '#/components/parameters/IdempotencyKey'
-        - $ref: '#/components/parameters/RequiredIfMatch'
-        - $ref: '#/components/parameters/RequestContentEncoding'
-        - $ref: '#/components/parameters/AcceptEncoding'
+        - $ref: '#/components/parameters/IfMatch'
       requestBody:
-        $ref: '#/components/requestBodies/RecordWriteRequest'
+        $ref: '#/components/requestBodies/RdfRecord'
       responses:
-        '200':
-          description: Record updated or left unchanged by an idempotent retry
+        '204':
+          description: RDF record replaced
           headers:
-            Vary:
-              $ref: '#/components/headers/VaryAcceptEncoding'
-            Content-Encoding:
-              $ref: '#/components/headers/ContentEncoding'
-            ETag:
+            X-Record-ETag:
               $ref: '#/components/headers/ETag'
             X-Request-Id:
               $ref: '#/components/headers/RequestId'
-          content:
-            application/ld+json:
-              schema:
-                $ref: '#/components/schemas/AdministrativeRecord'
-        '202':
-          description: Accepted; ordered publication continues at the Location monitor
-          headers:
-            Vary:
-              $ref: '#/components/headers/VaryAcceptEncoding'
-            Content-Encoding:
-              $ref: '#/components/headers/ContentEncoding'
-            Location:
-              $ref: '#/components/headers/Location'
-            Retry-After:
-              $ref: '#/components/headers/RetryAfter'
-            X-Request-Id:
-              $ref: '#/components/headers/RequestId'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WriteOperation'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-        '406':
-          $ref: '#/components/responses/NotAcceptable'
-        '409':
-          $ref: '#/components/responses/Conflict'
         '412':
           $ref: '#/components/responses/PreconditionFailed'
         '413':
@@ -293,71 +206,6 @@ paths:
           $ref: '#/components/responses/UnsupportedMediaType'
         '422':
           $ref: '#/components/responses/UnprocessableContent'
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
-    delete:
-      tags: [Records]
-      operationId: deleteRecord
-      summary: Permanently purge a record
-      description: >-
-        Irreversibly removes the record, its retained RDF/XML and source content,
-        and its tombstone. This exceptional administrative
-        operation is not a lifecycle transition and cannot be undone. The
-        records:purge scope is issued only to administrative principals; possession
-        of the scope is necessary but the server must also enforce its independent
-        administrator policy, retention rules, and legal holds. Purging may complete
-        asynchronously across storage, search, and cache systems.
-      security:
-        - oauth2: [records:purge]
-      x-authorization-policy:
-        principalType: ADMIN
-        exceptionalAccess: true
-        scopeIsNecessaryButNotSufficient: true
-      parameters:
-        - $ref: '#/components/parameters/RecordId'
-        - $ref: '#/components/parameters/IdempotencyKey'
-        - $ref: '#/components/parameters/RequiredIfMatch'
-        - $ref: '#/components/parameters/PurgeReason'
-        - $ref: '#/components/parameters/AcceptEncoding'
-      responses:
-        '202':
-          description: Administrative purge accepted and continuing at Location
-          headers:
-            Vary:
-              $ref: '#/components/headers/VaryAcceptEncoding'
-            Content-Encoding:
-              $ref: '#/components/headers/ContentEncoding'
-            Location:
-              $ref: '#/components/headers/Location'
-            Retry-After:
-              $ref: '#/components/headers/RetryAfter'
-            X-Request-Id:
-              $ref: '#/components/headers/RequestId'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WriteOperation'
-        '204':
-          description: Record permanently purged, or identical purge retry completed
-          headers:
-            X-Request-Id:
-              $ref: '#/components/headers/RequestId'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '406':
-          $ref: '#/components/responses/NotAcceptable'
-        '409':
-          $ref: '#/components/responses/Conflict'
-        '412':
-          $ref: '#/components/responses/PreconditionFailed'
         '428':
           $ref: '#/components/responses/PreconditionRequired'
         '429':
@@ -369,557 +217,106 @@ components:
   securitySchemes:
     oauth2:
       type: oauth2
-      description: >-
-        OAuth 2.0 Client Credentials. Authentication is optional for operations that
-        explicitly include the anonymous security alternative.
+      description: OAuth 2.0 Client Credentials authorization contract.
       flows:
         clientCredentials:
           tokenUrl: /oauth2/token
           scopes:
-            records:read: Read record metadata
-            records:write: Create and replace records
-            records:purge: Permanently purge records; issued to administrators only
-
-  examples:
-    DcatRecordMetadata:
-      summary: Administrative document and its DDB aggregation
-      value:
-        '@context': https://metadata.example/api/contexts/ddb-api-v3-2.jsonld
-        '@id': https://metadata.example/api/3/records/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567#metadata
-        '@type':
-        - bf:AdminMetadata
-        - foaf:Document
-        recordProfile: https://metadata.example/api/profiles/record-metadata/ddb-v2
-        primaryTopic:
-          '@id': https://resources.example/catalog/item/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567
-          '@type': ore:Aggregation
-          isPrimaryTopicOf:
-          - https://metadata.example/api/3/records/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567#metadata
-          adminMetadata:
-          - https://metadata.example/api/3/records/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567#metadata
-          sourceIdentifier:
-            '@type': adms:Identifier
-            notation: demo-001
-            creator: https://www.deutsche-digitale-bibliothek.de/organization/CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
-          provider: https://www.deutsche-digitale-bibliothek.de/organization/CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
-          aggregator: https://www.wikidata.org/entity/Q621630
-          recordId: ABCDEFGHIJKLMNOPQRSTUVWXYZ234567
-          datasets:
-          - https://resources.example/catalog/dataset/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-          - https://resources.example/catalog/dataset/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
-        adminMetadataFor: https://resources.example/catalog/item/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567
-        createdAt: '2026-01-01T12:00:00Z'
-        modifiedAt: '2026-09-04T09:30:00Z'
-        datasets:
-        - https://resources.example/catalog/dataset/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/records
-        - https://resources.example/catalog/dataset/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB/records
-        publicationStatus: http://publications.europa.eu/resource/authority/dataset-status/COMPLETED
-        validationAssertion:
-          '@id': https://metadata.example/api/3/records/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567#validation
-          '@type': earl:Assertion
-          subject: https://metadata.example/api/3/records/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567
-          test: https://metadata.example/api/profiles/edm/ddb-v3
-          mode: earl:automatic
-          result:
-            '@type': earl:TestResult
-            outcome: earl:passed
+            records:read: Read RDF record datasets
+            records:write: Create and replace RDF record documents
 
   parameters:
     RecordId:
       name: recordId
       in: path
       required: true
+      description: Externally assigned 32-character DDB ID, RFC 4648 Base32 without padding
       schema:
-        $ref: '#/components/schemas/RecordIdValue'
-      description: Externally assigned record ID, RFC 4648 Base32 without padding, 32 characters
+        type: string
+        minLength: 32
+        maxLength: 32
+        pattern: '^[A-Z2-7]{32}$'
+      example: J6KQ3UBFBEMGAHGR6ZUAQCUXOBKQCFO3
+    IfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: >-
+        Required for replacement; omission returns 428. Supply a quoted current
+        storage ETag from POST or the X-Record-ETag from GET/PUT, a comma-separated ETag list,
+        or * by itself to require an existing
+        object. Weak tags never match. A malformed header is rejected as a whole.
+      schema:
+        type: string
     IfNoneMatch:
       name: If-None-Match
       in: header
       required: false
-      description: Return 304 when the selected representation matches
-      schema:
-        type: string
-    RequiredIfMatch:
-      name: If-Match
-      in: header
-      required: true
-      description: Current state ETag required for this mutation
-      schema:
-        type: string
-    IdempotencyKey:
-      name: Idempotency-Key
-      in: header
-      required: false
       description: >-
-        Canonical lowercase UUID scoped to client, method, and normalized URI.
-        Identical retries are replayed for seven days; reuse with a different request
-        fingerprint returns 409. UUIDv7 is recommended. Never encode sensitive data.
+        Return 304 without a body if the current dataset matches an ETag in this
+        list. Weak comparison is used; * matches any existing record.
       schema:
         type: string
-        format: uuid
-        minLength: 36
-        maxLength: 36
-        pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
-        example: 018f6c1a-7b2d-7f3e-a9c1-4b5d6e7f8091
-    PurgeReason:
-      name: X-Purge-Reason
-      in: header
-      required: true
-      description: >-
-        Required audit reason for an irreversible administrative purge. Use a ticket
-        reference, short code, or text; never include secrets or unnecessary personal
-        data.
-      schema:
-        type: string
-        minLength: 3
-        maxLength: 512
-        pattern: '.*\S.*'
-        example: privacy-case-2026-0042
-    IfModifiedSince:
-      name: If-Modified-Since
-      in: header
-      required: false
-      description: Used only when If-None-Match is absent
-      schema:
-        type: string
-        format: http-date
-    AcceptEncoding:
-      name: Accept-Encoding
-      in: header
-      required: false
-      description: >-
-        Supported response content codings are gzip and identity. Quality values are
-        honored. If neither coding is acceptable, the server returns 406.
-      schema:
-        type: string
-        example: gzip, identity;q=0.5
-    RequestContentEncoding:
-      name: Content-Encoding
-      in: header
-      required: false
-      description: >-
-        Content coding of the complete request body. gzip and identity are supported;
-        identity is assumed when the header is absent. Limits apply after decoding.
-      schema:
-        type: string
-        enum: [gzip, identity]
-        default: identity
 
   headers:
-    ContentLength:
-      required: false
-      description: Byte length when the selected representation is materialized
-      schema:
-        type: integer
-        format: int64
-        minimum: 0
-    Location:
-      required: true
-      description: Created resource or asynchronous status monitor
-      schema:
-        type: string
-        format: uri-reference
     ETag:
-      required: true
-      description: >-
-        Entity tag for the selected media type and content coding. Strong tags differ
-        between identity and gzip representations; weak tags may be shared only when
-        their weak comparison semantics are sufficient.
+      description: Strong opaque validator of the stored Jelly object, including its HTTP quotation marks
       schema:
         type: string
-    LastModified:
-      required: true
+    WeakETag:
+      description: Weak dataset validator, for example W/"s3-object-tag"; cannot be used for PUT If-Match
       schema:
         type: string
-        format: http-date
-    CacheControl:
-      required: true
-      schema:
-        type: string
-    ContentEncoding:
-      required: false
-      description: >-
-        Content coding applied to the response representation. The header is absent
-        for identity. Content-Length, when present, is the encoded byte length.
-      schema:
-        type: string
-        const: gzip
-    VaryAcceptEncoding:
-      required: true
-      schema:
-        type: string
-        const: Accept, Accept-Encoding
     RequestId:
-      required: true
-      description: Correlation ID for this HTTP request
+      description: Identifier for correlating the HTTP request with server logs
       schema:
         type: string
-        minLength: 8
-        maxLength: 128
-    RetryAfter:
-      description: >-
-        Recommended retry time. A non-negative delay in seconds is preferred; an
-        HTTP-date can be used when an absolute time is required.
-      schema:
-        # HTTP field values are textual on the wire. Modelling both lexical forms as a
-        # string avoids an anonymous primitive oneOf that Java generators cannot represent.
-        type: string
-        minLength: 1
-        examples:
-          - '120'
-          - 'Wed, 21 Oct 2015 07:28:00 GMT'
 
   requestBodies:
-    RecordWriteRequest:
+    RdfRecord:
       required: true
       description: >-
-        Canonical RDF/XML is required and the content part has the fixed media type
-        application/rdf+xml; no other RDF input serialization is accepted. The outer
-        request remains multipart/form-data so record metadata can be transmitted
-        without custom headers. An optional non-RDF source part preserves the exact
-        original XML. sourceMediaType, sourceFormat, sourceFormatUri, and
-        sourceFormatVersion are then required in metadata. sourceProfile and
-        sourceProfileUri are optional and must occur together. These conditional
-        constraints are enforced by the application.
+        Complete RDF document or dataset in a serialization registered with Apache
+        Jena, identified by Content-Type. The media types below are common examples,
+        not an exhaustive list. The complete decoded body is syntax-validated and
+        converted to uncompressed Jelly before any storage write. All input triples
+        are merged into the single named graph
+        {baseUrl}/records/{recordId}, using the configured ddb.api.base-url
+        (default: https://api.deutsche-digitale-bibliothek.de); original graph
+        names and byte representation are not retained.
+        JSON-LD contexts must be included inline; remote contexts are not loaded.
+        The configurable upload-size limit applies after HTTP content decoding,
+        including gzip decompression, and before RDF parsing.
       content:
-        multipart/form-data:
+        text/turtle:
           schema:
-            type: object
-            additionalProperties: false
-            required: [metadata, content]
-            properties:
-              metadata:
-                $ref: '#/components/schemas/RecordWriteMetadata'
-              content:
-                type: string
-                format: binary
-                description: UTF-8 encoded RDF/XML document
-              source:
-                type: string
-                format: binary
-                description: >-
-                  Optional exact original LIDO, EAD, METS, MODS, or other XML. This is
-                  retained provenance, not an alternative RDF record input.
-          encoding:
-            metadata:
-              contentType: application/json
-            content:
-              contentType: application/rdf+xml
-            source:
-              contentType: application/xml, application/mets+xml, application/mods+xml
+            $ref: '#/components/schemas/RdfDocument'
+        application/rdf+xml:
+          schema:
+            $ref: '#/components/schemas/RdfDocument'
+        application/ld+json:
+          schema:
+            $ref: '#/components/schemas/RdfDocument'
+        application/n-triples:
+          schema:
+            $ref: '#/components/schemas/RdfDocument'
+        application/n-quads:
+          schema:
+            $ref: '#/components/schemas/RdfDocument'
+        application/trig:
+          schema:
+            $ref: '#/components/schemas/RdfDocument'
+        application/x-jelly-rdf:
+          schema:
+            $ref: '#/components/schemas/RdfDocument'
+        '*/*':
+          schema:
+            $ref: '#/components/schemas/RdfDocument'
+
   schemas:
-    RecordIdValue:
+    RdfDocument:
       type: string
-      pattern: '^[A-Z2-7]{32}$'
-      minLength: 32
-      maxLength: 32
-      description: >-
-        Externally assigned, globally unique DDB ID. The API validates and stores
-        the identifier but never derives or replaces it. Records, datasets and
-        organizations each have their own independent DDB ID.
-
-    SourceFormatCode:
-      type: string
-      pattern: '^[A-Z][A-Z0-9_-]{0,31}$'
-      examples: [LIDO, EAD, METS, MODS]
-      description: >-
-        Short notation for a public metadata format. It is not the format identifier;
-        sourceFormatUri carries the authoritative public URI. New registered formats
-        do not require a new API version.
-
-    RecordWriteMetadata:
-      type: object
-      additionalProperties: false
-      required: [recordId, datasetIds, providerId, sourceId, publicationStatus, profileVersion]
-      properties:
-        recordId:
-          $ref: '#/components/schemas/RecordIdValue'
-          description: Immutable ID supplied by the owning system
-        datasetIds:
-          type: array
-          minItems: 1
-          uniqueItems: true
-          items:
-            $ref: '#/components/schemas/RecordIdValue'
-          description: DDB IDs of all datasets containing this record
-        providerId:
-          $ref: '#/components/schemas/RecordIdValue'
-          description: DDB ID of the organization providing the record
-        aggregatorId:
-          $ref: '#/components/schemas/RecordIdValue'
-          description: Optional DDB ID of the organization aggregating the provider's data
-        sourceId:
-          type: string
-          minLength: 1
-          maxLength: 2048
-        publicationStatus:
-          type: string
-          enum: [DRAFT, PUBLISHED]
-        profileVersion:
-          type: string
-          minLength: 1
-          maxLength: 128
-        clientRecordReference:
-          type: string
-          maxLength: 256
-        sourceMediaType:
-          type: string
-          enum: [application/xml, application/mets+xml, application/mods+xml]
-          description: Required when the multipart request contains source
-        sourceFormat:
-          $ref: '#/components/schemas/SourceFormatCode'
-        sourceFormatUri:
-          type: string
-          format: uri
-          examples:
-            - https://lido-schema.org/
-            - https://www.loc.gov/ead/
-            - https://www.loc.gov/standards/mets/
-            - https://www.loc.gov/standards/mods/
-          description: >-
-            Required with source. Public authoritative metadata-format URI, never a
-            DDB/API profile URI.
-        sourceFormatVersion:
-          type: string
-          minLength: 1
-          maxLength: 64
-          description: Required with source; exact format or schema version
-        sourceProfile:
-          type: string
-          pattern: '^[a-z][a-z0-9-]{0,63}$'
-          description: Optional DDB/API application-profile notation
-        sourceProfileUri:
-          type: string
-          format: uri-reference
-          description: >-
-            Optional URI for constraints beyond the public metadata format; must
-            occur together with sourceProfile
-
-    WriteOperation:
-      type: object
-      additionalProperties: false
-      required: [operationId, status, createdAt]
-      properties:
-        operationId:
-          type: string
-          pattern: '^[0-9A-HJKMNP-TV-Z]{26}$'
-        status:
-          type: string
-          enum:
-            - STAGED
-            - PENDING_PUBLICATION
-            - PUBLISHED
-            - PENDING_PURGE
-            - PURGED
-            - FAILED
-        createdAt:
-          type: string
-          format: date-time
-        recordId:
-          anyOf:
-            - $ref: '#/components/schemas/RecordIdValue'
-            - type: 'null'
-        problem:
-          $ref: '#/components/schemas/Problem'
-
-    AdministrativeRecord:
-      type: object
-      additionalProperties: false
-      description: >-
-        One administrative document with both bf:AdminMetadata and foaf:Document types.
-        primaryTopic and adminMetadataFor identify the same existing DDB aggregation.
-        The external JSON-LD context is immutable and versioned. This changes the
-        development contract; published incompatible contracts need an API version change.
-      required: ['@context', '@id', '@type', primaryTopic, adminMetadataFor, datasets,
-        recordProfile, publicationStatus, validationAssertion, createdAt, modifiedAt]
-      properties:
-        '@context':
-          type: string
-          format: uri
-        '@id':
-          type: string
-          format: uri
-        '@type':
-          type: array
-          uniqueItems: true
-          minItems: 2
-          maxItems: 2
-          items:
-            type: string
-            enum: ['bf:AdminMetadata', 'foaf:Document']
-        primaryTopic:
-          $ref: '#/components/schemas/DdbObjectMetadata'
-        adminMetadataFor:
-          type: string
-          format: uri
-          description: bf:adminMetadataFor; must equal primaryTopic.@id (also checked by SHACL)
-        datasets:
-          type: array
-          minItems: 1
-          uniqueItems: true
-          items:
-            type: string
-            format: uri
-          description: dcterms:isPartOf; administrative record datasets, not item datasets
-        recordProfile:
-          type: string
-          format: uri
-        publicationStatus:
-          type: string
-          format: uri
-          enum:
-            - http://publications.europa.eu/resource/authority/dataset-status/DEVELOP
-            - http://publications.europa.eu/resource/authority/dataset-status/COMPLETED
-            - http://publications.europa.eu/resource/authority/dataset-status/WITHDRAWN
-          description: adms:status of the administered object description
-        validationAssertion:
-          $ref: '#/components/schemas/EarlValidationAssertion'
-          description: Administrative dcterms:relation to a validation assertion with explicit earl:subject
-        createdAt:
-          type: string
-          format: date-time
-          description: dcterms:created; initial storage time, including drafts, not publication
-        modifiedAt:
-          type: string
-          format: date-time
-          description: dcterms:modified; last administrative record modification
-    DdbObjectMetadata:
-      type: object
-      additionalProperties: false
-      description: >-
-        A reduced description of the existing ore:Aggregation, not a dataset,
-        ProvidedCHO, media file or HTTP response document.
-        Backlinks are IRI arrays and never recursively embed the administrative document.
-      required: ['@id', '@type', recordId, datasets, provider, isPrimaryTopicOf, adminMetadata]
-      properties:
-        '@id':
-          type: string
-          format: uri
-        '@type':
-          type: string
-          const: ore:Aggregation
-        recordId:
-          $ref: '#/components/schemas/RecordIdValue'
-        isPrimaryTopicOf:
-          type: array
-          minItems: 1
-          uniqueItems: true
-          items:
-            type: string
-            format: uri
-          description: foaf:isPrimaryTopicOf; one or more administrative record IRIs
-        adminMetadata:
-          type: array
-          minItems: 1
-          uniqueItems: true
-          items:
-            type: string
-            format: uri
-          description: bf:adminMetadata; same set as isPrimaryTopicOf
-        datasets:
-          type: array
-          minItems: 1
-          uniqueItems: true
-          items:
-            type: string
-            format: uri
-          description: dcterms:isPartOf; item datasets containing this aggregation
-        provider:
-          type: string
-          format: uri
-          description: edm:dataProvider; the supplying organization
-        aggregator:
-          type: string
-          format: uri
-          description: edm:provider; the aggregating organization
-        sourceIdentifier:
-          $ref: '#/components/schemas/AdmsIdentifier'
-        invalidatedAtTime:
-          type: [string, 'null']
-          format: date-time
-          description: prov:invalidatedAtTime of the supplied aggregation, not the preserved record or CHO
-        wasInvalidatedBy:
-          $ref: '#/components/schemas/RecordInvalidation'
-
-    RecordInvalidation:
-      type: object
-      additionalProperties: false
-      required: ['@id', '@type', deletionReason]
-      properties:
-        '@id':
-          type: string
-          format: uri
-        '@type':
-          type: string
-          const: prov:Activity
-        deletionReason:
-          type: string
-          format: uri
-          description: dcterms:type of the invalidation activity; controlled reason IRI
-        deletionComment:
-          type: string
-          maxLength: 512
-          description: Public dcterms:description of the invalidation activity
-
-    AdmsIdentifier:
-      type: object
-      additionalProperties: false
-      required: ['@type', notation]
-      properties:
-        '@type':
-          type: string
-          const: adms:Identifier
-        notation:
-          type: string
-          minLength: 1
-          maxLength: 2048
-          description: skos:notation containing the identifier assigned by the source system
-        creator:
-          type: string
-          format: uri
-          description: dcterms:creator; organization assigning the source identifier
-
-    EarlValidationAssertion:
-      type: object
-      additionalProperties: false
-      required: ['@id', '@type', subject, test, mode, result]
-      properties:
-        '@id':
-          type: string
-          format: uri-reference
-        '@type':
-          type: string
-          const: earl:Assertion
-        subject:
-          type: string
-          format: uri
-          description: earl:subject; the stored RDF description actually tested
-        test:
-          type: string
-          format: uri-reference
-          description: earl:test IRI of the applied EDM profile
-        mode:
-          type: string
-          const: earl:automatic
-        result:
-          $ref: '#/components/schemas/EarlTestResult'
-
-    EarlTestResult:
-      type: object
-      additionalProperties: false
-      required: ['@type', outcome]
-      properties:
-        '@type':
-          type: string
-          const: earl:TestResult
-        outcome:
-          type: string
-          enum: [earl:passed, earl:failed, earl:untested]
-          description: earl:outcome from the standard EARL outcome vocabulary
-        info:
-          type: string
-          description: earl:info; present when a conforming record has validation warnings
-
+      format: binary
     Problem:
       type: object
       additionalProperties: true
@@ -957,7 +354,7 @@ components:
 
   responses:
     BadRequest:
-      description: Invalid request, parameter, or cursor
+      description: Invalid request or DDB ID
       headers:
         X-Request-Id:
           $ref: '#/components/headers/RequestId'
@@ -966,98 +363,61 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
     Unauthorized:
-      description: Supplied credential is invalid, or a protected operation has none
-      headers:
-        WWW-Authenticate:
-          schema:
-            type: string
-        X-Request-Id:
-          $ref: '#/components/headers/RequestId'
+      description: Missing or invalid credentials
       content:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
     Forbidden:
-      description: Client is authenticated but not authorized
-      headers:
-        X-Request-Id:
-          $ref: '#/components/headers/RequestId'
-      content:
-        application/problem+json:
-          schema:
-            $ref: '#/components/schemas/Problem'
-    NotFound:
-      description: Resource is unknown or intentionally hidden
-      headers:
-        X-Request-Id:
-          $ref: '#/components/headers/RequestId'
-      content:
-        application/problem+json:
-          schema:
-            $ref: '#/components/schemas/Problem'
-    NotAcceptable:
-      description: None of the requested response media types can be provided
-      headers:
-        X-Request-Id:
-          $ref: '#/components/headers/RequestId'
+      description: Request is not authorized
       content:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
     Conflict:
-      description: Conflict with the current state or idempotency key
-      headers:
-        Retry-After:
-          $ref: '#/components/headers/RetryAfter'
-        X-Request-Id:
-          $ref: '#/components/headers/RequestId'
+      description: An RDF record already exists under this DDB ID
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NotFound:
+      description: No RDF record exists under this DDB ID
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NotAcceptable:
+      description: Accept does not allow an installed Apache Jena RDF writer, or the chosen format cannot represent this RDF dataset
       content:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
     PreconditionFailed:
-      description: If-Match or If-None-Match does not match the current state
-      headers:
-        ETag:
-          $ref: '#/components/headers/ETag'
-        X-Request-Id:
-          $ref: '#/components/headers/RequestId'
+      description: If-Match does not identify the current existing RDF record
       content:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
     PreconditionRequired:
-      description: If-Match or If-None-Match is required for this write operation
-      headers:
-        X-Request-Id:
-          $ref: '#/components/headers/RequestId'
+      description: Replacement requires an If-Match header
       content:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
     ContentTooLarge:
-      description: Request content exceeds the byte limit
-      headers:
-        X-Request-Id:
-          $ref: '#/components/headers/RequestId'
+      description: Decoded RDF document exceeds the configured upload-size limit
       content:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
     UnsupportedMediaType:
-      description: Request media type is not supported
-      headers:
-        X-Request-Id:
-          $ref: '#/components/headers/RequestId'
+      description: Content-Type does not identify an installed Apache Jena RDF parser
       content:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
     UnprocessableContent:
-      description: Syntax accepted but semantics or validation failed
-      headers:
-        X-Request-Id:
-          $ref: '#/components/headers/RequestId'
+      description: Jena cannot parse the complete request body as valid RDF in its declared serialization
       content:
         application/problem+json:
           schema:
@@ -1065,12 +425,7 @@ components:
     TooManyRequests:
       description: Request rejected by the gateway rate limiter
     ServiceUnavailable:
-      description: Service or required dependency is temporarily unavailable
-      headers:
-        Retry-After:
-          $ref: '#/components/headers/RetryAfter'
-        X-Request-Id:
-          $ref: '#/components/headers/RequestId'
+      description: SeaweedFS S3 storage is unavailable or the stored object is not a valid Jelly dataset
       content:
         application/problem+json:
           schema:

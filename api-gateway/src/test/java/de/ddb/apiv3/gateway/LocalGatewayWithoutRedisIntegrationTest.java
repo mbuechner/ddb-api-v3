@@ -17,6 +17,8 @@
  */
 package de.ddb.apiv3.gateway;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -32,14 +34,7 @@ import org.springframework.boot.web.server.context.WebServerApplicationContext;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
-/**
- * Exercises the complete development gateway against an in-process HTTP backend without Redis.
- *
- * <p>A real random-port WebFlux server is required here because route filters, response headers
- * and global CORS handling are the behavior under test. The deliberately invalid Redis host also
- * guards against accidentally reintroducing a Redis dependency into the {@code dev} profile.
- * Bucket state is process-local, so this test does not make claims about multi-instance limits.</p>
- */
+/** Real HTTP, fake backend, no Redis: exercise routing, CORS and local token buckets together. */
 class LocalGatewayWithoutRedisIntegrationTest {
 
     private static ConfigurableApplicationContext gateway;
@@ -54,6 +49,9 @@ class LocalGatewayWithoutRedisIntegrationTest {
         backend.createContext("/", exchange -> {
             byte[] response = "{\"status\":\"ok\"}".getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.getResponseHeaders().set("ETag", "\"stored-rdf\"");
+            exchange.getResponseHeaders().set("Location", "/3/records/example");
+            exchange.getResponseHeaders().set("X-Request-Id", "gateway-test-request");
             exchange.sendResponseHeaders(200, response.length);
             exchange.getResponseBody().write(response);
             exchange.close();
@@ -180,10 +178,16 @@ class LocalGatewayWithoutRedisIntegrationTest {
                 .expectHeader()
                 .valueEquals("Access-Control-Allow-Origin", "*")
                 .expectHeader()
-                .valueEquals(
-                        "Access-Control-Expose-Headers",
-                        "X-RateLimit-Remaining, X-RateLimit-Replenish-Rate, "
-                                + "X-RateLimit-Burst-Capacity, X-RateLimit-Requested-Tokens, Retry-After")
+                .value("Access-Control-Expose-Headers", value -> assertThat(value.split(",\\s*"))
+                        .contains("ETag", "Location", "X-Request-Id", "X-RateLimit-Remaining",
+                                "X-RateLimit-Replenish-Rate", "X-RateLimit-Burst-Capacity",
+                                "X-RateLimit-Requested-Tokens", "Retry-After"))
+                .expectHeader()
+                .valueEquals("ETag", "\"stored-rdf\"")
+                .expectHeader()
+                .valueEquals("Location", "/3/records/example")
+                .expectHeader()
+                .valueEquals("X-Request-Id", "gateway-test-request")
                 .expectHeader()
                 .valueEquals("X-RateLimit-Remaining", "1")
                 .expectHeader()

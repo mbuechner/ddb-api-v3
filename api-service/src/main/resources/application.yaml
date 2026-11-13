@@ -7,8 +7,16 @@ server:
     enabled: ${DDB_API_COMPRESSION_ENABLED:true}
     min-response-size: ${DDB_API_COMPRESSION_MIN_RESPONSE_SIZE:1KB}
     additional-mime-types:
-      - application/ld+json
       - application/problem+json
+      - application/rdf+xml
+      - text/turtle
+      - application/trig
+      - application/n-triples
+      - application/n-quads
+      - application/ld+json
+      - application/rdf+protobuf
+      - application/rdf+thrift
+      - application/x-jelly-rdf
 
 spring:
   config:
@@ -26,11 +34,6 @@ spring:
   threads:
     virtual:
       enabled: true
-  servlet:
-    multipart:
-      # Operational limits may vary by deployment without changing record identity or semantics.
-      max-file-size: ${DDB_API_UPLOAD_MAX_FILE_SIZE:1MB}
-      max-request-size: ${DDB_API_UPLOAD_MAX_REQUEST_SIZE:10MB}
 
 management:
   endpoints:
@@ -42,11 +45,24 @@ management:
       show-details: never
       probes:
         enabled: true
+      group:
+        readiness:
+          include: readinessState,s3Storage
 
 ddb:
-  # Stable identifiers for items, datasets and organizations are independent of the
-  # API deployment URL and therefore use their own globally configurable origin.
-  resource-base-url: ${DDB_RESOURCE_BASE_URL:https://www.deutsche-digitale-bibliothek.de}
   api:
-    public-base-url: ${DDB_API_PUBLIC_BASE_URL:http://localhost:${server.port}}
-    max-records: ${DDB_API_MAX_RECORDS:10000}
+    # Canonical RDF graph origin, independent of proxy or request headers.
+    base-url: ${DDB_API_BASE_URL:https://api.deutsche-digitale-bibliothek.de}
+    # Applied to the decompressed RDF body before validation and storage.
+    max-document-size: ${DDB_API_UPLOAD_MAX_FILE_SIZE:1MB}
+  storage:
+    s3:
+      endpoint: ${S3_ENDPOINT:http://127.0.0.1:8333}
+      region: ${S3_REGION:eu-central-1}
+      bucket: ${S3_BUCKET:ddb-records}
+      access-key: ${S3_ACCESS_KEY:}
+      secret-key: ${S3_SECRET_KEY:}
+      path-style-access: ${S3_PATH_STYLE_ACCESS:true}
+      connection-timeout: ${S3_CONNECTION_TIMEOUT:2s}
+      read-timeout: ${S3_READ_TIMEOUT:10s}
+      create-bucket: ${S3_CREATE_BUCKET:false}

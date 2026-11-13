@@ -17,159 +17,111 @@
  */
 package de.ddb.apiv3.error;
 
-import de.ddb.apiv3.generated.model.Problem;
-import de.ddb.apiv3.generated.model.ProblemErrorsInner;
-import de.ddb.apiv3.record.write.InvalidRdfException;
-import de.ddb.apiv3.record.write.RecordAlreadyExistsException;
+import de.ddb.apiv3.storage.StorageException;
+import de.ddb.apiv3.rdf.InvalidRdfException;
+import de.ddb.apiv3.records.RecordAlreadyExistsException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
+import java.net.URI;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
+import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
-import org.springframework.web.bind.MissingRequestHeaderException;
-import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.ErrorResponse;
+import org.springframework.web.HttpMediaTypeNotAcceptableException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
-import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
-import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.util.List;
-import java.util.Locale;
-import java.util.NoSuchElementException;
-import java.util.UUID;
-
-/**
- * Converts transport and domain failures to the contract's {@code application/problem+json}
- * representation.
- */
+/** RFC 9457 errors, one shape. S3 internals stay in the log, not in the response. */
 @RestControllerAdvice
 public class ApiExceptionHandler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ApiExceptionHandler.class);
-    private static final MediaType PROBLEM_JSON = MediaType.parseMediaType("application/problem+json");
-
-    @ExceptionHandler(NoSuchElementException.class)
-    ResponseEntity<Problem> handleNotFound(NoSuchElementException exception, HttpServletRequest request) {
-        return problem(HttpStatus.NOT_FOUND, "Record not found", exception.getMessage(),
-                "RECORD_NOT_FOUND", request, List.of());
-    }
 
     @ExceptionHandler({
             HandlerMethodValidationException.class,
             ConstraintViolationException.class,
-            MissingServletRequestParameterException.class,
-            MissingRequestHeaderException.class,
-            MethodArgumentTypeMismatchException.class,
             HttpMessageNotReadableException.class
     })
-    ResponseEntity<Problem> handleBadRequest(Exception exception, HttpServletRequest request) {
-        // Invalid input is expected operationally, so retain diagnostic detail only at debug level.
-        LOGGER.debug("Rejected malformed request for {}: {}",
-                request.getRequestURI(), exception.getMessage(), exception);
-        ProblemErrorsInner issue = new ProblemErrorsInner(readableDetail(exception));
-        return problem(HttpStatus.BAD_REQUEST, "Invalid request", "Request validation failed",
-                "INVALID_REQUEST", request, List.of(issue));
-    }
-
-    @ExceptionHandler(MaxUploadSizeExceededException.class)
-    ResponseEntity<Problem> handlePayloadTooLarge(MaxUploadSizeExceededException exception,
-                                                   HttpServletRequest request) {
-        return problem(HttpStatus.CONTENT_TOO_LARGE, "Content too large", exception.getMessage(),
-                "CONTENT_TOO_LARGE", request, List.of());
+    ResponseEntity<ProblemDetail> handleBadRequest(Exception exception, HttpServletRequest request) {
+        LOGGER.debug("Rejected malformed request for {}", request.getRequestURI(), exception);
+        String detail = exception instanceof HttpMessageNotReadableException
+                ? "The request body is missing or malformed" : "The DDB identifier is invalid";
+        return problem(HttpStatus.BAD_REQUEST, "Invalid request", detail, "INVALID_REQUEST", request,
+                List.of(Map.of("detail", detail)));
     }
 
     @ExceptionHandler(InvalidRdfException.class)
-    ResponseEntity<Problem> handleInvalidRdf(InvalidRdfException exception, HttpServletRequest request) {
+    ResponseEntity<ProblemDetail> handleInvalidRdf(InvalidRdfException exception, HttpServletRequest request) {
         return problem(HttpStatus.UNPROCESSABLE_CONTENT, "Invalid RDF", exception.getMessage(),
                 "INVALID_RDF", request, List.of());
     }
 
     @ExceptionHandler(RecordAlreadyExistsException.class)
-    ResponseEntity<Problem> handleRecordAlreadyExists(
+    ResponseEntity<ProblemDetail> handleRecordAlreadyExists(
             RecordAlreadyExistsException exception, HttpServletRequest request) {
         return problem(HttpStatus.CONFLICT, "Record already exists", exception.getMessage(),
                 "RECORD_ALREADY_EXISTS", request, List.of());
     }
 
-    /** Maps explicit endpoint failures such as a conflicting ID or failed write precondition. */
-    @ExceptionHandler(ResponseStatusException.class)
-    ResponseEntity<Problem> handleResponseStatus(ResponseStatusException exception,
-                                                  HttpServletRequest request) {
-        HttpStatusCode statusCode = exception.getStatusCode();
-        HttpStatus status = HttpStatus.resolve(statusCode.value());
-        String code = switch (statusCode.value()) {
-            case 406 -> "NOT_ACCEPTABLE";
-            default -> status == null ? "HTTP_STATUS_" + statusCode.value() : status.name();
-        };
-        String title = status == null ? "HTTP " + statusCode.value() : status.getReasonPhrase();
-        String detail = exception.getReason() == null ? title : exception.getReason();
-        return problem(statusCode, title, detail, code, request, List.of());
-    }
-
-    /**
-     * Hides database implementation details and returns the contract's retryable availability
-     * response when the external persistence service cannot satisfy a request.
-     */
-    @ExceptionHandler(DataAccessException.class)
-    ResponseEntity<Problem> handleDataAccessFailure(DataAccessException exception,
-                                                     HttpServletRequest request) {
-        String requestId = UUID.randomUUID().toString();
-        LOGGER.error("Persistence failure for requestId={} uri={}",
-                requestId, request.getRequestURI(), exception);
-        return problem(HttpStatus.SERVICE_UNAVAILABLE, "Service unavailable",
-                "The persistence backend is temporarily unavailable",
-                "SERVICE_UNAVAILABLE", request, List.of(), requestId);
-    }
-
-    private ResponseEntity<Problem> problem(
-            HttpStatusCode status,
-            String title,
-            String detail,
-            String code,
-            HttpServletRequest request,
-            List<ProblemErrorsInner> issues) {
-        return problem(status, title, detail, code, request, issues, UUID.randomUUID().toString());
-    }
-
-    private ResponseEntity<Problem> problem(
-            HttpStatusCode status,
-            String title,
-            String detail,
-            String code,
-            HttpServletRequest request,
-            List<ProblemErrorsInner> issues,
-            String requestId) {
-        Problem body = new Problem("/problems/" + code.toLowerCase(Locale.ROOT).replace('_', '-'),
-                title, status.value(), requestId)
-                .detail(detail)
-                .instance(request.getRequestURI())
-                .code(code)
-                .errors(issues);
-
+    @ExceptionHandler({
+            ResponseStatusException.class,
+            HttpMediaTypeNotSupportedException.class,
+            HttpMediaTypeNotAcceptableException.class,
+            HttpRequestMethodNotSupportedException.class
+    })
+    ResponseEntity<ProblemDetail> handleHttpError(ErrorResponse exception, HttpServletRequest request) {
+        HttpStatusCode status = exception.getStatusCode();
+        HttpStatus knownStatus = HttpStatus.resolve(status.value());
+        String title = knownStatus == null ? "HTTP " + status.value() : knownStatus.getReasonPhrase();
+        String code = knownStatus == null ? "HTTP_STATUS_" + status.value() : knownStatus.name();
+        String detail = exception.getBody().getDetail();
+        ResponseEntity<ProblemDetail> response = problem(status, title, detail == null ? title : detail,
+                code, request, List.of());
+        // Framework errors carry useful protocol headers, notably Allow on 405.
         HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(PROBLEM_JSON);
-        headers.set("X-Request-Id", requestId);
-        // HEAD has the same status and headers as GET, but never transfers a response body. This
-        // also applies to Problem Details produced by exception handling.
-        Problem responseBody = "HEAD".equals(request.getMethod()) ? null : body;
-        return new ResponseEntity<>(responseBody, headers, status);
+        headers.putAll(exception.getHeaders());
+        headers.putAll(response.getHeaders());
+        return new ResponseEntity<>(response.getBody(), headers, status);
     }
 
-    private static String readableDetail(Exception exception) {
-        if (exception instanceof HttpMessageNotReadableException) {
-            return "The request body is malformed";
-        }
-        if (exception instanceof MethodArgumentTypeMismatchException mismatch) {
-            return "Parameter '%s' has an invalid value".formatted(mismatch.getName());
-        }
-        return exception.getMessage() == null ? "Invalid request" : exception.getMessage();
+    @ExceptionHandler(StorageException.class)
+    ResponseEntity<ProblemDetail> handleStorageFailure(StorageException exception, HttpServletRequest request) {
+        ResponseEntity<ProblemDetail> response = problem(HttpStatus.SERVICE_UNAVAILABLE, "Service unavailable",
+                "The persistence backend is temporarily unavailable", "SERVICE_UNAVAILABLE", request, List.of());
+        LOGGER.error("Storage failure requestId={} uri={}", response.getHeaders().getFirst("X-Request-Id"),
+                request.getRequestURI(), exception);
+        return response;
+    }
+
+    private static ResponseEntity<ProblemDetail> problem(
+            HttpStatusCode status, String title, String detail, String code,
+            HttpServletRequest request, List<Map<String, String>> issues) {
+        String requestId = UUID.randomUUID().toString();
+        ProblemDetail body = ProblemDetail.forStatusAndDetail(status, detail);
+        body.setType(URI.create("/problems/" + code.toLowerCase(Locale.ROOT).replace('_', '-')));
+        body.setTitle(title);
+        body.setInstance(URI.create(request.getRequestURI()));
+        body.setProperty("requestId", requestId);
+        body.setProperty("code", code);
+        body.setProperty("errors", issues);
+
+        return ResponseEntity.status(status)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .header("X-Request-Id", requestId)
+                .body("HEAD".equals(request.getMethod()) ? null : body);
     }
 }

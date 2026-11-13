@@ -53,12 +53,7 @@ class RateLimitBackendConfiguration {
                 .asAsync();
     }
 
-    /**
-     * Uses the standalone or Sentinel-aware Redis client configured and owned by Spring Boot, but
-     * opens a dedicated connection with the key/value codecs required by Bucket4j. Lettuce resolves
-     * the current primary through Sentinel and reconnects after a failover. The bean lifecycle
-     * closes only this connection; Spring remains responsible for the underlying client.
-     */
+    /** Bucket4j owns this connection; Boot owns the Redis/Sentinel client underneath it. */
     @Bean(destroyMethod = "close")
     @Profile("prod")
     StatefulRedisConnection<String, byte[]> bucket4jRedisConnection(

@@ -19,6 +19,9 @@ package de.ddb.apiv3;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import de.ddb.apiv3.rdf.RdfCodec;
+import de.ddb.apiv3.support.S3TestServer;
+import de.ddb.apiv3.support.S3TestSupport;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.net.URI;
@@ -28,38 +31,22 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
+import org.apache.jena.rdf.model.ModelFactory;
+import org.apache.jena.riot.Lang;
+import org.apache.jena.riot.RDFDataMgr;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.ActiveProfiles;
 
-/**
- * Verifies request and response compression at the embedded Jetty boundary.
- *
- * <p>MockMvc bypasses the servlet container and cannot establish this behavior, so the tests use
- * a real random-port server and the JDK HTTP client. They protect metadata response compression,
- * encoding-specific strong ETags and decompression of a complete gzip multipart entity.
- * Other content codings are not implied by these tests.</p>
- */
+/** Tests gzip at the real Jetty boundary, including the decompressed raw RDF upload limit. */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
-    "spring.datasource.url=jdbc:h2:mem:compression-test;DB_CLOSE_DELAY=-1",
-    "server.compression.min-response-size=1B"
+    "server.compression.min-response-size=1B",
+    "ddb.api.max-document-size=1KB"
 })
 @ActiveProfiles("dev")
-class HttpCompressionIntegrationTest {
-
-    private static final String DEMO_ID = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-    private static final String UPLOAD_ID = "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ";
-    private static final String RDF_XML = """
-            <?xml version="1.0" encoding="UTF-8"?>
-            <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
-              <rdf:Description rdf:about="https://example.org/record/compressed-upload">
-                <rdf:type rdf:resource="http://www.europeana.eu/schemas/edm/ProvidedCHO"/>
-              </rdf:Description>
-            </rdf:RDF>
-            """;
+class HttpCompressionIntegrationTest extends S3TestSupport {
 
     private final HttpClient client = HttpClient.newHttpClient();
 
@@ -67,87 +54,114 @@ class HttpCompressionIntegrationTest {
     private int port;
 
     @Autowired
-    private JdbcClient jdbcClient;
+    private RdfCodec codec;
 
     @Test
-    void compressesResponsesAndKeepsStrongEtagsRepresentationSpecific() throws Exception {
-        HttpRequest request = HttpRequest.newBuilder(uri("/3/records/" + DEMO_ID))
-                .header("Accept", "application/ld+json")
-                .header("Accept-Encoding", "gzip")
-                .GET()
-                .build();
-
-        HttpResponse<byte[]> response = client.send(request, HttpResponse.BodyHandlers.ofByteArray());
-
-        assertThat(response.statusCode()).isEqualTo(200);
-        assertThat(response.headers().firstValue("Content-Encoding")).contains("gzip");
-        assertThat(response.headers().firstValue("Vary").orElse("")).contains("Accept-Encoding");
-        assertThat(response.headers().firstValue("ETag").orElse("")).endsWith("--gzip\"");
-        assertThat(gunzip(response.body()))
-                .isEqualTo(readIdentityMetadata(DEMO_ID));
-    }
-
-    @Test
-    void decompressesTheCompleteGzipMultipartEntityBeforeUploadProcessing() throws Exception {
-        String boundary = "gzip-upload-boundary";
-        byte[] requestBody = gzip(multipartBody(boundary));
-        HttpRequest request = HttpRequest.newBuilder(uri("/3/records"))
-                .header("Accept", "application/ld+json")
-                .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+    void decompressesGzipRdfBeforeValidationAndStoresUncompressedJelly() throws Exception {
+        String id = "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ";
+        HttpResponse<byte[]> response = client.send(HttpRequest.newBuilder(uri("/3/records/" + id))
+                .header("Content-Type", "application/rdf+xml")
                 .header("Content-Encoding", "gzip")
-                .POST(HttpRequest.BodyPublishers.ofByteArray(requestBody))
-                .build();
-
-        HttpResponse<byte[]> response = client.send(request, HttpResponse.BodyHandlers.ofByteArray());
+                .POST(HttpRequest.BodyPublishers.ofByteArray(gzip(S3TestServer.DEMO_RDF)))
+                .build(), HttpResponse.BodyHandlers.ofByteArray());
 
         assertThat(response.statusCode()).isEqualTo(201);
-        assertThat(response.headers().firstValue("Location"))
-                .contains("/3/records/" + UPLOAD_ID);
-        assertThat(jdbcClient.sql("SELECT rdf_xml FROM record_metadata_by_id WHERE record_id = :recordId")
-                        .param("recordId", UPLOAD_ID)
-                        .query((row, rowNumber) -> row.getBytes("rdf_xml"))
-                        .single())
-                .containsExactly(RDF_XML.getBytes(StandardCharsets.UTF_8));
+        assertThat(response.headers().firstValue("ETag")).isPresent();
+        assertThat(response.headers().firstValue("Location")).contains("/3/records/" + id);
+        assertThat(STORAGE.storedContentType(id + "/record")).isEqualTo(RdfCodec.JELLY_CONTENT_TYPE);
+        assertRdfXml(codec.fromJelly(STORAGE.storedRdf(id), Lang.RDFXML));
     }
 
-    private byte[] readIdentityMetadata(String recordId) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder(uri("/3/records/" + recordId))
-                .header("Accept", "application/ld+json")
-                .header("Accept-Encoding", "identity")
-                .GET()
-                .build();
-        HttpResponse<byte[]> response = client.send(request, HttpResponse.BodyHandlers.ofByteArray());
+    @Test
+    void compressesNegotiatedRdfWithoutChangingTheStrongStorageValidator() throws Exception {
+        String id = "CK".repeat(16);
+        HttpResponse<byte[]> created = client.send(HttpRequest.newBuilder(uri("/3/records/" + id))
+                .header("Content-Type", "application/rdf+xml")
+                .POST(HttpRequest.BodyPublishers.ofByteArray(S3TestServer.DEMO_RDF))
+                .build(), HttpResponse.BodyHandlers.ofByteArray());
+        assertThat(created.statusCode()).isEqualTo(201);
+        String storageEtag = created.headers().firstValue("ETag").orElseThrow();
+
+        HttpResponse<byte[]> response = client.send(HttpRequest.newBuilder(uri("/3/records/" + id))
+                .header("Accept", "application/rdf+xml")
+                .header("Accept-Encoding", "gzip")
+                .GET().build(), HttpResponse.BodyHandlers.ofByteArray());
+
         assertThat(response.statusCode()).isEqualTo(200);
-        assertThat(response.headers().firstValue("Content-Encoding")).isEmpty();
-        return response.body();
+        assertThat(response.headers().firstValue("Content-Type").orElse("")).startsWith("application/rdf+xml");
+        assertThat(response.headers().firstValue("Content-Encoding")).contains("gzip");
+        assertThat(response.headers().firstValue("ETag").orElse("")).startsWith("W/\"");
+        assertThat(response.headers().firstValue("X-Record-ETag")).contains(storageEtag);
+        assertThat(String.join(",", response.headers().allValues("Vary"))).contains("Accept", "Accept-Encoding");
+        assertRdfXml(gunzip(response.body()));
+
+        String compressedEtag = response.headers().firstValue("ETag").orElseThrow();
+        HttpResponse<byte[]> unchanged = client.send(HttpRequest.newBuilder(uri("/3/records/" + id))
+                .header("Accept", "application/rdf+xml")
+                .header("Accept-Encoding", "gzip")
+                .header("If-None-Match", compressedEtag)
+                .GET().build(), HttpResponse.BodyHandlers.ofByteArray());
+
+        assertThat(unchanged.statusCode()).isEqualTo(304);
+        assertThat(unchanged.body()).isEmpty();
+        assertThat(unchanged.headers().firstValue("X-Record-ETag")).contains(storageEtag);
+    }
+
+    @Test
+    void appliesTheUploadLimitToDecompressedBytes() throws Exception {
+        String id = "YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY";
+        byte[] oversized = ("<!--" + "x".repeat(2048) + "-->\n"
+                + new String(S3TestServer.DEMO_RDF, StandardCharsets.UTF_8))
+                .getBytes(StandardCharsets.UTF_8);
+        int writesBefore = STORAGE.writeCount();
+        HttpResponse<byte[]> response = client.send(HttpRequest.newBuilder(uri("/3/records/" + id))
+                .header("Content-Type", "application/rdf+xml")
+                .header("Content-Encoding", "gzip")
+                .POST(HttpRequest.BodyPublishers.ofByteArray(gzip(oversized)))
+                .build(), HttpResponse.BodyHandlers.ofByteArray());
+
+        assertThat(response.statusCode()).isEqualTo(413);
+        assertThat(STORAGE.writeCount()).isEqualTo(writesBefore);
+    }
+
+    @Test
+    void returnsTheRdfValidationProblemWhenGzipIsAccepted() throws Exception {
+        HttpResponse<byte[]> response = client.send(HttpRequest.newBuilder(
+                        uri("/3/records/XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"))
+                .header("Content-Type", "application/rdf+xml")
+                .header("Accept", "application/problem+json")
+                .header("Accept-Encoding", "gzip")
+                .POST(HttpRequest.BodyPublishers.ofString("<rdf:RDF>"))
+                .build(), HttpResponse.BodyHandlers.ofByteArray());
+
+        assertThat(response.statusCode()).isEqualTo(422);
+        assertThat(response.headers().firstValue("Content-Type").orElse(""))
+                .startsWith("application/problem+json");
+        // Accept-Encoding: gzip also permits identity; the container may leave errors uncompressed.
+        String encoding = response.headers().firstValue("Content-Encoding").orElse("identity");
+        assertThat(encoding).isIn("gzip", "identity");
+        byte[] problem = "gzip".equals(encoding) ? gunzip(response.body()) : response.body();
+        if ("gzip".equals(encoding)) {
+            assertThat(response.headers().firstValue("Vary").orElse("")).contains("Accept-Encoding");
+        }
+        assertThat(new String(problem, StandardCharsets.UTF_8)).contains("INVALID_RDF");
     }
 
     private URI uri(String path) {
         return URI.create("http://127.0.0.1:" + port + path);
     }
 
-    private static byte[] multipartBody(String boundary) {
-        String metadata = """
-                {
-                  "recordId": "%s",
-                  "datasetIds": ["EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE"],
-                  "providerId": "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
-                  "aggregatorId": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-                  "sourceId": "gzip-upload-001",
-                  "publicationStatus": "PUBLISHED",
-                  "profileVersion": "ddb-v3"
-                }
-                """.formatted(UPLOAD_ID);
-        String body = "--%1$s\r\n"
-                + "Content-Disposition: form-data; name=\"metadata\"; filename=\"metadata.json\"\r\n"
-                + "Content-Type: application/json\r\n\r\n"
-                + metadata + "\r\n"
-                + "--%1$s\r\n"
-                + "Content-Disposition: form-data; name=\"content\"; filename=\"record.rdf\"\r\n"
-                + "Content-Type: application/rdf+xml\r\n\r\n"
-                + RDF_XML + "\r\n"
-                + "--%1$s--\r\n";
-        return body.formatted(boundary).getBytes(StandardCharsets.UTF_8);
+    private static void assertRdfXml(byte[] bytes) {
+        var actual = ModelFactory.createDefaultModel();
+        var expected = ModelFactory.createDefaultModel();
+        try {
+            RDFDataMgr.read(actual, new ByteArrayInputStream(bytes), Lang.RDFXML);
+            RDFDataMgr.read(expected, new ByteArrayInputStream(S3TestServer.DEMO_RDF), Lang.RDFXML);
+            assertThat(actual.isIsomorphicWith(expected)).isTrue();
+        } finally {
+            actual.close();
+            expected.close();
+        }
     }
 
     private static byte[] gzip(byte[] bytes) throws Exception {
