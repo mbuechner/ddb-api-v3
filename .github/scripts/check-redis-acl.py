@@ -22,11 +22,16 @@ def run(arguments, allow_error=False, timeout=120, **kwargs):
     return (result.stdout + result.stderr).strip()
 
 
-def render(chart, values, ha):
+def render(chart, values, ha, deployment=False):
     rendered = run(["helm", "template", "acl-smoke", str(chart),
                     "--set", f"redis.haMode.enabled={str(ha).lower()}",
-                    "--show-only", "templates/secrets.yaml"])
-    secrets = {item["metadata"]["name"]: item["data"] for item in yaml.safe_load_all(rendered) if item}
+                    "--set", f"redis.useDeploymentWhenNonHA={str(deployment).lower()}"])
+    resources = [item for item in yaml.safe_load_all(rendered) if item]
+    for item in resources:
+        if item["kind"] == "PodDisruptionBudget" and len(
+                {"minAvailable", "maxUnavailable"}.intersection(item["spec"])) != 1:
+            raise RuntimeError("Each PodDisruptionBudget must set exactly one availability constraint")
+    secrets = {item["metadata"]["name"]: item["data"] for item in resources if item["kind"] == "Secret"}
     auth = {key: base64.b64decode(value, validate=True).decode()
             for key, value in secrets[values["redis"]["auth"]["secretName"]].items()}
     passwords = [auth[key] for key in ("REDIS_PASSWORD", "REDIS_REPLICATION_PASSWORD",
@@ -131,12 +136,13 @@ def smoke(auth, passwords, configs, ha, image, group, probe):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("chart", type=Path)
-    parser.add_argument("--render-only", action="store_true", help="Validate rendered secrets without Docker")
+    parser.add_argument("--render-only", action="store_true", help="Validate rendered budgets and secrets without Docker")
     options = parser.parse_args()
     values = yaml.safe_load((options.chart / "values.yaml").read_text(encoding="utf-8"))
     modes = [render(options.chart, values, ha) for ha in (False, True)]
+    render(options.chart, values, False, deployment=True)
     if options.render_only:
-        print("Rendered standalone/HA Redis credentials validated; Docker checks not executed.")
+        print("Rendered StatefulSet/Deployment/HA Redis budgets and credentials validated; Docker checks not executed.")
         return
     image = values["redis"]["image"]
     image = f"{image['registry']}/{image['repository']}:{image['tag']}"

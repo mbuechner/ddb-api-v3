@@ -45,7 +45,8 @@ privilegiertes Importrecht. [Auth](../../docs/security.md).
 
 Uploadlimit: `apiService.maxDocumentSize`; Quoten: `gateway.rateLimit`.
 `forwardHeadersStrategy` ist je Anwendung konfigurierbar. Alle ENV-Zuordnungen
-stehen im [Schema](values.schema.json); seltene Optionen unter `extraEnv`.
+stehen im [Schema](values.schema.json), das auch die Hilfetexte im nativen
+OpenShift-Formular liefert. YAML bleibt verfügbar; seltene Optionen unter `extraEnv`.
 Für einen Dev-Token aus einem Secret: [Deployment-Konfiguration](../../docs/deployment.md#values-und-installation).
 
 ## Kapazität
@@ -81,6 +82,10 @@ OpenShift: `oc` statt `kubectl`. HTTPS am Ingress; API und Redis intern.
 Nach S3-Secret-Rotation API-Deployment neu starten. Logs: stdout; Probes vorkonfiguriert.
 `apiService`/`gateway`: getrennte Replikazahlen, Ressourcen und HPA.
 Redis-PVCs und verwaltete Redis-Secrets bleiben nach `helm uninstall` erhalten.
+Redis läuft standardmäßig als StatefulSet. `redis.useDeploymentWhenNonHA: true`
+wählt für die Einzelinstanz ein Deployment mit PVC und `Recreate`; HA verwendet
+immer ein StatefulSet. Redis speichert Quoten, RDF bleibt in S3.
+Das Redis-PDB verwendet standardmäßig `maxUnavailable: 1`; kein `minAvailable` ergänzen.
 
 [Values](values.yaml) · [Deployment, Redis, Rollouts und OpenShift](../../docs/deployment.md) ·
 [Images/Releases](../../docs/operations.md#container-und-releases)

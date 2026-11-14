@@ -101,7 +101,8 @@ gateway:
   extraEnv: {}
 
 redis:
-  # Keep the StatefulSet and PVC identities when switching from standalone to HA.
+  # false: StatefulSet with stable pod/PVC names. true: standalone Deployment
+  # with one pod, Recreate rollouts and its own PVC. HA always uses a StatefulSet.
   useDeploymentWhenNonHA: false
   # Groundhog2k deploys the unmodified Docker Official Redis image. The
   # dependency archive contains only Helm templates, never this image.
@@ -180,10 +181,13 @@ redis:
   storage:
     requestedSize: 1Gi
     className: ""
+    # Retain the standalone Deployment's PVC after helm uninstall.
+    keepPvc: true
     persistentVolumeClaimRetentionPolicy:
       whenScaled: Retain
       whenDeleted: Retain
   podDisruptionBudget:
+    # Configure only maxUnavailable; Kubernetes forbids minAvailable alongside it.
     maxUnavailable: 1
   affinity: {}
   networkPolicy:

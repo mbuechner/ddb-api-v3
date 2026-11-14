@@ -88,6 +88,8 @@ konfiguriert Kapazität, Nachfüllmenge, Intervall und Kosten einer Anfrage.
 `apiService.forwardHeadersStrategy` und `gateway.forwardHeadersStrategy` setzen
 jeweils `SERVER_FORWARD_HEADERS_STRATEGY`; hinter vertrauenswürdigen Proxies
 bewusst wählen. [Alle ENV-Zuordnungen](../charts/ddb-api-v3/values.schema.json).
+Das Schema liefert auch die Feldbeschreibungen für das native OpenShift-Formular;
+dieselben Werte lassen sich weiterhin direkt in der YAML-Ansicht bearbeiten.
 
 `ingress.host` und `tlsSecretName` bestimmen den HTTP-Einstiegspunkt;
 ohne Secret-Namen verwendet der Ingress das Standardzertifikat seines Controllers.
@@ -190,13 +192,30 @@ standardmäßig auf 64 MiB; dort liegt kein fachlicher Zustand.
 
 Der Redis-Subchart betreibt standardmäßig eine einzelne Instanz ohne Sentinel,
 mit 32 MiB `maxmemory` und einem 1-GiB-PVC. Auch mehrere Gateway-Replikate können
-dieselbe Redis-Instanz für gemeinsame Quoten verwenden.
+dieselbe Redis-Instanz für gemeinsame Quoten verwenden. RDF liegt ausschließlich
+im S3-Speicher.
+
+`redis.useDeploymentWhenNonHA` wählt den Controller für diese Einzelinstanz:
+
+| Wert | Verhalten |
+| --- | --- |
+| `false` (Default) | StatefulSet mit fester Pod-Identität und eigenem PVC je Pod. |
+| `true` | Deployment mit einem Pod und eigenem PVC; `Recreate` stoppt den alten Pod vor dem neuen. |
+
+Beide Varianten verwenden persistenten Speicher und dieselben ACLs und Probes.
+Bei aktiviertem HA läuft Redis immer als StatefulSet; der Schalter hat dann
+keine Wirkung.
 
 `redis.haMode.enabled: true` aktiviert einen Primary, zwei Replicas und je Pod
 einen Sentinel. Das Produktionsprofil setzt außerdem harte Anti-Affinität und
 benötigt drei passende Worker-Nodes. Das Quorum ist zwei. Die Gateways wechseln
 automatisch von der direkten Redis-Adresse zu Sentinel-Discovery.
 HA verbessert die Verfügbarkeit, nicht den Schreibdurchsatz.
+
+`redis.podDisruptionBudget.maxUnavailable: 1` erlaubt bei freiwilligen
+Unterbrechungen höchstens einen nicht verfügbaren Redis-Pod. Ein einzelner
+Redis-Pod ist dabei vorübergehend nicht erreichbar. Der Chart verwendet nur
+`maxUnavailable`; `minAvailable` darf nicht zusätzlich gesetzt werden.
 
 HA-Werte: Ausfallerkennung 5 Sekunden, Failover-Timeout 60 Sekunden.
 AOF mit `appendfsync everysec` und `noeviction` gelten in beiden Modi;
@@ -211,7 +230,8 @@ Redis-Kennwörter beim Rotieren zusammen mit einem abgestimmten Redis-/Gateway-
 Neustart ändern; laufende Prozesse lesen ACLs und ENV nicht neu.
 
 Verwaltete Redis-Secrets und PVCs bleiben nach `helm uninstall` erhalten:
-`helm.sh/resource-policy: keep` sowie `whenDeleted/whenScaled: Retain`. Für eine
+beim Deployment über `redis.storage.keepPvc: true`, beim StatefulSet über
+`whenDeleted/whenScaled: Retain`; Secrets tragen `helm.sh/resource-policy: keep`. Für eine
 Wiederinstallation denselben Release-Namen und Namespace verwenden. Die
 endgültige Daten-/Secret-Löschung ist ein eigener, bewusster Betriebsschritt.
 
