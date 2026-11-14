@@ -133,6 +133,16 @@ jobs:
           helm lint "_site/ddb-api-v3-$package_version.tgz" --strict --set redis.haMode.enabled=false
           helm lint "_site/ddb-api-v3-$package_version.tgz" --strict \
             --values "$chart_dir/values-production.yaml" --set redis.haMode.enabled=true
+          # Compile all recommendation targets, including both Redis controller kinds.
+          for redis_mode in \
+            "redis.haMode.enabled=false,redis.useDeploymentWhenNonHA=false" \
+            "redis.haMode.enabled=false,redis.useDeploymentWhenNonHA=true" \
+            "redis.haMode.enabled=true"; do
+            helm template vpa-smoke "_site/ddb-api-v3-$package_version.tgz" \
+              --api-versions autoscaling.k8s.io/v1/VerticalPodAutoscaler \
+              --set "apiService.vpa.enabled=true,gateway.vpa.enabled=true,redis.vpa.enabled=true,$redis_mode" \
+              --show-only templates/vpa.yaml > /dev/null
+          done
           helm repo index _site --url "$PAGES_BASE_URL"
 
           printf '%s\n' \

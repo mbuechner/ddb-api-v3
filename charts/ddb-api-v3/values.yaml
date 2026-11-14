@@ -1,6 +1,8 @@
 # Image locations, S3 storage and the public endpoint are the only values that
 # normally need adapting. Application defaults live in the chart templates;
 # extraEnv remains available for exceptional Spring configuration overrides.
+# Every resources block reserves requests and caps usage with limits;
+# each request must be <= its limit. Quantities such as whole CPU cores are strings.
 appProfile: prod
 
 images:
@@ -67,13 +69,21 @@ apiService:
     maxQueuedRequests: 8
     queueTimeout: 1s
   resources:
-    requests: { cpu: 100m, memory: 256Mi }
-    limits: { memory: 512Mi, ephemeral-storage: 64Mi }
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+      ephemeral-storage: 64Mi
   autoscaling:
     enabled: false
     minReplicas: 1
     maxReplicas: 10
     targetCPUUtilizationPercentage: 70
+  # Requires a VPA controller; recommendations only, no automatic changes.
+  vpa:
+    enabled: false
   extraEnv: {}
 
 gateway:
@@ -91,13 +101,20 @@ gateway:
     port: 80
     annotations: {}
   resources:
-    requests: { cpu: 50m, memory: 128Mi }
-    limits: { memory: 256Mi, ephemeral-storage: 64Mi }
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+      ephemeral-storage: 64Mi
   autoscaling:
     enabled: false
     minReplicas: 1
     maxReplicas: 10
     targetCPUUtilizationPercentage: 70
+  vpa:
+    enabled: false
   extraEnv: {}
 
 redis:
@@ -126,19 +143,33 @@ redis:
   podSecurityContext: false
   securityContext: false
   resources:
-    requests: { cpu: 25m, memory: 32Mi }
-    limits: { cpu: "1", memory: 128Mi }
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
   sentinelResources:
-    requests: { cpu: 50m, memory: 64Mi }
-    limits: { cpu: 250m, memory: 128Mi }
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+  vpa:
+    enabled: false
   metrics:
     enabled: false
     exporter:
       image:
         pullPolicy: Always
   initResources:
-    requests: { cpu: 25m, memory: 32Mi }
-    limits: { cpu: 250m, memory: 128Mi }
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
   redisConfig: |-
     appendonly yes
     appendfsync everysec

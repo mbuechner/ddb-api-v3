@@ -126,13 +126,14 @@
       "type": "object",
       "title": "RDF-API",
       "description": "RDF-Verarbeitung und S3-Zugriff. Parallelit\u00e4t, Ressourcen und S3-Pool gemeinsam auf die Last abstimmen.",
-      "required": ["replicaCount", "autoscaling", "resources", "forwardHeadersStrategy", "baseUrl", "maxDocumentSize", "concurrency"],
+      "required": ["replicaCount", "autoscaling", "vpa", "resources", "forwardHeadersStrategy", "baseUrl", "maxDocumentSize", "concurrency"],
       "properties": {
         "replicaCount": {"$ref": "#/definitions/workload/properties/replicaCount"},
         "forwardHeadersStrategy": {"$ref": "#/definitions/workload/properties/forwardHeadersStrategy"},
         "extraEnv": {"$ref": "#/definitions/workload/properties/extraEnv"},
         "resources": {"$ref": "#/definitions/workload/properties/resources"},
         "autoscaling": {"$ref": "#/definitions/workload/properties/autoscaling"},
+        "vpa": {"$ref": "#/definitions/vpa"},
         "baseUrl": {"description": "DDB_API_BASE_URL: canonical HTTP(S) origin for RDF IRIs, or auto to use the request origin.", "type": "string", "pattern": "^(?:auto|https?://[^/?#@]+/?)$"},
         "maxDocumentSize": {"type": "string", "minLength": 1, "description": "DDB_API_UPLOAD_MAX_FILE_SIZE: maximum decompressed RDF/XML body size, for example 1MB."},
         "concurrency": {
@@ -153,13 +154,14 @@
       "type": "object",
       "title": "Gateway",
       "description": "\u00d6ffentlicher Zugang mit Schreibschutz und Anfragequoten. prod teilt Quoten \u00fcber Redis; dev verwendet lokale Quoten je Pod.",
-      "required": ["replicaCount", "autoscaling", "resources", "forwardHeadersStrategy", "service", "maxConnections", "rateLimit"],
+      "required": ["replicaCount", "autoscaling", "vpa", "resources", "forwardHeadersStrategy", "service", "maxConnections", "rateLimit"],
       "properties": {
         "replicaCount": {"$ref": "#/definitions/workload/properties/replicaCount"},
         "forwardHeadersStrategy": {"$ref": "#/definitions/workload/properties/forwardHeadersStrategy"},
         "extraEnv": {"$ref": "#/definitions/workload/properties/extraEnv"},
         "resources": {"$ref": "#/definitions/workload/properties/resources"},
         "autoscaling": {"$ref": "#/definitions/workload/properties/autoscaling"},
+        "vpa": {"$ref": "#/definitions/vpa"},
         "maxConnections": {"type": "integer", "minimum": 1, "description": "GATEWAY_HTTP_MAX_CONNECTIONS: upstream connection pool per gateway pod."},
         "rateLimit": {
           "type": "object",
@@ -189,7 +191,7 @@
       "type": "object",
       "title": "Redis: gemeinsame Anfragequoten",
       "description": "Speichert die Gateway-Quoten, keine RDF-Datens\u00e4tze. Standard: eine persistente Instanz. HA erg\u00e4nzt Replikation und Sentinel-Failover.",
-      "required": ["image", "auth", "serviceAccount", "extraSecretRedisConfigs", "extraSecretSentinelConfigs", "haMode", "podDisruptionBudget", "storage", "useDeploymentWhenNonHA"],
+      "required": ["image", "auth", "serviceAccount", "extraSecretRedisConfigs", "extraSecretSentinelConfigs", "haMode", "podDisruptionBudget", "storage", "useDeploymentWhenNonHA", "vpa"],
       "properties": {
         "useDeploymentWhenNonHA": { "type": "boolean", "title": "Standalone als Deployment", "description": "Nur ohne HA wirksam: false (Standard) erstellt ein StatefulSet mit stabilen Pod-/PVC-Namen. true erstellt ein Deployment mit genau einem Pod, eigenem PVC und Recreate-Rollouts (kurze Unterbrechung). HA verwendet immer ein StatefulSet. Diese Wahl spart keine Pods und aktiviert keine Hochverf\u00fcgbarkeit." },
         "image": {
@@ -214,6 +216,7 @@
         "extraSecretRedisConfigs": { "$ref": "#/definitions/kubernetesName", "description": "Name des vom Chart erzeugten Redis-ACL-Konfigurationssecrets; keine fremde Konfiguration referenzieren." },
         "extraSecretSentinelConfigs": { "$ref": "#/definitions/kubernetesName", "description": "Name des vom Chart erzeugten Sentinel-ACL-Konfigurationssecrets; wird nur bei HA verwendet." },
         "resources": { "$ref": "#/definitions/workload/properties/resources" },
+        "vpa": { "$ref": "#/definitions/vpa" },
         "sentinelResources": { "$ref": "#/definitions/workload/properties/resources" },
         "initResources": { "$ref": "#/definitions/workload/properties/resources" },
         "redisConfig": { "type": "string", "description": "Zus\u00e4tzliche redis.conf-Zeilen. Standard: AOF jede Sekunde, maxmemory 32mb, noeviction. maxmemory mit RAM-Limits abstimmen und noeviction f\u00fcr verl\u00e4ssliche Quoten beibehalten." },
@@ -312,7 +315,7 @@
     },
     "workload": {
       "type": "object",
-      "required": ["replicaCount", "autoscaling", "resources", "forwardHeadersStrategy"],
+      "required": ["replicaCount", "autoscaling", "vpa", "resources", "forwardHeadersStrategy"],
       "properties": {
         "replicaCount": {"type": "integer", "minimum": 1, "description": "Feste Anzahl der Pods, solange Autoscaling ausgeschaltet ist. Ein Pod ist sparsam, bietet bei Ausfall oder Rollout aber keine Verf\u00fcgbarkeit."},
         "forwardHeadersStrategy": {"type": "string", "enum": ["none", "native", "framework"], "description": "SERVER_FORWARD_HEADERS_STRATEGY for this pod. Enable only behind a trusted proxy that sanitizes forwarded headers."},
@@ -323,10 +326,10 @@
         },
         "resources": {
           "type": "object",
-          "description": "Kubernetes-Ressourcen je Container: requests reservieren Kapazit\u00e4t, limits begrenzen den Verbrauch. Mengen als Strings angeben, CPU z. B. 100m oder \"1\", RAM z. B. 256Mi.",
+          "description": "Kubernetes-Ressourcen je Container. Pro Ressource muss request <= limit gelten. Mengen als Strings angeben, CPU z. B. 100m oder \"1\", RAM z. B. 256Mi. Namespace-LimitRanges k\u00f6nnen weitere Vorgaben machen.",
           "properties": {
-            "requests": { "$ref": "#/definitions/resourceQuantities" },
-            "limits": { "$ref": "#/definitions/resourceQuantities" }
+            "requests": { "$ref": "#/definitions/resourceQuantities", "title": "Requests: reservierte Kapazit\u00e4t", "description": "Der Scheduler reserviert diese Kapazit\u00e4t je Container. Jeder Request muss kleiner oder gleich dem zugeh\u00f6rigen Limit sein." },
+            "limits": { "$ref": "#/definitions/resourceQuantities", "title": "Limits: Obergrenzen", "description": "CPU wird bei Erreichen gedrosselt; ein \u00fcberschrittenes RAM-Limit kann den Container beenden. Limit mindestens so hoch wie den Request setzen." }
           }
         },
         "autoscaling": {
@@ -371,6 +374,16 @@
             }
           }
         }
+      }
+    },
+    "vpa": {
+      "type": "object",
+      "title": "VPA: Ressourcenempfehlungen",
+      "description": "Ben\u00f6tigt einen installierten VPA-Controller und die CRD VerticalPodAutoscaler. updateMode ist Off: Empfehlungen f\u00fcr CPU-/RAM-Requests werden berechnet, laufende Ressourcen bleiben unver\u00e4ndert. F\u00fcr Redis werden auch Sentinel und weitere Container ber\u00fccksichtigt.",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean", "description": "VPA-Empfehlungen f\u00fcr diesen Workload aktivieren. Standard false funktioniert auch in Clustern ohne VPA-Controller." }
       }
     },
     "resourceQuantities": {

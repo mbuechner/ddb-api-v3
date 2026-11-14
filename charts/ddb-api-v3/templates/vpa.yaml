@@ -1,0 +1,30 @@
+{{- range $role, $component := dict "apiService" "api-service" "gateway" "gateway" "redis" "redis" }}
+{{- $settings := index $.Values $role }}
+{{- if $settings.vpa.enabled }}
+{{- if not ($.Capabilities.APIVersions.Has "autoscaling.k8s.io/v1/VerticalPodAutoscaler") }}
+{{- fail (printf "%s.vpa.enabled requires the VerticalPodAutoscaler CRD; install the cluster VPA operator/controller first" $role) }}
+{{- end }}
+{{- $name := include (printf "ddb-api-v3.%sName" $role) $ }}
+{{- $stateful := and (eq $role "redis") (or $.Values.redis.haMode.enabled (not $.Values.redis.useDeploymentWhenNonHA)) }}
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "ddb-api-v3.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: {{ ternary "StatefulSet" "Deployment" $stateful }}
+    name: {{ $name }}
+  updatePolicy:
+    updateMode: "Off"
+  resourcePolicy:
+    containerPolicies:
+      - containerName: {{ ternary "*" $component (eq $role "redis") | quote }}
+        controlledResources: [cpu, memory]
+        controlledValues: RequestsOnly
+{{- end }}
+{{- end }}

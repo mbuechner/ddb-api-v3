@@ -128,13 +128,14 @@ Seltene Anwendungsoptionen lassen sich über `apiService.extraEnv` und
 
 API und Gateway skalieren unabhängig mit `replicaCount` oder dem jeweiligen
 CPU-HPA. Standard sind je ein Pod, API/Gateway/Redis zusammen 175m CPU- und
-416Mi RAM-Requests bei 896Mi RAM-Limits. Die API bearbeitet vier Anfragen parallel,
-acht weitere warten höchstens eine Sekunde; S3-Pool: acht Verbindungen,
+416Mi RAM-Requests bei 900m CPU- und 896Mi RAM-Limits. Die API bearbeitet vier
+Anfragen parallel, acht weitere warten höchstens eine Sekunde; S3-Pool: acht Verbindungen,
 Gateway-Pool: 32. Diese Werte sind für kleine Last gedacht und lassen sich
 unabhängig erhöhen. Die kleine Installation ist nicht hochverfügbar.
 
 Das Produktionsprofil erhöht API/Gateway auf drei/zwei Replikate, Ressourcen,
-Parallelität und Pools; Redis erhält drei Nodes mit Sentinel. So installieren:
+Parallelität und Pools; Redis erhält drei Nodes mit Sentinel. Zusammen sind das
+580m CPU-Requests bei 2950m CPU-Limits. So installieren:
 
 ```bash
 helm install ddb-api-v3 ./charts/ddb-api-v3 -n ddb-api-v3 --create-namespace \
@@ -151,8 +152,8 @@ nicht auf das Limit. Vertikale Kapazität wird mit `resources` konfiguriert:
 ```yaml
 apiService:
   resources:
-    requests: {cpu: "1", memory: 1Gi}
-    limits: {cpu: "2", memory: 2Gi, ephemeral-storage: 64Mi}
+    requests: {cpu: 100m, memory: 1Gi}
+    limits: {cpu: 500m, memory: 2Gi, ephemeral-storage: 64Mi}
   concurrency:
     maxRequests: 32
     maxQueuedRequests: 64
@@ -168,10 +169,23 @@ gateway:
   maxConnections: 256
 ```
 
+Pro Ressource muss `requests` kleiner oder gleich `limits` sein. Ein CPU-Request
+von `250m` mit Limit `200m` wird abgewiesen: Request senken oder das Limit auf
+mindestens `250m` setzen, beispielsweise `500m`. Das gilt auch für RAM.
+Der Chart setzt CPU-Limits von `500m` für API und jeweils `200m` für Gateway
+und Redis. Sentinel und Init-Container verwenden `10m` / `100m` CPU
+(Request / Limit). Wenn eigene Values ein Limit weglassen, kann ein `LimitRange` im
+Namespace eines ergänzen. Prüfen mit
+`oc get limitrange -n <namespace> -o yaml` und die Values darauf abstimmen.
+
 Die JVM verwendet standardmäßig bis zu 60 % des RAM-Limits als Heap und beendet
 sich bei OOM. Der Rest bleibt für native Puffer, Metaspace und Threads. Ein
 festes `-Xmx` ist nicht eingebaut. Ressourcenänderungen werden mit neuen Pods
 wirksam; `extraEnv.JAVA_TOOL_OPTIONS` kann die Vorgabe ersetzen.
+
+CPU-Requests bewusst klein halten und unter repräsentativer Last messen.
+Mehr CPU oder weitere Replikate nur bei nachgewiesenem Bedarf vorsehen;
+optionale VPA-Empfehlungen werden manuell geprüft und übernommen.
 
 RDF-Arbeit, Warteschlange und S3-Pool gemeinsam mit CPU/RAM und realen
 Dokumentgrößen abstimmen. Mehr RAM erhöht `concurrency.maxRequests` nicht von
@@ -181,9 +195,31 @@ Ein voller Pool ergibt derzeit die native Gateway-Antwort `500`. Mehr API-Pods
 erhöhen auch die Gesamtzahl möglicher S3-Verbindungen. Keep-Alive-Verbindungen
 haben eine begrenzte Lebensdauer für die Verteilung auf neue Replikate.
 
-Kein VPA-Controller ist erforderlich. Bei zusätzlichem VPA automatische
-CPU-Änderungen nicht ohne Abstimmung gegen CPU-HPA regeln lassen. Bei einer
-Mindest-Replikazahl von eins ersetzen Rollouts den alten Pod ohne zusätzlichen
+Optional liefern Vertical Pod Autoscaler (VPA) Ressourcenempfehlungen. Dafür
+benötigt der Cluster einen VPA-Controller und die `VerticalPodAutoscaler`-CRD.
+Unter OpenShift den VPA-Operator durch die Cluster-Administration bereitstellen
+lassen. API, Gateway und Redis
+lassen sich unabhängig aktivieren:
+
+```yaml
+apiService:
+  vpa: {enabled: true}
+gateway:
+  vpa: {enabled: true}
+redis:
+  vpa: {enabled: true}
+```
+
+Der feste Modus `Off` sammelt nur Empfehlungen für CPU-/RAM-Requests
+(`RequestsOnly`); er ändert weder Ressourcen noch Pods. Redis-Empfehlungen
+decken bei HA auch den Sentinel-Container ab. Nach repräsentativer Last mit
+`oc get vpa -n <namespace> -o yaml` unter `status.recommendation` nachsehen.
+Empfehlungen manuell in `resources.requests` übernehmen und passende Limits
+setzen. CPU-Request-Änderungen mit einem aktiven CPU-HPA abstimmen, da dessen
+Auslastungsziel relativ zum Request gilt. VPAs sind standardmäßig deaktiviert.
+[VPA-API](https://github.com/kubernetes/autoscaler/blob/master/vertical-pod-autoscaler/docs/api.md).
+
+Bei einer Mindest-Replikazahl von eins ersetzen Rollouts den alten Pod ohne zusätzlichen
 Surge-Pod; dabei gibt es eine Unterbrechung. Ab zwei Mindest-Replikaten startet
 zuerst ein zusätzlicher Pod und muss bereit sein, bevor ein alter stoppt.
 Beim Stoppen bleiben fünf Sekunden für
@@ -199,6 +235,13 @@ Der Redis-Subchart betreibt standardmäßig eine einzelne Instanz ohne Sentinel,
 mit 32 MiB `maxmemory` und einem 1-GiB-PVC. Auch mehrere Gateway-Replikate können
 dieselbe Redis-Instanz für gemeinsame Quoten verwenden. RDF liegt ausschließlich
 im S3-Speicher.
+
+Kubernetes startet API, Gateway und Redis parallel. Ein gestarteter Pod ist noch
+nicht bereit für Anfragen. Im Profil `prod` verbindet sich das Gateway bereits
+beim Start mit Redis; ist Redis noch nicht erreichbar, scheitert der Start und
+Kubernetes versucht ihn erneut. Zusätzlich prüft die Gateway-Readiness Redis;
+erst bereite Pods erhalten Service-Traffic. Im Profil `dev` verwendet das
+Gateway lokale Quoten und startet unabhängig von Redis.
 
 `redis.useDeploymentWhenNonHA` wählt den Controller für diese Einzelinstanz:
 

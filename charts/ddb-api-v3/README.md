@@ -51,16 +51,17 @@ Für einen Dev-Token aus einem Secret: [Deployment-Konfiguration](../../docs/dep
 
 ## Kapazität
 
-| Default | CPU-Request | RAM-Request / Limit |
+| Default | CPU-Request / Limit | RAM-Request / Limit |
 | --- | --- | --- |
-| API × 1 | 100m | 256Mi / 512Mi |
-| Gateway × 1 | 50m | 128Mi / 256Mi |
-| Redis × 1 | 25m | 32Mi / 128Mi |
+| API × 1 | 100m / 500m | 256Mi / 512Mi |
+| Gateway × 1 | 50m / 200m | 128Mi / 256Mi |
+| Redis × 1 | 25m / 200m | 32Mi / 128Mi |
 
-Zusammen: 175m CPU, 416Mi RAM-Requests, 896Mi RAM-Limits und 1Gi PVC.
+Zusammen (Request / Limit): 175m / 900m CPU, 416Mi / 896Mi RAM und 1Gi PVC.
 Kleine Startwerte; eine Einzelinstanz bietet keine Ausfallsicherheit.
 Das [Produktionsprofil](values-production.yaml) ergänzt API × 3, Gateway × 2,
-Redis/Sentinel × 3 und größere Pools. Für diese Installation drei Worker-Nodes vorsehen:
+Redis/Sentinel × 3 und größere Pools, zusammen 580m / 2950m CPU.
+Für diese Installation drei Worker-Nodes vorsehen:
 
 ```bash
 helm install ddb-api-v3 ./charts/ddb-api-v3 -n ddb-api-v3 --create-namespace \
@@ -68,7 +69,11 @@ helm install ddb-api-v3 ./charts/ddb-api-v3 -n ddb-api-v3 --create-namespace \
 ```
 
 HPA optional über `apiService.autoscaling.enabled` und `gateway.autoscaling.enabled`;
-vertikal über `resources`. [Details und Grenzen](../../docs/deployment.md#skalierung-und-rollouts).
+vertikal über `resources`. Optionale VPA-Empfehlungen für API, Gateway und Redis:
+jeweils `vpa.enabled: true`, bei installiertem VPA-Controller/CRD. Modus `Off`
+liefert nur CPU-/RAM-Empfehlungen und verändert keine Pods oder Limits.
+CPU erst nach Messung unter echter Last erhöhen.
+[Details und Grenzen](../../docs/deployment.md#skalierung-und-rollouts).
 
 ## Betrieb
 

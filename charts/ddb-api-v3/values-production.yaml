@@ -6,8 +6,13 @@ apiService:
     maxRequests: 32
     maxQueuedRequests: 64
   resources:
-    requests: { cpu: 250m, memory: 512Mi }
-    limits: { memory: 1Gi, ephemeral-storage: 64Mi }
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+      ephemeral-storage: 64Mi
   autoscaling:
     minReplicas: 2
 
@@ -15,8 +20,13 @@ gateway:
   replicaCount: 2
   maxConnections: 256
   resources:
-    requests: { cpu: 100m, memory: 256Mi }
-    limits: { memory: 512Mi, ephemeral-storage: 64Mi }
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      cpu: 200m
+      memory: 512Mi
+      ephemeral-storage: 64Mi
   autoscaling:
     minReplicas: 2
 
@@ -27,8 +37,12 @@ redis:
   haMode:
     enabled: true
   resources:
-    requests: { cpu: 100m, memory: 256Mi }
-    limits: { cpu: "1", memory: 512Mi }
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      cpu: 250m
+      memory: 512Mi
   redisConfig: |-
     appendonly yes
     appendfsync everysec
