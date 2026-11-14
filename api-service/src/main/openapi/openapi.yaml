@@ -241,8 +241,9 @@ components:
     RdfRecord:
       required: true
       description: >-
-        A complete RDF/XML document. Its triples form the record's single named
-        graph. Use xml:base="/" with versionless, root-relative references such
+        A complete RDF/XML document containing at least one triple. Its triples
+        form the record's single named graph. Use xml:base="/" with versionless,
+        root-relative references such
         as /records/{recordId} and /items/{recordId}. Absolute IRIs remain unchanged;
         an explicit absolute xml:base controls resolution of relative IRIs.
         With xml:base="/", an empty rdf:about
@@ -349,7 +350,7 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
     UnprocessableContent:
-      description: The request body is not valid RDF/XML
+      description: The request body is not valid RDF/XML or contains no triples
       content:
         application/problem+json:
           schema:

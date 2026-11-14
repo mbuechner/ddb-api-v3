@@ -53,7 +53,8 @@ final class RdfXmlRecordWriter extends RDFXML_Basic {
 
     private final Map<Resource, String> types = new HashMap<>();
 
-    // Jena's RIOT plain writer uses this base; only typed-node hooks are customized.
+    // Jena's RIOT plain writer uses this deprecated constructor too.
+    // Keep the exemption local: typed, flat nodes need the subclass hooks.
     @SuppressWarnings("deprecation")
     private RdfXmlRecordWriter(Model model) {
         model.listStatements(null, RDF.type, (RDFNode) null).forEachRemaining(statement -> {

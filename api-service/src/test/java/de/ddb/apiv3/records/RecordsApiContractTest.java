@@ -348,6 +348,39 @@ class RecordsApiContractTest extends S3TestSupport {
     }
 
     @Test
+    void rejectsEmptyGraphsForCreateAndReplacementWithoutTouchingStorage() throws Exception {
+        String existingId = "ER".repeat(16);
+        String newId = "ES".repeat(16);
+        String etag = create(existingId);
+        byte[] original = STORAGE.storedRdf(existingId);
+        int writesBefore = STORAGE.writeCount();
+        int objectsBefore = STORAGE.recordCount();
+
+        for (String emptyGraph : List.of(
+                "<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"/>",
+                """
+                <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+                  <rdf:Description rdf:about="https://example.org/empty"/>
+                </rdf:RDF>
+                """)) {
+            mockMvc.perform(post(path(newId)).contentType(RDF_XML).content(emptyGraph))
+                    .andExpect(status().isUnprocessableContent())
+                    .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+            mockMvc.perform(put(path(existingId)).contentType(RDF_XML).header("If-Match", etag)
+                            .content(emptyGraph))
+                    .andExpect(status().isUnprocessableContent());
+        }
+
+        assertThat(STORAGE.writeCount()).isEqualTo(writesBefore);
+        assertThat(STORAGE.recordCount()).isEqualTo(objectsBefore);
+        assertThat(STORAGE.objectKeys()).doesNotContain(newId + "/record");
+        assertThat(STORAGE.storedRdf(existingId)).containsExactly(original);
+        mockMvc.perform(get(path(existingId)))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-Record-ETag", etag));
+    }
+
+    @Test
     void neverOverwritesAnExistingRecordDuringCreate() throws Exception {
         String id = "UUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU";
         create(id);

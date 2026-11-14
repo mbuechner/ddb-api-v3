@@ -44,7 +44,7 @@
         <apache-jena.version>6.2.0</apache-jena.version>
         <jakarta-json.version>2.1.3</jakarta-json.version>
         <parsson.version>1.1.9</parsson.version>
-        <jelly.version>3.7.3</jelly.version>
+        <jelly.version>4.0.1</jelly.version>
         <unbescape.version>1.1.6.RELEASE</unbescape.version>
         <openapi-generator.version>7.27.0</openapi-generator.version>
         <swagger-ui.version>5.34.1</swagger-ui.version>
@@ -132,13 +132,6 @@
             <groupId>eu.neverblink.jelly</groupId>
             <artifactId>jelly-jena</artifactId>
             <version>${jelly.version}</version>
-            <exclusions>
-                <!-- Jelly 3.7 also supports Jena 6; use our Jena version throughout. -->
-                <exclusion>
-                    <groupId>org.apache.jena</groupId>
-                    <artifactId>*</artifactId>
-                </exclusion>
-            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.webjars</groupId>

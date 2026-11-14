@@ -25,16 +25,15 @@ import de.ddb.apiv3.storage.StorageException;
 import eu.neverblink.jelly.convert.jena.JenaConverterFactory;
 import eu.neverblink.jelly.convert.jena.riot.JellyLanguage;
 import eu.neverblink.jelly.core.JellyOptions;
-import eu.neverblink.jelly.core.ProtoEncoder;
-import eu.neverblink.jelly.core.memory.RowBuffer;
-import eu.neverblink.jelly.core.proto.v1.LogicalStreamType;
+import eu.neverblink.jelly.core.RdfEncoder;
 import eu.neverblink.jelly.core.proto.v1.PhysicalStreamType;
 import eu.neverblink.jelly.core.proto.v1.RdfStreamFrame;
 import jakarta.json.Json;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -101,9 +100,12 @@ class RdfCodecTest {
         byte[] jelly = codec.toJelly(bytes(XML), GRAPH);
 
         RdfStreamFrame frame = RdfStreamFrame.parseDelimitedFrom(new ByteArrayInputStream(jelly));
-        assertThat(frame.getRows().stream().filter(row -> row.hasOptions()).findFirst().orElseThrow()
-                .getOptions().getPhysicalType()).isEqualTo(PhysicalStreamType.GRAPHS);
-        assertThat(frame.getRows().stream().anyMatch(row -> row.hasGraphStart())).isTrue();
+        var options = frame.getRows().stream().filter(row -> row.hasOptions()).findFirst().orElseThrow().getOptions();
+        assertThat(options.getPhysicalType()).isEqualTo(PhysicalStreamType.QUADS);
+        assertThat(options.getVersion()).isEqualTo(3);
+        assertThat(frame.getColumns()).isNotNull();
+        assertThat(frame.getColumns().getRowCount()).isEqualTo(1);
+        assertThat(frame.getRows().stream().anyMatch(row -> row.hasGraphStart() || row.hasGraphEnd())).isFalse();
         assertCanonicalGraph(jelly, 1);
     }
 
@@ -166,17 +168,8 @@ class RdfCodecTest {
     }
 
     @Test
-    void emptyRdfXmlRetainsAnExplicitNamedGraphInJellyAndJsonLd() throws Exception {
-        byte[] jelly = codec.toJelly(bytes(xml("")), GRAPH);
-        RdfStreamFrame frame = RdfStreamFrame.parseDelimitedFrom(new ByteArrayInputStream(jelly));
-        assertThat(frame.getRows().stream().anyMatch(row -> row.hasGraphStart())).isTrue();
-        assertThat(frame.getRows().stream().anyMatch(row -> row.hasGraphEnd())).isTrue();
-        try (var reader = Json.createReader(new ByteArrayInputStream(codec.fromJelly(jelly, Lang.JSONLD)))) {
-            var document = reader.readObject();
-            assertThat(document.getString("@id")).isEqualTo(GRAPH);
-            assertThat(document.getJsonArray("@graph")).isEmpty();
-        }
-        assertThat(codec.fromJelly(jelly, JellyLanguage.JELLY)).containsExactly(jelly);
+    void rejectsEmptyRdfXmlBecauseJelly12CannotRetainItsGraphName() {
+        assertInvalidXml(xml(""));
     }
 
     @Test
@@ -205,20 +198,39 @@ class RdfCodecTest {
     void storedNamespaceHintsCannotBecomeRemoteJsonLdContextDirectives() {
         byte[] untrusted = storedJelly(encoder -> {
             encoder.handleNamespace("@import", NodeFactory.createURI("https://example.org/context"));
-            encoder.handleGraphStart(NodeFactory.createURI(GRAPH));
-            encoder.handleGraphEnd();
+            encoder.handleQuad(NodeFactory.createURI("https://example.org/s"),
+                    NodeFactory.createURI("https://example.org/p"), NodeFactory.createLiteralString("value"),
+                    NodeFactory.createURI(GRAPH));
         });
         assertThatThrownBy(() -> codec.fromJelly(untrusted, Lang.JSONLD)).isInstanceOf(StorageException.class);
     }
 
     @Test
-    void preservesAllTriplesOfALargeXmlDocument() {
+    void preservesAllTriplesAcrossMultipleJellyFrames() throws Exception {
         var descriptions = new StringBuilder();
         for (int index = 0; index < 1500; index++) {
             descriptions.append("<rdf:Description rdf:about=\"https://example.org/s").append(index)
                     .append("\"><ex:p>value</ex:p></rdf:Description>");
         }
-        assertCanonicalGraph(codec.toJelly(bytes(xml(descriptions.toString())), GRAPH), 1500);
+        byte[] jelly = codec.toJelly(bytes(xml(descriptions.toString())), GRAPH);
+        var input = new ByteArrayInputStream(jelly);
+        int frameCount = 0;
+        int statementCount = 0;
+        for (var frame = RdfStreamFrame.parseDelimitedFrom(input); frame != null;
+                frame = RdfStreamFrame.parseDelimitedFrom(input)) {
+            frameCount++;
+            statementCount += frame.getColumns().getRowCount();
+        }
+        assertThat(frameCount).isGreaterThan(1);
+        assertThat(statementCount).isEqualTo(1500);
+        assertCanonicalGraph(codec.fromJelly(jelly, JellyLanguage.JELLY), 1500);
+        var restored = RDFParser.source(new ByteArrayInputStream(codec.fromJelly(jelly, Lang.RDFXML)))
+                .lang(Lang.RDFXML).toGraph();
+        try {
+            assertThat(restored.size()).isEqualTo(1500);
+        } finally {
+            restored.close();
+        }
     }
 
     @ParameterizedTest
@@ -241,29 +253,39 @@ class RdfCodecTest {
     @Test
     void storedObjectsMustContainExactlyOneNamedGraph() {
         byte[] untrusted = storedJelly(encoder -> {
-            encoder.handleGraphStart(NodeFactory.createURI(GRAPH));
-            encoder.handleGraphEnd();
-            encoder.handleGraphStart(NodeFactory.createURI("https://example.org/another"));
-            encoder.handleGraphEnd();
+            encoder.handleQuad(NodeFactory.createURI("https://example.org/s"),
+                    NodeFactory.createURI("https://example.org/p"), NodeFactory.createLiteralString("value"),
+                    NodeFactory.createURI(GRAPH));
+            encoder.handleQuad(NodeFactory.createURI("https://example.org/s"),
+                    NodeFactory.createURI("https://example.org/p"), NodeFactory.createLiteralString("value"),
+                    NodeFactory.createURI("https://example.org/another"));
         });
         assertThatThrownBy(() -> codec.fromJelly(untrusted, Lang.JSONLD)).isInstanceOf(StorageException.class);
     }
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
-    void storedGraphsMustNotEndBeforeTheirStartOrMoreThanOnce(boolean endBeforeStart) throws Exception {
-        byte[] valid = storedJelly(encoder -> {
-            encoder.handleGraphStart(NodeFactory.createURI(GRAPH));
-            encoder.handleGraphEnd();
-        });
-        var frame = RdfStreamFrame.parseDelimitedFrom(new ByteArrayInputStream(valid));
-        var rows = new ArrayList<>(frame.getRows());
-        // Keep the options first, then insert a graph-end row outside its valid boundary.
-        rows.add(endBeforeStart ? 1 : rows.size(), rows.getLast());
-        var damaged = RdfStreamFrame.newInstance();
-        rows.forEach(damaged::addRows);
-        byte[] untrusted = damaged.toByteArrayDelimited();
+    void storedGraphNamesMustBeIrisAndNeverTheDefaultGraph(boolean blankNode) {
+        byte[] untrusted = storedJelly(encoder -> encoder.handleQuad(NodeFactory.createURI("https://example.org/s"),
+                NodeFactory.createURI("https://example.org/p"), NodeFactory.createLiteralString("value"),
+                blankNode ? NodeFactory.createBlankNode("graph") : null));
         assertThatThrownBy(() -> codec.fromJelly(untrusted, Lang.JSONLD)).isInstanceOf(StorageException.class);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"header-only", "missing-predicates", "truncated"})
+    void rejectsIncompleteStoredJellyFrames(String corruption) throws Exception {
+        byte[] valid = codec.toJelly(bytes(XML), GRAPH);
+        var frame = RdfStreamFrame.parseDelimitedFrom(new ByteArrayInputStream(valid));
+        byte[] damaged = switch (corruption) {
+            case "header-only" -> RdfStreamFrame.newInstance().addRows(frame.getRows().iterator().next())
+                    .toByteArrayDelimited();
+            case "missing-predicates" -> frame.clone().setColumns(frame.getColumns().clone().setPredicates(null))
+                    .toByteArrayDelimited();
+            case "truncated" -> Arrays.copyOf(valid, valid.length - 1);
+            default -> throw new IllegalArgumentException(corruption);
+        };
+        assertThatThrownBy(() -> codec.fromJelly(damaged, Lang.JSONLD)).isInstanceOf(StorageException.class);
     }
 
     @Test
@@ -316,10 +338,9 @@ class RdfCodecTest {
     @Test
     void unrepresentableStoredDataBecomesNotAcceptable() {
         byte[] jelly = storedJelly(encoder -> {
-            encoder.handleGraphStart(NodeFactory.createURI(GRAPH));
-            encoder.handleTriple(NodeFactory.createURI("https://example.org/s"),
-                    NodeFactory.createURI("https://example.org/123"), NodeFactory.createLiteralString("value"));
-            encoder.handleGraphEnd();
+            encoder.handleQuad(NodeFactory.createURI("https://example.org/s"),
+                    NodeFactory.createURI("https://example.org/123"), NodeFactory.createLiteralString("value"),
+                    NodeFactory.createURI(GRAPH));
         });
         assertThatThrownBy(() -> codec.fromJelly(jelly, Lang.RDFXML))
                 .isInstanceOfSatisfying(ResponseStatusException.class,
@@ -402,13 +423,14 @@ class RdfCodecTest {
         return RDFParser.source(new ByteArrayInputStream(jelly)).lang(JellyLanguage.JELLY).toDatasetGraph();
     }
 
-    private static byte[] storedJelly(Consumer<ProtoEncoder<Node>> statements) {
-        RowBuffer rows = RowBuffer.newLazyImmutable();
-        var options = JellyOptions.SMALL_ALL_FEATURES.clone().setPhysicalType(PhysicalStreamType.GRAPHS)
-                .setLogicalType(LogicalStreamType.NAMED_GRAPHS);
-        var encoder = JenaConverterFactory.getInstance().encoder(ProtoEncoder.Params.of(options, true, rows));
+    private static byte[] storedJelly(Consumer<RdfEncoder<Node>> statements) {
+        var output = new ByteArrayOutputStream();
+        var options = JellyOptions.SMALL_STRICT.clone().setPhysicalType(PhysicalStreamType.QUADS);
+        var encoder = JenaConverterFactory.getInstance().encoder(RdfEncoder.Params.of(options, 1024,
+                frame -> output.writeBytes(frame.toByteArrayDelimited())));
         statements.accept(encoder);
-        return RdfStreamFrame.newInstance().setRows(rows).toByteArrayDelimited();
+        encoder.flush();
+        return output.toByteArray();
     }
 
     private static String xml(String descriptions) {

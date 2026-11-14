@@ -19,17 +19,15 @@ package de.ddb.apiv3.rdf;
 
 import de.ddb.apiv3.storage.StorageException;
 import eu.neverblink.jelly.convert.jena.JenaConverterFactory;
+import eu.neverblink.jelly.convert.jena.riot.JellyFormatVariant;
 import eu.neverblink.jelly.convert.jena.riot.JellyLanguage;
 import eu.neverblink.jelly.core.JellyOptions;
-import eu.neverblink.jelly.core.ProtoEncoder;
 import eu.neverblink.jelly.core.RdfHandler;
-import eu.neverblink.jelly.core.memory.RowBuffer;
-import eu.neverblink.jelly.core.proto.v1.LogicalStreamType;
-import eu.neverblink.jelly.core.proto.v1.PhysicalStreamType;
 import eu.neverblink.jelly.core.proto.v1.RdfStreamFrame;
 import eu.neverblink.jelly.core.utils.IoUtils;
 import jakarta.json.spi.JsonProvider;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Comparator;
@@ -42,10 +40,12 @@ import org.apache.jena.graph.Graph;
 import org.apache.jena.graph.Triple;
 import org.apache.jena.graph.GraphMemFactory;
 import org.apache.jena.riot.Lang;
+import org.apache.jena.riot.RDFFormat;
 import org.apache.jena.riot.RDFLanguages;
 import org.apache.jena.riot.RDFParser;
 import org.apache.jena.riot.RiotException;
 import org.apache.jena.riot.system.ErrorHandlerFactory;
+import org.apache.jena.riot.system.StreamRDFWriter;
 import org.apache.jena.sparql.core.DatasetGraph;
 import org.apache.jena.sparql.core.DatasetGraphFactory;
 import org.apache.jena.sparql.core.Quad;
@@ -64,6 +64,9 @@ public final class RdfCodec {
     private static final List<MediaType> OUTPUT_MEDIA_TYPES;
     private static final Comparator<MediaType> PRECEDENCE = Comparator.comparingInt(RdfCodec::specificity)
             .thenComparingDouble(range -> range.getQualityValue());
+    private static final RDFFormat STORAGE_FORMAT = new RDFFormat(JellyLanguage.JELLY,
+            JellyFormatVariant.builder().options(JellyOptions.SMALL_STRICT)
+                    .enableNamespaceDeclarations(true).build());
 
     static {
         // JSON-P provider discovery per literal is costly inside an executable JAR.
@@ -98,6 +101,10 @@ public final class RdfCodec {
                         "The request body is not valid RDF/XML", exception);
             }
 
+            if (graph.isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT,
+                        "The RDF record must contain at least one triple");
+            }
             // TODO: SHACL ergänzen.
             return encodeGraph(graph, NodeFactory.createURI(baseIri));
         } finally {
@@ -184,26 +191,21 @@ public final class RdfCodec {
         dataset.prefixes().add(prefix, iri);
     }
 
-    // RIOT's Jelly writer uses flat quads and loses empty graphs; keep explicit boundaries.
+    // RIOT owns Jelly 1.2 framing and encoding; every quad uses the canonical graph name.
     private static byte[] encodeGraph(Graph graph, Node graphName) {
-        RowBuffer rows = RowBuffer.newLazyImmutable();
-        var options = JellyOptions.SMALL_ALL_FEATURES.clone()
-                .setPhysicalType(PhysicalStreamType.GRAPHS)
-                .setLogicalType(LogicalStreamType.NAMED_GRAPHS);
-        var encoder = JenaConverterFactory.getInstance().encoder(ProtoEncoder.Params.of(options, true, rows));
-        graph.getPrefixMapping().getNsPrefixMap()
-                .forEach((prefix, iri) -> encoder.handleNamespace(prefix, NodeFactory.createURI(iri)));
-        encoder.handleGraphStart(graphName);
-        graph.find().forEachRemaining(triple ->
-                encoder.handleTriple(triple.getSubject(), triple.getPredicate(), triple.getObject()));
-        encoder.handleGraphEnd();
-        return RdfStreamFrame.newInstance().setRows(rows).toByteArrayDelimited();
+        var output = new ByteArrayOutputStream();
+        var writer = StreamRDFWriter.getWriterStream(output, STORAGE_FORMAT);
+        writer.start();
+        graph.getPrefixMapping().getNsPrefixMap().forEach(writer::prefix);
+        graph.find().forEachRemaining(triple -> writer.quad(Quad.create(graphName, triple)));
+        writer.finish();
+        return output.toByteArray();
     }
 
     private static void decodeGraphs(byte[] jelly, DatasetGraph dataset) throws IOException {
-        final class StoredGraphHandler implements RdfHandler.GraphHandler<Node> {
+        final class StoredGraphHandler implements RdfHandler.QuadHandler<Node> {
             private Graph currentGraph;
-            private int graphCount;
+            private Node graphName;
 
             @Override
             public void handleNamespace(String prefix, Node iri) {
@@ -211,38 +213,25 @@ public final class RdfCodec {
             }
 
             @Override
-            public void handleGraphStart(Node graph) {
-                if (currentGraph != null || graphCount != 0 || graph == null || !graph.isURI()
-                        || Quad.isDefaultGraph(graph)) {
+            public void handleQuad(Node subject, Node predicate, Node object, Node graph) {
+                if (graphName == null) {
+                    if (graph == null || !graph.isURI() || Quad.isDefaultGraph(graph)) {
+                        throw new RiotException("Stored Jelly must contain exactly one named graph");
+                    }
+                    graphName = graph;
+                    currentGraph = GraphMemFactory.createDefaultGraph();
+                    dataset.addGraph(graph, currentGraph);
+                } else if (!graphName.equals(graph)) {
                     throw new RiotException("Stored Jelly must contain exactly one named graph");
-                }
-                graphCount++;
-                currentGraph = GraphMemFactory.createDefaultGraph();
-                dataset.addGraph(graph, currentGraph);
-            }
-
-            @Override
-            public void handleTriple(Node subject, Node predicate, Node object) {
-                if (currentGraph == null) {
-                    throw new RiotException("A stored Jelly triple has no graph");
                 }
                 currentGraph.add(Triple.create(subject, predicate, object));
             }
-
-            @Override
-            public void handleGraphEnd() {
-                if (currentGraph == null) {
-                    throw new RiotException("A stored Jelly graph ends without a start");
-                }
-                currentGraph = null;
-            }
         }
         var handler = new StoredGraphHandler();
-        var decoder = JenaConverterFactory.getInstance().graphsDecoder(handler, JellyOptions.DEFAULT_SUPPORTED_OPTIONS);
-        IoUtils.readStream(new ByteArrayInputStream(jelly), RdfStreamFrame.getFactory(),
-                frame -> frame.getRows().forEach(decoder::ingestRow));
-        if (handler.currentGraph != null || handler.graphCount != 1) {
-            throw new RiotException("The stored Jelly graph is incomplete");
+        var decoder = JenaConverterFactory.getInstance().quadsDecoder(handler, JellyOptions.DEFAULT_SUPPORTED_OPTIONS);
+        IoUtils.readStream(new ByteArrayInputStream(jelly), RdfStreamFrame.getFactory(), decoder::ingestFrame);
+        if (handler.graphName == null) {
+            throw new RiotException("The stored Jelly graph is empty");
         }
     }
 

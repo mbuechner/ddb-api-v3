@@ -42,6 +42,8 @@ Ein Record liegt als einzelnes Objekt `{recordId}/record` mit dem Content-Type
 `application/x-jelly-rdf` im Bucket. Jelly enthält den benannten Graphen und
 Namespace-Hinweise; es gibt keine zusätzliche gzip-Schicht und kein Manifest.
 Der originale RDF/XML-Bytestrom wird nicht aufbewahrt.
+Neue Objekte verwenden Jelly 1.2 und enthalten mindestens ein Triple; leere
+Uploads ergeben `422`. Alte Jelly-Objekte im GRAPHS-Format bei Bedarf neu importieren.
 
 Neuanlagen verwenden einen bedingten PUT mit `If-None-Match: *`, Ersetzungen
 `If-Match`. Die Bedingung wird atomar durch den Speicher geprüft. Die API legt

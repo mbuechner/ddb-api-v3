@@ -5,7 +5,8 @@
 Die DDB-ID besteht aus genau 32 Zeichen aus `A-Z` und `2-7`. Die drei Methoden
 arbeiten unter `/3/records/{recordId}`. GET/HEAD sind öffentlich; POST/PUT brauchen
 Schreibrechte. Eingabe ist ausschließlich `application/rdf+xml` im Request-Body.
-Ungültiges RDF/XML ergibt `422`, andere Eingabeformate `415`.
+Ein Upload muss mindestens ein Triple enthalten. Ungültiges RDF/XML und leere
+RDF-Datensätze ergeben `422`, andere Eingabeformate `415`.
 
 Alle Triples bilden einen Named Graph mit der IRI `{öffentlicher Origin}/records/{recordId}`.
 RDF/XML kann diesen Graphnamen nicht selbst transportieren; die API ergänzt ihn.
