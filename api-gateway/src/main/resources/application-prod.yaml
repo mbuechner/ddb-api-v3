@@ -24,9 +24,9 @@ spring:
 ddb:
   gateway:
     client-id:
-      # Production accepts only a principal established by the authentication layer.
+      # Verified tokens identify registered clients; public reads still get an anonymous quota.
       allow-header: ${CLIENT_ID_HEADER_ENABLED:false}
-      allow-remote-address: ${ANONYMOUS_RATE_LIMIT_BY_REMOTE_ADDRESS:false}
+      allow-remote-address: ${ANONYMOUS_RATE_LIMIT_BY_REMOTE_ADDRESS:true}
 
 management:
   endpoint:

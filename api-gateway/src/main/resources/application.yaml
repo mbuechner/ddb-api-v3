@@ -1,8 +1,12 @@
 server:
   port: ${GATEWAY_PORT:8081}
   shutdown: graceful
+  # Only explicitly trusted deployments should let forwarded headers establish client/origin data.
+  forward-headers-strategy: ${SERVER_FORWARD_HEADERS_STRATEGY:none}
 
 spring:
+  main:
+    banner-mode: off
   config:
     # Load the shared local .env when the gateway runs from Maven or the IDE. Values already
     # present in the process environment take precedence; deployed containers need no file.
@@ -11,6 +15,13 @@ spring:
       - optional:file:../.env[.properties]
   application:
     name: ddb-api-v3-gateway
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${OAUTH2_ISSUER_URI:}
+          audiences: ${OAUTH2_AUDIENCE:}
+          jwk-set-uri: ${OAUTH2_JWK_SET_URI:}
   profiles:
     active: ${APP_PROFILE:dev}
   lifecycle:
@@ -19,6 +30,17 @@ spring:
     gateway:
       server:
         webflux:
+          # Stream request bodies, but bound sockets and waits for the backend.
+          httpclient:
+            connect-timeout: 2000
+            response-timeout: 30s
+            pool:
+              type: fixed
+              max-connections: ${GATEWAY_HTTP_MAX_CONNECTIONS:256}
+              acquire-timeout: 1000
+              max-idle-time: 30s
+              # Reopen connections regularly so new backend replicas receive traffic.
+              max-life-time: 60s
           metrics:
             enabled: true
           routes:
@@ -27,6 +49,8 @@ spring:
               predicates:
                 - Path=/3/**
               filters:
+                # Keep the public origin available to an explicitly enabled API auto-base mode.
+                - PreserveHostHeader
                 - name: RequestRateLimiter
                   args:
                     rate-limiter: "#{@bucket4jRateLimiter}"
@@ -49,6 +73,11 @@ spring:
                   args:
                     name: X-RateLimit-Requested-Tokens
                     value: "${RATE_LIMIT_REQUESTED_TOKENS:1}"
+            # Versionless RDF resource URLs only redirect; the /3 target keeps its auth/rate policy.
+            - id: resource-redirects
+              uri: ${API_SERVICE_URI:http://127.0.0.1:8080}
+              predicates:
+                - Path=/{resource:(?!(?:actuator|openapi|webjars|swagger-ui|error|contexts)$)[a-z][a-z0-9-]*}/**
             - id: documentation
               uri: ${API_SERVICE_URI:http://127.0.0.1:8080}
               predicates:
@@ -78,6 +107,11 @@ spring:
                 max-age: 3600
 
 ddb:
+  security:
+    dev-write-token: ${DDB_DEV_WRITE_TOKEN:}
+  logging:
+    access:
+      enabled: ${DDB_ACCESS_LOG_ENABLED:true}
   gateway:
     client-id:
       allow-header: ${CLIENT_ID_HEADER_ENABLED:true}
@@ -85,6 +119,15 @@ ddb:
       # Anonymous traffic is isolated from authenticated client buckets. Only the socket peer
       # is used; forwarded headers require a separately configured trusted-proxy strategy.
       allow-remote-address: ${ANONYMOUS_RATE_LIMIT_BY_REMOTE_ADDRESS:true}
+
+# One JSON object per event; Boot handles encoding, timestamps and service metadata.
+logging:
+  level:
+    de.ddb.apiv3.access: ${LOGGING_LEVEL_DE_DDB_APIV3_ACCESS:INFO}
+  structured:
+    format:
+      console: ${LOGGING_STRUCTURED_FORMAT_CONSOLE:ecs}
+
 management:
   endpoints:
     web:

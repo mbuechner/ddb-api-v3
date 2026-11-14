@@ -1,20 +1,20 @@
-/*
- * Copyright 2026 Michael Büchner, Deutsche Nationalbibliothek
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     https://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- * This code was generated with assistance from OpenAI ChatGPT.
+/* 
+ *  Copyright 2026 Michael Büchner, Deutsche Nationalbibliothek
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *  
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *  
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ *  
+ *  This code was made with help from OpenAI GTP-6.1 Sol Ultra.
  */
+
 package de.ddb.apiv3.gateway;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -39,12 +39,9 @@ import reactor.test.StepVerifier;
  */
 class ClientIdKeyResolverConfigurationTest {
 
-    private final ClientIdKeyResolverConfiguration configuration =
-            new ClientIdKeyResolverConfiguration();
-
     @Test
     void prefersAuthenticatedPrincipalOverDevelopmentHeader() {
-        KeyResolver resolver = configuration.clientIdKeyResolver(true, "X-Client-Id", true);
+        KeyResolver resolver = ClientIdKeyResolverConfiguration.clientIdKeyResolver(true, "X-Client-Id", true);
         ServerWebExchange exchange = MockServerWebExchange.from(
                         MockServerHttpRequest.get("/3/records/id")
                                 .header("X-Client-Id", "untrusted-header")
@@ -59,8 +56,28 @@ class ClientIdKeyResolverConfigurationTest {
     }
 
     @Test
+    void authenticatedSubjectIsNotRestrictedToTheUntrustedHeaderSyntax() {
+        KeyResolver resolver = ClientIdKeyResolverConfiguration.clientIdKeyResolver(true, "X-Client-Id", true);
+        ServerWebExchange exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/3/records/id")
+                        .header("X-Client-Id", "claimed-header").build()).mutate()
+                .principal(Mono.just((Principal) () -> "https://identity.example/clients/importer"))
+                .build();
+        StepVerifier.create(resolver.resolve(exchange))
+                .expectNext("client:https://identity.example/clients/importer").verifyComplete();
+    }
+
+    @Test
+    void absentPrincipalNameDoesNotCrashTheReactiveResolver() {
+        KeyResolver resolver = ClientIdKeyResolverConfiguration.clientIdKeyResolver(false, "X-Client-Id", true);
+        ServerWebExchange exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/3/records/id")
+                        .remoteAddress(new InetSocketAddress("192.0.2.10", 12345)).build()).mutate()
+                .principal(Mono.just((Principal) () -> null)).build();
+        StepVerifier.create(resolver.resolve(exchange)).expectNext("anonymous-ip:192.0.2.10").verifyComplete();
+    }
+
+    @Test
     void acceptsOnlyValidatedDevelopmentHeaderWhenEnabled() {
-        KeyResolver resolver = configuration.clientIdKeyResolver(true, "X-Client-Id", false);
+        KeyResolver resolver = ClientIdKeyResolverConfiguration.clientIdKeyResolver(true, "X-Client-Id", false);
         MockServerWebExchange valid = MockServerWebExchange.from(MockServerHttpRequest.get("/3/records/id")
                 .header("X-Client-Id", "client-42")
                 .build());
@@ -74,7 +91,7 @@ class ClientIdKeyResolverConfigurationTest {
 
     @Test
     void ignoresHeaderWhenProductionFallbackIsDisabled() {
-        KeyResolver resolver = configuration.clientIdKeyResolver(false, "X-Client-Id", false);
+        KeyResolver resolver = ClientIdKeyResolverConfiguration.clientIdKeyResolver(false, "X-Client-Id", false);
         MockServerWebExchange exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/3/records/id")
                 .header("X-Client-Id", "client-42")
                 .build());
@@ -84,7 +101,7 @@ class ClientIdKeyResolverConfigurationTest {
 
     @Test
     void isolatesAnonymousTrafficByDirectRemoteAddress() {
-        KeyResolver resolver = configuration.clientIdKeyResolver(false, "X-Client-Id", true);
+        KeyResolver resolver = ClientIdKeyResolverConfiguration.clientIdKeyResolver(false, "X-Client-Id", true);
         MockServerWebExchange exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/3/records/id")
                 .remoteAddress(new InetSocketAddress("192.0.2.10", 12345))
                 .build());

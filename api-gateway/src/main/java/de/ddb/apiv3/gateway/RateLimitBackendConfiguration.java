@@ -1,20 +1,20 @@
-/*
- * Copyright 2026 Michael Büchner, Deutsche Nationalbibliothek
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     https://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- * This code was generated with assistance from OpenAI ChatGPT.
+/* 
+ *  Copyright 2026 Michael Büchner, Deutsche Nationalbibliothek
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *  
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *  
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ *  
+ *  This code was made with help from OpenAI GTP-6.1 Sol Ultra.
  */
+
 package de.ddb.apiv3.gateway;
 
 import com.github.benmanes.caffeine.cache.Caffeine;
@@ -37,7 +37,7 @@ import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactor
 
 /** Selects only the state backend for Spring Cloud Gateway's shared Bucket4j limiter. */
 @Configuration(proxyBeanMethods = false)
-class RateLimitBackendConfiguration {
+final class RateLimitBackendConfiguration {
 
     private static final long MAX_LOCAL_BUCKETS = 10_000;
     private static final Duration KEEP_AFTER_REFILL = Duration.ofMinutes(1);
@@ -45,7 +45,7 @@ class RateLimitBackendConfiguration {
     /** Local state is bounded, process-local and discarded when the gateway stops. */
     @Bean
     @Profile("dev")
-    AsyncProxyManager<String> localRateLimitBackend() {
+    static AsyncProxyManager<String> localRateLimitBackend() {
         return Bucket4jCaffeine.<String>builderFor(
                         Caffeine.newBuilder().maximumSize(MAX_LOCAL_BUCKETS))
                 .expirationAfterWrite(expirationStrategy())
@@ -56,7 +56,7 @@ class RateLimitBackendConfiguration {
     /** Bucket4j owns this connection; Boot owns the Redis/Sentinel client underneath it. */
     @Bean(destroyMethod = "close")
     @Profile("prod")
-    StatefulRedisConnection<String, byte[]> bucket4jRedisConnection(
+    static StatefulRedisConnection<String, byte[]> bucket4jRedisConnection(
             LettuceConnectionFactory connectionFactory) {
         AbstractRedisClient nativeClient = connectionFactory.getRequiredNativeClient();
         if (!(nativeClient instanceof RedisClient redisClient)) {
@@ -69,7 +69,7 @@ class RateLimitBackendConfiguration {
     /** Distributed state is shared by all gateway instances connected to the same Redis. */
     @Bean
     @Profile("prod")
-    AsyncProxyManager<String> redisRateLimitBackend(
+    static AsyncProxyManager<String> redisRateLimitBackend(
             StatefulRedisConnection<String, byte[]> bucket4jRedisConnection,
             @Value("${spring.data.redis.timeout:500ms}") Duration commandTimeout) {
         return Bucket4jLettuce.casBasedBuilder(bucket4jRedisConnection)
