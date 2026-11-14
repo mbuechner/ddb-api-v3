@@ -58,7 +58,6 @@ def smoke(auth, passwords, configs, ha, image, group, probe):
         with tempfile.TemporaryDirectory(prefix="ddb-acl-") as directory:
             conf = Path(directory) / "conf"
             conf.mkdir()
-            # Both files are present: the probe must identify its own server process.
             for index, config in enumerate(configs):
                 prefix = ("port 6379\nsave \"\"\nappendonly no\n" if index == 0 else
                           f"port 26379\nsentinel monitor {group} 127.0.0.1 1 2\n")
@@ -67,12 +66,16 @@ def smoke(auth, passwords, configs, ha, image, group, probe):
             for index in range(2 if ha else 1):
                 name = "ddb-acl-" + uuid.uuid4().hex
                 path = "/data/conf/" + ("redis.conf", "sentinel.conf")[index]
+                initial = Path(directory) / str(index) / "conf"
+                initial.mkdir(parents=True)
+                (initial / ("redis.conf", "sentinel.conf")[index]).write_bytes(
+                    (conf / ("redis.conf", "sentinel.conf")[index]).read_bytes())
                 containers.append(name)
                 try:
                     run(["docker", "create", "--name", name, "--network", "none", image,
                          "redis-server", path, *(["--sentinel"] if index else [])])
-                    # Copy into the parent: an existing /data/conf must not produce conf/conf.
-                    run(["docker", "cp", str(conf), name + ":/data/"])
+                    # The image fixes permissions only for its own config at startup.
+                    run(["docker", "cp", str(initial), name + ":/data/"])
                     run(["docker", "start", name])
                     for attempt in range(50):
                         state = run(["docker", "inspect", "--format", "{{.State.Status}}", name], timeout=10)
@@ -86,6 +89,9 @@ def smoke(auth, passwords, configs, ha, image, group, probe):
                         time.sleep(0.2)
                     else:
                         raise RuntimeError("Redis/Sentinel did not become ready")
+                    # With both files present, the probe must identify its own server process.
+                    run(["docker", "cp", str(conf / ("redis.conf", "sentinel.conf")[1 - index]),
+                         name + ":/data/conf/"])
                     run(["docker", "exec", name, *probe], timeout=10)
                 except RuntimeError as error:
                     state = run(["docker", "inspect", "--format", "{{json .State}}", name],
