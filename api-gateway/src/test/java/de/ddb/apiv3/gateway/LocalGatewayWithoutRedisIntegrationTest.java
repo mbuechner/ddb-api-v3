@@ -38,6 +38,9 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.WebApplicationType;
+import org.springframework.boot.availability.AvailabilityChangeEvent;
+import org.springframework.boot.availability.LivenessState;
+import org.springframework.boot.availability.ReadinessState;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.logging.logback.StructuredLogEncoder;
 import org.springframework.boot.web.server.context.WebServerApplicationContext;
@@ -179,15 +182,18 @@ class LocalGatewayWithoutRedisIntegrationTest {
                 .expectHeader()
                 .doesNotExist("X-RateLimit-Requested-Tokens");
 
-        webTestClient()
-                .get()
-                .uri("/actuator/health")
-                .exchange()
-                .expectStatus()
-                .isOk()
-                .expectBody()
-                .jsonPath("$.status")
-                .isEqualTo("UP");
+        for (final String path : new String[] {
+                "/actuator/health", "/actuator/health/liveness", "/actuator/health/readiness"}) {
+            webTestClient()
+                    .get()
+                    .uri(path)
+                    .exchange()
+                    .expectStatus()
+                    .isOk()
+                    .expectBody()
+                    .jsonPath("$.status")
+                    .isEqualTo("UP");
+        }
     }
 
     @Test
@@ -263,6 +269,50 @@ class LocalGatewayWithoutRedisIntegrationTest {
                 .valueEquals("Access-Control-Max-Age", "3600")
                 .expectHeader()
                 .doesNotExist("X-RateLimit-Remaining");
+    }
+
+    @Test
+    void omitsSuccessfulProbeAccessEventsAndLogsFailures() {
+        final Logger logger = (Logger) LoggerFactory.getLogger("de.ddb.apiv3.access");
+        final var appender = new ListAppender<ILoggingEvent>();
+        appender.list = new CopyOnWriteArrayList<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            for (final String path : new String[] {
+                    "/actuator/health/liveness", "/actuator/health/liveness?probe=1",
+                    "/actuator/health/readiness", "/actuator/health/readiness?probe=1"}) {
+                webTestClient().get().uri(path).exchange().expectStatus().isOk()
+                        .expectBody().returnResult();
+            }
+            AvailabilityChangeEvent.publish(gateway, ReadinessState.REFUSING_TRAFFIC);
+            webTestClient().get().uri("/actuator/health/readiness?probe=failed")
+                    .exchange().expectStatus().isEqualTo(503).expectBody().returnResult();
+            AvailabilityChangeEvent.publish(gateway, ReadinessState.ACCEPTING_TRAFFIC);
+            AvailabilityChangeEvent.publish(gateway, LivenessState.BROKEN);
+            webTestClient().get().uri("/actuator/health/liveness")
+                    .exchange().expectStatus().isEqualTo(503).expectBody().returnResult();
+            AvailabilityChangeEvent.publish(gateway, LivenessState.CORRECT);
+            webTestClient().get().uri("/actuator/health/liveness-extra")
+                    .exchange().expectStatus().isNotFound().expectBody().returnResult();
+            webTestClient().get().uri("/actuator/health")
+                    .exchange().expectStatus().isOk().expectBody().returnResult();
+
+            await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> {
+                assertThat(appender.list.stream().map(LocalGatewayWithoutRedisIntegrationTest::ecsJson))
+                        .extracting(event -> event.at("/url/path").asString())
+                        .containsExactly("/actuator/health/readiness", "/actuator/health/liveness",
+                                "/actuator/health/liveness-extra", "/actuator/health");
+                assertThat(appender.list.stream().map(LocalGatewayWithoutRedisIntegrationTest::ecsJson))
+                        .extracting(event -> event.at("/http/response/status_code").intValue())
+                        .containsExactly(503, 503, 404, 200);
+            });
+        } finally {
+            AvailabilityChangeEvent.publish(gateway, ReadinessState.ACCEPTING_TRAFFIC);
+            AvailabilityChangeEvent.publish(gateway, LivenessState.CORRECT);
+            logger.detachAppender(appender);
+            appender.stop();
+        }
     }
 
     @Test

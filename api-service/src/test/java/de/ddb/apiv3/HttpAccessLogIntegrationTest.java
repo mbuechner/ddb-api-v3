@@ -46,12 +46,17 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.boot.availability.AvailabilityChangeEvent;
+import org.springframework.boot.availability.LivenessState;
+import org.springframework.boot.availability.ReadinessState;
 import org.springframework.boot.logging.logback.StructuredLogEncoder;
 import org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
@@ -74,6 +79,9 @@ class HttpAccessLogIntegrationTest {
 
     @LocalServerPort
     private int port;
+
+    @Autowired
+    private ApplicationContext context;
 
     private final ListAppender<ILoggingEvent> events = new ListAppender<>();
 
@@ -156,6 +164,40 @@ class HttpAccessLogIntegrationTest {
                     .containsEntry("http.request.id", failure.headers().firstValue("X-Request-Id").orElseThrow())
                     .containsEntry("labels.request_id_source", "response");
         }
+    }
+
+    @Test
+    void omitsSuccessfulProbesButLogsProbeFailuresAndOtherHealthRequests() throws Exception {
+        try (final var client = HttpClient.newHttpClient()) {
+            for (final String path : new String[] {"/actuator/health/liveness",
+                    "/actuator/health/liveness?probe=startup", "/actuator/health/readiness",
+                    "/actuator/health/readiness?probe=ready"}) {
+                assertThat(client.send(request(path).build(), HttpResponse.BodyHandlers.discarding())
+                        .statusCode()).isEqualTo(200);
+            }
+            AvailabilityChangeEvent.publish(context, ReadinessState.REFUSING_TRAFFIC);
+            assertThat(client.send(request("/actuator/health/readiness?probe=failed").build(),
+                    HttpResponse.BodyHandlers.discarding()).statusCode()).isEqualTo(503);
+            AvailabilityChangeEvent.publish(context, ReadinessState.ACCEPTING_TRAFFIC);
+            AvailabilityChangeEvent.publish(context, LivenessState.BROKEN);
+            assertThat(client.send(request("/actuator/health/liveness?probe=failed").build(),
+                    HttpResponse.BodyHandlers.discarding()).statusCode()).isEqualTo(503);
+            AvailabilityChangeEvent.publish(context, LivenessState.CORRECT);
+            assertThat(client.send(request("/actuator/health").build(),
+                    HttpResponse.BodyHandlers.discarding()).statusCode()).isEqualTo(200);
+            assertThat(client.send(request("/actuator/health/liveness-extra").build(),
+                    HttpResponse.BodyHandlers.discarding()).statusCode()).isEqualTo(404);
+        } finally {
+            AvailabilityChangeEvent.publish(context, ReadinessState.ACCEPTING_TRAFFIC);
+            AvailabilityChangeEvent.publish(context, LivenessState.CORRECT);
+        }
+        await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> {
+            assertThat(events.list).extracting(event -> fields(event).get("url.path"))
+                    .containsExactly("/actuator/health/readiness", "/actuator/health/liveness",
+                            "/actuator/health", "/actuator/health/liveness-extra");
+            assertThat(events.list).extracting(event -> fields(event).get("http.response.status_code"))
+                    .containsExactly(503, 503, 200, 404);
+        });
     }
 
     @Test

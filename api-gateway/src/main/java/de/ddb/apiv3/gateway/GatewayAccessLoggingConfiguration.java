@@ -31,7 +31,7 @@ import reactor.netty.http.server.HttpServerRequest;
 import reactor.netty.http.server.logging.AccessLog;
 import reactor.netty.http.server.logging.AccessLogArgProvider;
 
-/** Native Netty completion callback: one ECS event after the response has been written. */
+/** Native Netty completion callback: completed responses, except successful health probes. */
 @Configuration(proxyBeanMethods = false)
 final class GatewayAccessLoggingConfiguration {
 
@@ -49,7 +49,15 @@ final class GatewayAccessLoggingConfiguration {
         if (!ACCESS.isInfoEnabled()) {
             return null;
         }
+        final var connection = args.connectionInformation();
+        final String uri = args.uri() == null ? "" : args.uri().toString();
+        final String path = connection instanceof HttpServerRequest request
+                ? request.fullPath() : uri.split("\\?", 2)[0];
         final int status = Integer.parseInt(args.status().toString());
+        if (status == 200 && ("/actuator/health/liveness".equals(path)
+                || "/actuator/health/readiness".equals(path))) {
+            return null;
+        }
         final var event = ACCESS.atInfo()
                 .addKeyValue("event.dataset", "http.access")
                 .addKeyValue("event.kind", "event")
@@ -57,7 +65,6 @@ final class GatewayAccessLoggingConfiguration {
                 .addKeyValue("http.request.method", args.method())
                 .addKeyValue("http.response.status_code", status)
                 .addKeyValue("network.protocol", "http");
-        final var connection = args.connectionInformation();
         if (connection != null && connection.connectionRemoteAddress() instanceof InetSocketAddress peer
                 && peer.getAddress() != null) {
             // Physical peer only; Forwarded headers do not establish a trusted identity.
@@ -81,9 +88,7 @@ final class GatewayAccessLoggingConfiguration {
             event.addKeyValue("http.version", protocol.startsWith("HTTP/")
                     ? protocol.substring(5) : protocol);
         }
-        final String uri = args.uri() == null ? "" : args.uri().toString();
-        event.addKeyValue("url.path", connection instanceof HttpServerRequest request
-                ? request.fullPath() : uri.split("\\?", 2)[0]);
+        event.addKeyValue("url.path", path);
         final String clientId = identifier(args.requestHeader(clientIdHeader));
         if (clientId != null) {
             event.addKeyValue("labels.client_id", clientId)

@@ -9,7 +9,9 @@ keine zusätzliche Bibliothek, kein Request-Body-Puffer und kein MDC nötig.
 
 Access-Events haben `event.dataset=http.access` und den Logger
 `de.ddb.apiv3.access`. Sie werden ohne Sampling auf `INFO` geschrieben,
-einschließlich Fehlern, Redirects, Rate-Limits und Health-Probes.
+einschließlich Fehlern, Redirects und Rate-Limits. Bei `/actuator/health/liveness`
+und `/actuator/health/readiness` entfallen in API und Gateway nur Antworten mit
+Status `200`, auch mit Query-String. Probe-Fehler wie `503` bleiben sichtbar.
 
 | Feld | Bedeutung |
 | --- | --- |

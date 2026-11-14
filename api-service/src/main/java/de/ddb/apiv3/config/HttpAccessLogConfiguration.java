@@ -52,13 +52,18 @@ public final class HttpAccessLogConfiguration {
         if (!ACCESS.isInfoEnabled()) {
             return;
         }
+        final String path = request.getHttpURI().getPath();
+        if (response.getStatus() == 200
+                && ("/actuator/health/liveness".equals(path) || "/actuator/health/readiness".equals(path))) {
+            return;
+        }
         var connection = request.getConnectionMetaData();
         var event = ACCESS.atInfo()
                 .addKeyValue("event.dataset", "http.access")
                 .addKeyValue("event.kind", "event")
                 .addKeyValue("event.duration", NanoTime.since(request.getBeginNanoTime()))
                 .addKeyValue("http.request.method", request.getMethod())
-                .addKeyValue("url.path", request.getHttpURI().getPath())
+                .addKeyValue("url.path", path)
                 .addKeyValue("http.response.status_code", response.getStatus())
                 .addKeyValue("http.request.body.bytes", Request.getContentBytesRead(request))
                 .addKeyValue("http.response.body.bytes", Response.getContentBytesWritten(response))
