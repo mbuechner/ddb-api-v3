@@ -127,8 +127,9 @@
     },
     "redis": {
       "type": "object",
-      "required": ["image", "auth", "serviceAccount", "extraSecretRedisConfigs", "extraSecretSentinelConfigs", "haMode", "storage"],
+      "required": ["image", "auth", "serviceAccount", "extraSecretRedisConfigs", "extraSecretSentinelConfigs", "haMode", "storage", "useDeploymentWhenNonHA"],
       "properties": {
+        "useDeploymentWhenNonHA": { "const": false },
         "image": {
           "type": "object",
           "required": ["registry", "repository", "tag", "pullPolicy"],
@@ -161,11 +162,22 @@
           "type": "object",
           "required": ["enabled", "masterGroupName", "replicas", "quorum"],
           "properties": {
-            "enabled": { "const": true },
+            "enabled": { "type": "boolean" },
             "masterGroupName": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+$" },
-            "replicas": { "type": "integer", "minimum": 3 },
-            "quorum": { "type": "integer", "minimum": 2 }
-          }
+            "replicas": { "type": "integer", "minimum": 1 },
+            "quorum": { "type": "integer", "minimum": 1 }
+          },
+          "allOf": [
+            {
+              "if": { "properties": { "enabled": { "const": true } } },
+              "then": {
+                "properties": {
+                  "replicas": { "minimum": 3 },
+                  "quorum": { "minimum": 2 }
+                }
+              }
+            }
+          ]
         },
         "storage": {
           "type": "object",

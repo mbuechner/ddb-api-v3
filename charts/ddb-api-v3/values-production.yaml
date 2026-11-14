@@ -1,0 +1,44 @@
+# Capacity overlay: combine with site-specific S3, ingress and identity-provider values.
+# Enable autoscaling explicitly when a Metrics Server is available.
+apiService:
+  replicaCount: 3
+  concurrency:
+    maxRequests: 32
+    maxQueuedRequests: 64
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { memory: 1Gi, ephemeral-storage: 64Mi }
+  autoscaling:
+    minReplicas: 2
+
+gateway:
+  replicaCount: 2
+  maxConnections: 256
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 512Mi, ephemeral-storage: 64Mi }
+  autoscaling:
+    minReplicas: 2
+
+s3:
+  maxConnections: 50
+
+redis:
+  haMode:
+    enabled: true
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: "1", memory: 512Mi }
+  redisConfig: |-
+    appendonly yes
+    appendfsync everysec
+    save ""
+    maxmemory 256mb
+    maxmemory-policy noeviction
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              ddb-api-v3/redis-node: "true"
+          topologyKey: kubernetes.io/hostname

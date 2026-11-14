@@ -32,7 +32,7 @@ s3:
   pathStyleAccess: true
   connectionTimeout: 2s
   readTimeout: 10s
-  maxConnections: 50
+  maxConnections: 8
   # Production buckets are provisioned by the storage operator.
   createBucket: false
   # Operator-managed Secret with S3_ACCESS_KEY and S3_SECRET_KEY; never put credentials in values.
@@ -50,41 +50,43 @@ ingress:
 apiService:
   # Canonical origin for RDF graph names, independent of ingress.host.
   baseUrl: https://api.deutsche-digitale-bibliothek.de
-  replicaCount: 3
+  replicaCount: 1
   # Bound work and the queue per pod; increase only with measured CPU/heap headroom.
   concurrency:
-    maxRequests: 32
-    maxQueuedRequests: 64
+    maxRequests: 4
+    maxQueuedRequests: 8
     queueTimeout: 1s
-  resources:
-    requests: { cpu: 250m, memory: 512Mi }
-    limits: { memory: 1Gi, ephemeral-storage: 64Mi }
-  autoscaling:
-    enabled: false
-    minReplicas: 2
-    maxReplicas: 10
-    targetCPUUtilizationPercentage: 70
-  extraEnv: {}
-
-gateway:
-  replicaCount: 2
-  # Shared upstream pool per gateway pod, not per downstream API pod.
-  maxConnections: 256
-  service:
-    type: ClusterIP
-    port: 80
-    annotations: {}
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits: { memory: 512Mi, ephemeral-storage: 64Mi }
   autoscaling:
     enabled: false
-    minReplicas: 2
+    minReplicas: 1
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+  extraEnv: {}
+
+gateway:
+  replicaCount: 1
+  # Shared upstream pool per gateway pod, not per downstream API pod.
+  maxConnections: 32
+  service:
+    type: ClusterIP
+    port: 80
+    annotations: {}
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 256Mi, ephemeral-storage: 64Mi }
+  autoscaling:
+    enabled: false
+    minReplicas: 1
     maxReplicas: 10
     targetCPUUtilizationPercentage: 70
   extraEnv: {}
 
 redis:
+  # Keep the StatefulSet and PVC identities when switching from standalone to HA.
+  useDeploymentWhenNonHA: false
   # Groundhog2k deploys the unmodified Docker Official Redis image. The
   # dependency archive contains only Helm templates, never this image.
   image:
@@ -105,8 +107,8 @@ redis:
   podSecurityContext: false
   securityContext: false
   resources:
-    requests: { cpu: 100m, memory: 256Mi }
-    limits: { cpu: "1", memory: 512Mi }
+    requests: { cpu: 25m, memory: 32Mi }
+    limits: { cpu: "1", memory: 128Mi }
   sentinelResources:
     requests: { cpu: 50m, memory: 64Mi }
     limits: { cpu: 250m, memory: 128Mi }
@@ -122,7 +124,7 @@ redis:
     appendonly yes
     appendfsync everysec
     save ""
-    maxmemory 256mb
+    maxmemory 32mb
     maxmemory-policy noeviction
   extraSecretRedisConfigs: ddb-api-v3-redis-server-config
   extraSecretSentinelConfigs: ddb-api-v3-redis-sentinel-config
@@ -131,11 +133,15 @@ redis:
       command:
         - sh
         - -c
-        - >-
-          sentinel_password="$(awk '/^sentinel sentinel-pass / {print $3; exit}' /data/conf/sentinel.conf)" &&
-          replication_password="$(awk '/^sentinel auth-pass / {print $4; exit}' /data/conf/sentinel.conf)" &&
-          REDISCLI_AUTH="$sentinel_password" redis-cli --user sentinel-admin -p 26379 ping | grep -q PONG &&
-          REDISCLI_AUTH="$replication_password" redis-cli --user replication -p 6379 ping | grep -q PONG
+        - |-
+          # Probe this container's own Redis or Sentinel process.
+          if grep -q sentinel /proc/1/cmdline; then
+            password="$(awk '/^sentinel sentinel-pass / {print $3; exit}' /data/conf/sentinel.conf)"
+            REDISCLI_AUTH="$password" redis-cli --user sentinel-admin -p 26379 ping
+          else
+            password="$(awk '/^masterauth / {print $2; exit}' /data/conf/redis.conf)"
+            REDISCLI_AUTH="$password" redis-cli --user replication -p 6379 ping
+          fi | grep -q PONG
     periodSeconds: 5
     failureThreshold: 30
   customLivenessProbe:
@@ -147,7 +153,7 @@ redis:
     periodSeconds: 5
     failureThreshold: 3
   haMode:
-    enabled: true
+    enabled: false
     masterGroupName: ddb-api-v3
     replicas: 3
     quorum: 2
@@ -156,20 +162,14 @@ redis:
     parallelSyncs: 1
     failoverWait: 10
   storage:
-    requestedSize: 8Gi
+    requestedSize: 1Gi
     className: ""
     persistentVolumeClaimRetentionPolicy:
       whenScaled: Retain
       whenDeleted: Retain
   podDisruptionBudget:
-    minAvailable: 2
-  affinity:
-    podAntiAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-        - labelSelector:
-            matchLabels:
-              ddb-api-v3/redis-node: "true"
-          topologyKey: kubernetes.io/hostname
+    maxUnavailable: 1
+  affinity: {}
   networkPolicy:
     ingress:
       - from:
@@ -183,8 +183,7 @@ redis:
           - { protocol: TCP, port: 6379 }
           - { protocol: TCP, port: 26379 }
 
-# These settings rarely differ between the three pods, but remain available
-# for cluster-specific scheduling requirements.
+# Scheduling overrides for the API and gateway pods.
 pod:
   annotations: {}
   nodeSelector: {}

@@ -1,6 +1,7 @@
 {{- range $role, $component := dict "apiService" "api-service" "gateway" "gateway" }}
 {{- $settings := index $.Values $role }}
 {{- $api := eq $role "apiService" }}
+{{- $single := eq (int (ternary $settings.autoscaling.minReplicas $settings.replicaCount $settings.autoscaling.enabled)) 1 }}
 {{- $name := include (ternary "ddb-api-v3.apiServiceName" "ddb-api-v3.gatewayName" $api) $ }}
 ---
 apiVersion: apps/v1
@@ -18,8 +19,9 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxUnavailable: 0
-      maxSurge: 1
+      # A single replica is replaced without reserving capacity for a second pod.
+      maxUnavailable: {{ ternary 1 0 $single }}
+      maxSurge: {{ ternary 0 1 $single }}
   selector:
     matchLabels:
       {{- include "ddb-api-v3.selectorLabels" $ | nindent 6 }}
@@ -61,6 +63,8 @@ spec:
             - configMapRef:
                 name: {{ include "ddb-api-v3.configMapName" $ }}
           env:
+            - name: SERVER_PORT
+              value: {{ ternary "8080" "8081" $api | quote }}
             {{- if $api }}
             - name: S3_ACCESS_KEY
               valueFrom:
@@ -78,11 +82,13 @@ spec:
                 secretKeyRef:
                   name: {{ include "ddb-api-v3.redisSecretName" $ }}
                   key: REDIS_PASSWORD
+            {{- if $.Values.redis.haMode.enabled }}
             - name: SPRING_DATA_REDIS_SENTINEL_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ include "ddb-api-v3.redisSecretName" $ }}
                   key: REDIS_SENTINEL_PASSWORD
+            {{- end }}
             {{- end }}
             {{- range $name, $value := $settings.extraEnv }}
             - name: {{ $name }}

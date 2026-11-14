@@ -1,3 +1,6 @@
+{{- if and .Values.redis.haMode.enabled (gt (int .Values.redis.haMode.quorum) (int .Values.redis.haMode.replicas)) }}
+{{- fail "redis.haMode.quorum must not exceed redis.haMode.replicas" }}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -9,8 +12,6 @@ data:
   OAUTH2_ISSUER_URI: {{ .Values.auth.issuerUri | quote }}
   OAUTH2_AUDIENCE: {{ .Values.auth.audience | quote }}
   OAUTH2_JWK_SET_URI: {{ .Values.auth.jwkSetUri | quote }}
-  SERVER_PORT: "8080"
-  GATEWAY_PORT: "8081"
   # Explicitly opt in per application only behind a header-sanitizing trusted proxy.
   SERVER_FORWARD_HEADERS_STRATEGY: none
   LOGGING_STRUCTURED_FORMAT_CONSOLE: ecs
@@ -33,13 +34,15 @@ data:
   S3_READ_TIMEOUT: {{ .Values.s3.readTimeout | quote }}
   S3_MAX_CONNECTIONS: {{ .Values.s3.maxConnections | quote }}
   S3_CREATE_BUCKET: {{ .Values.s3.createBucket | quote }}
-  # Spring Boot prefers the Sentinel settings below over this fallback address.
+  # Standalone uses the Redis service; HA discovers the primary through Sentinel.
   REDIS_HOST: {{ include "ddb-api-v3.redisName" . | quote }}
   REDIS_PORT: "6379"
   REDIS_USERNAME: {{ required "redis.auth.username is required" .Values.redis.auth.username | quote }}
+  {{- if .Values.redis.haMode.enabled }}
   SPRING_DATA_REDIS_SENTINEL_MASTER: {{ .Values.redis.haMode.masterGroupName | quote }}
   SPRING_DATA_REDIS_SENTINEL_NODES: {{ printf "%s:26379" (include "ddb-api-v3.redisName" .) | quote }}
   SPRING_DATA_REDIS_SENTINEL_USERNAME: {{ .Values.redis.auth.username | quote }}
+  {{- end }}
   REDIS_TLS_ENABLED: "false"
   REDIS_CONNECT_TIMEOUT: 500ms
   REDIS_COMMAND_TIMEOUT: 500ms
