@@ -95,6 +95,7 @@ jobs:
           helm dependency build "$chart_dir"
           helm dependency list "$chart_dir"
           helm lint "$chart_dir" --strict
+          helm lint "$chart_dir" --strict --values "$chart_dir/values-production.yaml"
           "$RUNNER_TEMP/acl-smoke/bin/python" .github/scripts/check-redis-acl.py "$chart_dir"
 
           # Stable SemVer: major.minor.(run * 1000 + attempt), no --devel needed.
