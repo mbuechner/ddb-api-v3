@@ -115,6 +115,8 @@ redis:
     username: gateway
     secretName: ddb-api-v3-redis-auth
   serviceAccount:
+    # The parent chart already creates this account with token automount disabled.
+    # Keep the subchart's additional creation off to avoid duplicate resources.
     create: false
     name: ddb-api-v3-redis
   podLabels:

@@ -40,7 +40,7 @@
         "issuerUri": {"type": "string", "description": "OAUTH2_ISSUER_URI: trusted OAuth2/OIDC issuer; requires audience."},
         "audience": {"type": "string", "description": "OAUTH2_AUDIENCE: expected API audience; requires issuerUri."},
         "jwkSetUri": {"type": "string", "description": "OAUTH2_JWK_SET_URI: optional public-key endpoint; otherwise issuer discovery is used."},
-        "devWriteTokenSecret": {"type": "string", "description": "Existing Secret with key DDB_DEV_WRITE_TOKEN, injected into API and gateway. Only appProfile=dev with empty JWT settings; never put the token value in values.yaml."}
+        "devWriteTokenSecret": {"$ref": "#/definitions/optionalKubernetesName", "description": "Name eines vorhandenen Secrets mit Schl\u00fcssel DDB_DEV_WRITE_TOKEN im Release-Namespace, z. B. ddb-api-v3-dev-writer. Nur Kleinbuchstaben, Ziffern, Bindestriche und Punkte. Leer deaktiviert den Dev-Token; nur mit appProfile=dev und leeren JWT-Einstellungen."}
       },
       "if": {
         "properties": {
@@ -64,22 +64,22 @@
     "logging": {
       "type": "object",
       "title": "Logging",
-      "description": "Strukturierte JSON-Logs auf stdout; die Cluster-Log-Pipeline übernimmt Sammlung und Auswertung.",
+      "description": "Strukturierte JSON-Logs auf stdout; die Cluster-Log-Pipeline \u00fcbernimmt Sammlung und Auswertung.",
       "required": ["accessEnabled"],
       "properties": {
-        "accessEnabled": { "type": "boolean", "description": "Zugriffslogs mit Status, Antwortzeit und Client-Metadaten. Für Nutzungs- und Performanceauswertungen eingeschaltet lassen." }
+        "accessEnabled": { "type": "boolean", "description": "Zugriffslogs mit Status, Antwortzeit und Client-Metadaten. F\u00fcr Nutzungs- und Performanceauswertungen eingeschaltet lassen." }
       }
     },
     "images": {
       "type": "object",
       "title": "Container-Images",
-      "description": "API und Gateway werden aus der Registry geladen. Die veröffentlichten Charts verwenden zum Commit passende Image-Tags.",
+      "description": "API und Gateway werden aus der Registry geladen. Die ver\u00f6ffentlichten Charts verwenden zum Commit passende Image-Tags.",
       "required": ["apiService", "gateway", "pullPolicy"],
       "properties": {
         "apiService": { "$ref": "#/definitions/image" },
         "gateway": { "$ref": "#/definitions/image" },
-        "pullPolicy": { "type": "string", "const": "Always", "description": "Images bei jedem Pod-Start über die Registry auflösen." },
-        "pullSecrets": { "type": "array", "description": "Namen vorhandener Registry-Secrets im Release-Namespace; bei öffentlichen Images leer lassen.", "items": { "type": "object", "required": ["name"], "properties": { "name": { "type": "string", "minLength": 1 } } } }
+        "pullPolicy": { "type": "string", "const": "Always", "description": "Images bei jedem Pod-Start \u00fcber die Registry aufl\u00f6sen." },
+        "pullSecrets": { "type": "array", "description": "Namen vorhandener Registry-Secrets im Release-Namespace; bei \u00f6ffentlichen Images leer lassen.", "items": { "type": "object", "required": ["name"], "properties": { "name": { "$ref": "#/definitions/kubernetesName" } } } }
       }
     },
     "s3": {
@@ -92,12 +92,12 @@
         "endpoint": { "type": "string", "pattern": "^https?://[^/]+/?$", "description": "S3_ENDPOINT: service-account AWS_ENDPOINT_URL, without bucket path or credentials." },
         "region": { "type": "string", "minLength": 1, "description": "S3_REGION: region used for signing requests." },
         "bucket": { "type": "string", "minLength": 3, "maxLength": 63, "description": "S3_BUCKET: bucket provisioned by the storage operator." },
-        "pathStyleAccess": { "type": "boolean", "description": "true adressiert den Bucket als Endpoint/Bucket; false als Bucket-Subdomain. Nach Vorgabe des S3-Anbieters wählen." },
-        "connectionTimeout": { "type": "string", "minLength": 1, "description": "Zeitlimit für den Verbindungsaufbau zum S3-Dienst, z. B. 2s." },
-        "readTimeout": { "type": "string", "minLength": 1, "description": "Socket-Lesezeitlimit für S3-Anfragen, z. B. 10s." },
-        "maxConnections": { "type": "integer", "minimum": 1, "description": "Maximale S3-Verbindungen je API-Pod. Mit API-Parallelität und Anzahl der Pods abstimmen." },
+        "pathStyleAccess": { "type": "boolean", "description": "true adressiert den Bucket als Endpoint/Bucket; false als Bucket-Subdomain. Nach Vorgabe des S3-Anbieters w\u00e4hlen." },
+        "connectionTimeout": { "type": "string", "minLength": 1, "description": "Zeitlimit f\u00fcr den Verbindungsaufbau zum S3-Dienst, z. B. 2s." },
+        "readTimeout": { "type": "string", "minLength": 1, "description": "Socket-Lesezeitlimit f\u00fcr S3-Anfragen, z. B. 10s." },
+        "maxConnections": { "type": "integer", "minimum": 1, "description": "Maximale S3-Verbindungen je API-Pod. Mit API-Parallelit\u00e4t und Anzahl der Pods abstimmen." },
         "createBucket": { "type": "boolean", "description": "Fehlenden Bucket beim Start anlegen. Standard false: Der Speicherbetreiber stellt ihn bereit." },
-        "existingSecret": { "type": "string", "minLength": 1, "description": "Name of the operator-managed S3 credential Secret; secretKeys selects its keys. Values never contain the credentials themselves." },
+        "existingSecret": { "$ref": "#/definitions/kubernetesName", "description": "Name des vorhandenen S3-Zugangsdaten-Secrets im Release-Namespace, z. B. ddb-api-v3-s3. Nur Kleinbuchstaben, Ziffern, Bindestriche und Punkte. secretKeys w\u00e4hlt die Schl\u00fcssel im Secret; Zugangsdaten bleiben im Secret." },
         "secretKeys": {
           "type": "object",
           "additionalProperties": false,
@@ -111,21 +111,21 @@
     },
     "ingress": {
       "type": "object",
-      "title": "Öffentlicher HTTP-Einstieg",
-      "description": "TLS-Ingress zum Gateway. Die öffentliche RDF-Adresse wird unabhängig davon unter apiService.baseUrl gesetzt.",
+      "title": "\u00d6ffentlicher HTTP-Einstieg",
+      "description": "TLS-Ingress zum Gateway. Die \u00f6ffentliche RDF-Adresse wird unabh\u00e4ngig davon unter apiService.baseUrl gesetzt.",
       "required": ["enabled", "host"],
       "properties": {
-        "enabled": { "type": "boolean", "description": "Ingress erzeugen. Ausschalten, wenn der Einstiegspunkt außerhalb dieses Charts verwaltet wird." },
-        "host": { "type": "string", "minLength": 1, "description": "Öffentlicher DNS-Hostname ohne https:// oder Pfad, z. B. api.example.org." },
+        "enabled": { "type": "boolean", "description": "Ingress erzeugen. Ausschalten, wenn der Einstiegspunkt au\u00dferhalb dieses Charts verwaltet wird." },
+        "host": { "type": "string", "minLength": 1, "description": "\u00d6ffentlicher DNS-Hostname ohne https:// oder Pfad, z. B. api.example.org." },
         "className": { "type": "string", "description": "IngressClass; leer verwendet den Standardcontroller des Clusters." },
-        "annotations": { "type": "object", "description": "Controller-spezifische Ingress-Annotationen, z. B. für HTTPS-Weiterleitungen.", "additionalProperties": { "type": "string" } },
-        "tlsSecretName": { "type": "string", "description": "Secret mit TLS-Zertifikat im Release-Namespace. Leer verwendet das Standardzertifikat des Ingresscontrollers." }
+        "annotations": { "type": "object", "description": "Controller-spezifische Ingress-Annotationen, z. B. f\u00fcr HTTPS-Weiterleitungen.", "additionalProperties": { "type": "string" } },
+        "tlsSecretName": { "$ref": "#/definitions/optionalKubernetesName", "description": "Name des Secrets mit TLS-Zertifikat im Release-Namespace. Nur Kleinbuchstaben, Ziffern, Bindestriche und Punkte. Leer verwendet das Standardzertifikat des Ingresscontrollers." }
       }
     },
     "apiService": {
       "type": "object",
       "title": "RDF-API",
-      "description": "RDF-Verarbeitung und S3-Zugriff. Parallelität, Ressourcen und S3-Pool gemeinsam auf die Last abstimmen.",
+      "description": "RDF-Verarbeitung und S3-Zugriff. Parallelit\u00e4t, Ressourcen und S3-Pool gemeinsam auf die Last abstimmen.",
       "required": ["replicaCount", "autoscaling", "resources", "forwardHeadersStrategy", "baseUrl", "maxDocumentSize", "concurrency"],
       "properties": {
         "replicaCount": {"$ref": "#/definitions/workload/properties/replicaCount"},
@@ -137,12 +137,12 @@
         "maxDocumentSize": {"type": "string", "minLength": 1, "description": "DDB_API_UPLOAD_MAX_FILE_SIZE: maximum decompressed RDF/XML body size, for example 1MB."},
         "concurrency": {
           "type": "object",
-          "description": "Begrenzung je API-Pod: verarbeitet Anfragen parallel und wartet bei voller Kapazität nur kurz. Erschöpfte Kapazität liefert 503.",
+          "description": "Begrenzung je API-Pod: verarbeitet Anfragen parallel und wartet bei voller Kapazit\u00e4t nur kurz. Ersch\u00f6pfte Kapazit\u00e4t liefert 503.",
           "required": ["maxRequests", "maxQueuedRequests", "queueTimeout"],
           "properties": {
-            "maxRequests": {"type": "integer", "minimum": 1, "description": "Gleichzeitig bearbeitete Anfragen je API-Pod; mehr Parallelität benötigt CPU und RAM."},
-            "maxQueuedRequests": {"type": "integer", "minimum": 0, "description": "Zusätzlich wartende Anfragen je API-Pod. 0 deaktiviert die Warteschlange."},
-            "queueTimeout": {"type": "string", "minLength": 1, "description": "Maximale Wartezeit auf freie API-Kapazität, z. B. 1s."}
+            "maxRequests": {"type": "integer", "minimum": 1, "description": "Gleichzeitig bearbeitete Anfragen je API-Pod; mehr Parallelit\u00e4t ben\u00f6tigt CPU und RAM."},
+            "maxQueuedRequests": {"type": "integer", "minimum": 0, "description": "Zus\u00e4tzlich wartende Anfragen je API-Pod. 0 deaktiviert die Warteschlange."},
+            "queueTimeout": {"type": "string", "minLength": 1, "description": "Maximale Wartezeit auf freie API-Kapazit\u00e4t, z. B. 1s."}
           }
         }
       },
@@ -152,7 +152,7 @@
     "gateway": {
       "type": "object",
       "title": "Gateway",
-      "description": "Öffentlicher Zugang mit Schreibschutz und Anfragequoten. prod teilt Quoten über Redis; dev verwendet lokale Quoten je Pod.",
+      "description": "\u00d6ffentlicher Zugang mit Schreibschutz und Anfragequoten. prod teilt Quoten \u00fcber Redis; dev verwendet lokale Quoten je Pod.",
       "required": ["replicaCount", "autoscaling", "resources", "forwardHeadersStrategy", "service", "maxConnections", "rateLimit"],
       "properties": {
         "replicaCount": {"$ref": "#/definitions/workload/properties/replicaCount"},
@@ -163,7 +163,7 @@
         "maxConnections": {"type": "integer", "minimum": 1, "description": "GATEWAY_HTTP_MAX_CONNECTIONS: upstream connection pool per gateway pod."},
         "rateLimit": {
           "type": "object",
-          "description": "Token-Bucket je Client: jede Anfrage verbraucht requestedTokens, refillTokens werden pro refillPeriod ergänzt. Ohne Tokens folgt 429.",
+          "description": "Token-Bucket je Client: jede Anfrage verbraucht requestedTokens, refillTokens werden pro refillPeriod erg\u00e4nzt. Ohne Tokens folgt 429.",
           "additionalProperties": false,
           "required": ["capacity", "refillTokens", "refillPeriod", "requestedTokens"],
           "properties": {
@@ -177,8 +177,8 @@
           "type": "object",
           "required": ["type", "port"],
           "properties": {
-            "type": {"type": "string", "enum": ["ClusterIP", "LoadBalancer", "NodePort"], "description": "ClusterIP für den internen Ingress-Zugriff; andere Typen nur für einen bewusst extern verwalteten Einstiegspunkt."},
-            "port": {"type": "integer", "minimum": 1, "maximum": 65535, "description": "Port des Gateway-Service; der Container lauscht unabhängig davon auf 8081."}
+            "type": {"type": "string", "enum": ["ClusterIP", "LoadBalancer", "NodePort"], "description": "ClusterIP f\u00fcr den internen Ingress-Zugriff; andere Typen nur f\u00fcr einen bewusst extern verwalteten Einstiegspunkt."},
+            "port": {"type": "integer", "minimum": 1, "maximum": 65535, "description": "Port des Gateway-Service; der Container lauscht unabh\u00e4ngig davon auf 8081."}
           }
         }
       },
@@ -188,10 +188,10 @@
     "redis": {
       "type": "object",
       "title": "Redis: gemeinsame Anfragequoten",
-      "description": "Speichert die Gateway-Quoten, keine RDF-Datensätze. Standard: eine persistente Instanz. HA ergänzt Replikation und Sentinel-Failover.",
+      "description": "Speichert die Gateway-Quoten, keine RDF-Datens\u00e4tze. Standard: eine persistente Instanz. HA erg\u00e4nzt Replikation und Sentinel-Failover.",
       "required": ["image", "auth", "serviceAccount", "extraSecretRedisConfigs", "extraSecretSentinelConfigs", "haMode", "podDisruptionBudget", "storage", "useDeploymentWhenNonHA"],
       "properties": {
-        "useDeploymentWhenNonHA": { "type": "boolean", "title": "Standalone als Deployment", "description": "Nur ohne HA wirksam: false (Standard) erstellt ein StatefulSet mit stabilen Pod-/PVC-Namen. true erstellt ein Deployment mit genau einem Pod, eigenem PVC und Recreate-Rollouts (kurze Unterbrechung). HA verwendet immer ein StatefulSet. Diese Wahl spart keine Pods und aktiviert keine Hochverfügbarkeit." },
+        "useDeploymentWhenNonHA": { "type": "boolean", "title": "Standalone als Deployment", "description": "Nur ohne HA wirksam: false (Standard) erstellt ein StatefulSet mit stabilen Pod-/PVC-Namen. true erstellt ein Deployment mit genau einem Pod, eigenem PVC und Recreate-Rollouts (kurze Unterbrechung). HA verwendet immer ein StatefulSet. Diese Wahl spart keine Pods und aktiviert keine Hochverf\u00fcgbarkeit." },
         "image": {
           "type": "object",
           "required": ["registry", "repository", "tag", "pullPolicy"],
@@ -207,35 +207,26 @@
           "description": "Interne Redis-Zugangsdaten werden vom Chart erzeugt. Hier nur Benutzernamen und Namen des verwalteten Secrets festlegen.",
           "required": ["username", "secretName"],
           "properties": {
-            "username": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$", "not": { "enum": ["default", "replication", "sentinel-admin"] }, "description": "Redis-Benutzer des Gateways mit eingeschränkten Rechten; keine administrativen oder internen Benutzernamen verwenden." },
-            "secretName": { "type": "string", "minLength": 1, "description": "Name des vom Chart verwalteten Redis-ACL-Secrets im Release-Namespace." }
+            "username": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$", "not": { "enum": ["default", "replication", "sentinel-admin"] }, "description": "Redis-Benutzer des Gateways mit eingeschr\u00e4nkten Rechten; keine administrativen oder internen Benutzernamen verwenden." },
+            "secretName": { "$ref": "#/definitions/kubernetesName", "description": "Name des vom Chart verwalteten Redis-ACL-Secrets im Release-Namespace. Nur Kleinbuchstaben, Ziffern, Bindestriche und Punkte." }
           }
         },
-        "serviceAccount": {
-          "type": "object",
-          "description": "ServiceAccount wird vom übergeordneten Chart ohne API-Token-Mount erzeugt; create bleibt deshalb false.",
-          "required": ["create", "name"],
-          "properties": {
-            "create": { "type": "boolean", "const": false },
-            "name": { "type": "string", "minLength": 1 }
-          }
-        },
-        "extraSecretRedisConfigs": { "type": "string", "minLength": 1, "description": "Name des vom Chart erzeugten Redis-ACL-Konfigurationssecrets; keine fremde Konfiguration referenzieren." },
-        "extraSecretSentinelConfigs": { "type": "string", "minLength": 1, "description": "Name des vom Chart erzeugten Sentinel-ACL-Konfigurationssecrets; wird nur bei HA verwendet." },
+        "extraSecretRedisConfigs": { "$ref": "#/definitions/kubernetesName", "description": "Name des vom Chart erzeugten Redis-ACL-Konfigurationssecrets; keine fremde Konfiguration referenzieren." },
+        "extraSecretSentinelConfigs": { "$ref": "#/definitions/kubernetesName", "description": "Name des vom Chart erzeugten Sentinel-ACL-Konfigurationssecrets; wird nur bei HA verwendet." },
         "resources": { "$ref": "#/definitions/workload/properties/resources" },
         "sentinelResources": { "$ref": "#/definitions/workload/properties/resources" },
         "initResources": { "$ref": "#/definitions/workload/properties/resources" },
-        "redisConfig": { "type": "string", "description": "Zusätzliche redis.conf-Zeilen. Standard: AOF jede Sekunde, maxmemory 32mb, noeviction. maxmemory mit RAM-Limits abstimmen und noeviction für verlässliche Quoten beibehalten." },
+        "redisConfig": { "type": "string", "description": "Zus\u00e4tzliche redis.conf-Zeilen. Standard: AOF jede Sekunde, maxmemory 32mb, noeviction. maxmemory mit RAM-Limits abstimmen und noeviction f\u00fcr verl\u00e4ssliche Quoten beibehalten." },
         "haMode": {
           "type": "object",
-          "title": "Redis-Hochverfügbarkeit",
-          "description": "HA verwendet ein StatefulSet mit Redis und Sentinel je Pod. Mindestens drei Redis-Pods einplanen; für Ausfallsicherheit auf getrennten Worker-Nodes betreiben.",
+          "title": "Redis-Hochverf\u00fcgbarkeit",
+          "description": "HA verwendet ein StatefulSet mit Redis und Sentinel je Pod. Mindestens drei Redis-Pods einplanen; f\u00fcr Ausfallsicherheit auf getrennten Worker-Nodes betreiben.",
           "required": ["enabled", "masterGroupName", "replicas", "quorum"],
           "properties": {
             "enabled": {"type": "boolean", "description": "false: eine Redis-Instanz ohne Sentinel. true: repliziertes Redis mit Sentinel-Failover; der Gateway verwendet automatisch Sentinel-Discovery."},
-            "masterGroupName": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+$", "description": "Interner Sentinel-Gruppenname; der Gateway übernimmt diesen Wert automatisch."},
-            "replicas": {"type": "integer", "minimum": 1, "description": "Nur bei HA wirksam: Anzahl der Redis-/Sentinel-Pods einschließlich Primary; mindestens 3."},
-            "quorum": {"type": "integer", "minimum": 1, "description": "Nur bei HA wirksam: benötigte Sentinel-Stimmen zur Ausfallerkennung; Standard 2 bei 3 Pods."},
+            "masterGroupName": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+$", "description": "Interner Sentinel-Gruppenname; der Gateway \u00fcbernimmt diesen Wert automatisch."},
+            "replicas": {"type": "integer", "minimum": 1, "description": "Nur bei HA wirksam: Anzahl der Redis-/Sentinel-Pods einschlie\u00dflich Primary; mindestens 3."},
+            "quorum": {"type": "integer", "minimum": 1, "description": "Nur bei HA wirksam: ben\u00f6tigte Sentinel-Stimmen zur Ausfallerkennung; Standard 2 bei 3 Pods."},
             "downAfterMilliseconds": {"type": "integer", "minimum": 1, "description": "Millisekunden ohne Antwort, bevor Sentinel den Primary als ausgefallen einstuft; Standard 5000."},
             "failoverTimeout": {"type": "integer", "minimum": 1, "description": "Sentinel-Failover-Timeout in Millisekunden; Standard 60000."},
             "parallelSyncs": {"type": "integer", "minimum": 1, "description": "Gleichzeitig mit dem neuen Primary synchronisierende Replicas; Standard 1."},
@@ -259,21 +250,21 @@
           "additionalProperties": false,
           "required": ["maxUnavailable"],
           "properties": {
-            "maxUnavailable": { "type": "integer", "minimum": 1, "description": "Maximal gleichzeitig nicht verfügbare Redis-Pods bei geplanten Unterbrechungen. Standard 1 erlaubt Wartung beim Einzel-Pod (kurze Unterbrechung) und erhält bei drei HA-Pods zwei verfügbare Pods." }
+            "maxUnavailable": { "type": "integer", "minimum": 1, "description": "Maximal gleichzeitig nicht verf\u00fcgbare Redis-Pods bei geplanten Unterbrechungen. Standard 1 erlaubt Wartung beim Einzel-Pod (kurze Unterbrechung) und erh\u00e4lt bei drei HA-Pods zwei verf\u00fcgbare Pods." }
           }
         },
         "storage": {
           "type": "object",
           "title": "Persistenz der Redis-Quoten",
-          "description": "Persistenter Speicher für Redis-AOF. RDF-Datensätze liegen unabhängig davon ausschließlich im S3-Bucket.",
+          "description": "Persistenter Speicher f\u00fcr Redis-AOF. RDF-Datens\u00e4tze liegen unabh\u00e4ngig davon ausschlie\u00dflich im S3-Bucket.",
           "required": ["requestedSize", "keepPvc", "persistentVolumeClaimRetentionPolicy"],
           "properties": {
-            "requestedSize": { "type": "string", "minLength": 1, "description": "Größe jedes automatisch erzeugten Redis-PVCs, z. B. 1Gi. HA erstellt einen PVC je Redis-Pod." },
-            "className": { "type": "string", "description": "StorageClass für neue Redis-PVCs; leer verwendet die Standardklasse des Clusters." },
-            "keepPvc": { "type": "boolean", "description": "Nur beim Standalone-Deployment: true (Standard) behält den automatisch erzeugten PVC nach helm uninstall; false löscht ihn einschließlich der gespeicherten Quoten. Für StatefulSets gelten die Retention-Policies darunter." },
+            "requestedSize": { "type": "string", "minLength": 1, "description": "Gr\u00f6\u00dfe jedes automatisch erzeugten Redis-PVCs, z. B. 1Gi. HA erstellt einen PVC je Redis-Pod." },
+            "className": { "type": "string", "description": "StorageClass f\u00fcr neue Redis-PVCs; leer verwendet die Standardklasse des Clusters." },
+            "keepPvc": { "type": "boolean", "description": "Nur beim Standalone-Deployment: true (Standard) beh\u00e4lt den automatisch erzeugten PVC nach helm uninstall; false l\u00f6scht ihn einschlie\u00dflich der gespeicherten Quoten. F\u00fcr StatefulSets gelten die Retention-Policies darunter." },
             "persistentVolumeClaimRetentionPolicy": {
               "type": "object",
-              "description": "Nur für StatefulSets: PVCs beim Löschen oder Herunterskalieren behalten. Beide Werte bleiben Retain.",
+              "description": "Nur f\u00fcr StatefulSets: PVCs beim L\u00f6schen oder Herunterskalieren behalten. Beide Werte bleiben Retain.",
               "required": ["whenScaled", "whenDeleted"],
               "properties": {
                 "whenScaled": { "type": "string", "const": "Retain" },
@@ -282,10 +273,35 @@
             }
           }
         }
+      },
+      "$comment": "Internal ServiceAccount validation stays outside the generated form properties.",
+      "if": true,
+      "then": {
+        "properties": {
+          "serviceAccount": {
+            "type": "object",
+            "required": ["create", "name"],
+            "properties": {
+              "create": { "type": "boolean", "const": false },
+              "name": { "$ref": "#/definitions/kubernetesName" }
+            }
+          }
+        }
       }
     }
   },
   "definitions": {
+    "kubernetesName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 253,
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
+    },
+    "optionalKubernetesName": {
+      "type": "string",
+      "maxLength": 253,
+      "pattern": "^(?:[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?$"
+    },
     "image": {
       "type": "object",
       "required": ["repository", "tag"],
@@ -298,7 +314,7 @@
       "type": "object",
       "required": ["replicaCount", "autoscaling", "resources", "forwardHeadersStrategy"],
       "properties": {
-        "replicaCount": {"type": "integer", "minimum": 1, "description": "Feste Anzahl der Pods, solange Autoscaling ausgeschaltet ist. Ein Pod ist sparsam, bietet bei Ausfall oder Rollout aber keine Verfügbarkeit."},
+        "replicaCount": {"type": "integer", "minimum": 1, "description": "Feste Anzahl der Pods, solange Autoscaling ausgeschaltet ist. Ein Pod ist sparsam, bietet bei Ausfall oder Rollout aber keine Verf\u00fcgbarkeit."},
         "forwardHeadersStrategy": {"type": "string", "enum": ["none", "native", "framework"], "description": "SERVER_FORWARD_HEADERS_STRATEGY for this pod. Enable only behind a trusted proxy that sanitizes forwarded headers."},
         "extraEnv": {
           "type": "object",
@@ -307,7 +323,7 @@
         },
         "resources": {
           "type": "object",
-          "description": "Kubernetes-Ressourcen je Container: requests reservieren Kapazität, limits begrenzen den Verbrauch. Mengen als Strings angeben, CPU z. B. 100m oder \"1\", RAM z. B. 256Mi.",
+          "description": "Kubernetes-Ressourcen je Container: requests reservieren Kapazit\u00e4t, limits begrenzen den Verbrauch. Mengen als Strings angeben, CPU z. B. 100m oder \"1\", RAM z. B. 256Mi.",
           "properties": {
             "requests": { "$ref": "#/definitions/resourceQuantities" },
             "limits": { "$ref": "#/definitions/resourceQuantities" }
@@ -315,12 +331,12 @@
         },
         "autoscaling": {
           "type": "object",
-          "description": "CPU-HPA: benötigt Metrics Server und positive CPU-Requests. Überschreibt replicaCount, sobald enabled=true ist.",
+          "description": "CPU-HPA: ben\u00f6tigt Metrics Server und positive CPU-Requests. \u00dcberschreibt replicaCount, sobald enabled=true ist.",
           "required": ["enabled", "minReplicas", "maxReplicas", "targetCPUUtilizationPercentage"],
           "properties": {
-            "enabled": {"type": "boolean", "description": "Horizontale Skalierung über die CPU-Auslastung aktivieren; Standard false."},
+            "enabled": {"type": "boolean", "description": "Horizontale Skalierung \u00fcber die CPU-Auslastung aktivieren; Standard false."},
             "minReplicas": {"type": "integer", "minimum": 1, "description": "Untergrenze der Pod-Anzahl bei aktivem HPA."},
-            "maxReplicas": {"type": "integer", "minimum": 1, "description": "Obergrenze der Pod-Anzahl bei aktivem HPA; mindestens minReplicas wählen."},
+            "maxReplicas": {"type": "integer", "minimum": 1, "description": "Obergrenze der Pod-Anzahl bei aktivem HPA; mindestens minReplicas w\u00e4hlen."},
             "targetCPUUtilizationPercentage": {"type": "integer", "minimum": 1, "description": "CPU-Zielauslastung relativ zum CPU-Request, nicht zum CPU-Limit; Standard 70 Prozent."}
           }
         }
@@ -360,9 +376,9 @@
     "resourceQuantities": {
       "type": "object",
       "properties": {
-        "cpu": { "type": "string", "description": "CPU-Kerne: 100m = 0,1 Kern; \"1\" = ein Kern. Ganze Zahlen im YAML in Anführungszeichen setzen." },
+        "cpu": { "type": "string", "description": "CPU-Kerne: 100m = 0,1 Kern; \"1\" = ein Kern. Ganze Zahlen im YAML in Anf\u00fchrungszeichen setzen." },
         "memory": { "type": "string", "description": "RAM, z. B. 256Mi oder 1Gi. Das Limit muss den Speicherverbrauch des gesamten Prozesses abdecken." },
-        "ephemeral-storage": { "type": "string", "description": "Flüchtiger Container-Speicher, z. B. 64Mi; kein persistenter RDF-Speicher." }
+        "ephemeral-storage": { "type": "string", "description": "Fl\u00fcchtiger Container-Speicher, z. B. 64Mi; kein persistenter RDF-Speicher." }
       },
       "additionalProperties": { "type": ["string", "number"] }
     }

@@ -138,6 +138,9 @@ def main():
     parser.add_argument("chart", type=Path)
     parser.add_argument("--render-only", action="store_true", help="Validate rendered budgets and secrets without Docker")
     options = parser.parse_args()
+    # OpenShift decodes the Base64 schema with atob(); JSON escapes preserve Unicode.
+    if not (options.chart / "values.schema.json").read_bytes().isascii():
+        raise RuntimeError("Use JSON Unicode escapes in values.schema.json for OpenShift's Base64 decoder")
     values = yaml.safe_load((options.chart / "values.yaml").read_text(encoding="utf-8"))
     modes = [render(options.chart, values, ha) for ha in (False, True)]
     render(options.chart, values, False, deployment=True)

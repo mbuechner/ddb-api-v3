@@ -47,6 +47,11 @@ s3:
     secretKey: AWS_SECRET_ACCESS_KEY
 ```
 
+Secret-Namen folgen Kubernetes-DNS-Regeln: Kleinbuchstaben, Ziffern, `-` und `.`,
+jeweils mit Buchstabe oder Ziffer am Anfang und Ende; maximal 253 Zeichen.
+Das gilt auch für Dev-Token-, TLS- und Registry-Secrets. Die ausgewählten
+Schlüssel im Secret, etwa `AWS_ACCESS_KEY_ID`, dürfen Großbuchstaben enthalten.
+
 Die API erhält weiterhin `S3_ACCESS_KEY` und `S3_SECRET_KEY`; nur die Namen im
 Secret ändern sich. Zugangsdaten gehören nicht in die Helm-Values.
 Nach einer Rotation Secret aktualisieren und die API-Pods
@@ -239,6 +244,11 @@ Die DDB-Container sind nicht privilegiert, verwerfen Linux-Capabilities und
 verwenden schreibgeschützte Root-Dateisysteme. DDB- und Redis-Pods mounten keine
 Service-Account-Tokens. Feste UID/GID/fsGroup und eine feste IngressClass werden
 nicht vorgegeben; OpenShift kann Namespace-IDs und den Router zuweisen.
+Den Redis-ServiceAccount legt das DDB-Chart automatisch ohne API-Rechte an.
+`redis.serviceAccount.create: false` deaktiviert nur die doppelte Erstellung
+durch den Unterchart. Der Account ist die Kubernetes-Identität der Pods;
+Redis-Logins sind davon unabhängig. Diese internen Einstellungen werden im
+OpenShift-Formular nicht angeboten.
 HTTPS und globale Anfrage-/Verbindungsgrenzen am öffentlichen Ingress erzwingen.
 
 ## Zustand prüfen
