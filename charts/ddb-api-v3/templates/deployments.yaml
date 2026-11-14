@@ -116,6 +116,7 @@ spec:
             httpGet:
               path: /actuator/health/liveness
               port: http
+            initialDelaySeconds: {{ $settings.initialDelaySeconds }}
             timeoutSeconds: 3
             periodSeconds: 5
             failureThreshold: 30

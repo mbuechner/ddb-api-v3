@@ -296,6 +296,33 @@ HTTPS und globale Anfrage-/Verbindungsgrenzen am öffentlichen Ingress erzwingen
 
 ## Zustand prüfen
 
+API und Gateway warten standardmäßig 60 Sekunden vor der ersten Startup-Probe.
+Nur diese Anfangspause ist über `initialDelaySeconds` je Anwendung einstellbar:
+
+```yaml
+apiService:
+  initialDelaySeconds: 60
+gateway:
+  initialDelaySeconds: 60
+```
+
+Startup prüft `/actuator/health/liveness` weiterhin alle 5 Sekunden mit 3 Sekunden
+Timeout und höchstens 30 Fehlversuchen. Erst nach Erfolg beginnen Liveness und
+Readiness. `connection refused` vor dem HTTP-Start ist dabei erwartbar.
+Wenn Kubernetes den Container wegen der Startup-Probe neu startet, zuerst
+die Anwendungslogs und den letzten Beendigungsgrund prüfen: etwa Startfehler,
+`OOMKilled` oder eine fehlende Redis-Verbindung. Mehr Startzeit behebt solche
+Ursachen nicht automatisch. In OpenShift den Tab **Logs** des Containers öffnen;
+**Events** zeigen die Probe-Meldungen, nicht die Anwendungsursache.
+
+```bash
+oc logs <pod> -c gateway --previous --tail=100
+oc describe pod <pod>
+```
+
+Für die API `-c api-service` verwenden; ohne vorherigen Neustart `--previous`
+weglassen.
+
 ```bash
 kubectl get pods,services,ingress -n ddb-api-v3
 kubectl rollout status deployment/ddb-api-v3-api-service -n ddb-api-v3

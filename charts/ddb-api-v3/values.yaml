@@ -63,6 +63,8 @@ apiService:
   baseUrl: https://api.deutsche-digitale-bibliothek.de
   maxDocumentSize: 1MB
   replicaCount: 1
+  # Wait before the first startup check; liveness/readiness follow startup success.
+  initialDelaySeconds: 60
   # Bound work and the queue per pod; increase only with measured CPU/heap headroom.
   concurrency:
     maxRequests: 4
@@ -89,6 +91,7 @@ apiService:
 gateway:
   forwardHeadersStrategy: none
   replicaCount: 1
+  initialDelaySeconds: 60
   # Shared upstream pool per gateway pod, not per downstream API pod.
   maxConnections: 32
   rateLimit:

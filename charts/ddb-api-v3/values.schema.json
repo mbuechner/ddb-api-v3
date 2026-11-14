@@ -126,7 +126,7 @@
       "type": "object",
       "title": "RDF-API",
       "description": "RDF-Verarbeitung und S3-Zugriff. Parallelit\u00e4t, Ressourcen und S3-Pool gemeinsam auf die Last abstimmen.",
-      "required": ["replicaCount", "autoscaling", "vpa", "resources", "forwardHeadersStrategy", "baseUrl", "maxDocumentSize", "concurrency"],
+      "required": ["replicaCount", "autoscaling", "vpa", "resources", "initialDelaySeconds", "forwardHeadersStrategy", "baseUrl", "maxDocumentSize", "concurrency"],
       "properties": {
         "replicaCount": {"$ref": "#/definitions/workload/properties/replicaCount"},
         "forwardHeadersStrategy": {"$ref": "#/definitions/workload/properties/forwardHeadersStrategy"},
@@ -134,6 +134,7 @@
         "resources": {"$ref": "#/definitions/workload/properties/resources"},
         "autoscaling": {"$ref": "#/definitions/workload/properties/autoscaling"},
         "vpa": {"$ref": "#/definitions/vpa"},
+        "initialDelaySeconds": {"$ref": "#/definitions/initialDelaySeconds"},
         "baseUrl": {"description": "DDB_API_BASE_URL: canonical HTTP(S) origin for RDF IRIs, or auto to use the request origin.", "type": "string", "pattern": "^(?:auto|https?://[^/?#@]+/?)$"},
         "maxDocumentSize": {"type": "string", "minLength": 1, "description": "DDB_API_UPLOAD_MAX_FILE_SIZE: maximum decompressed RDF/XML body size, for example 1MB."},
         "concurrency": {
@@ -154,7 +155,7 @@
       "type": "object",
       "title": "Gateway",
       "description": "\u00d6ffentlicher Zugang mit Schreibschutz und Anfragequoten. prod teilt Quoten \u00fcber Redis; dev verwendet lokale Quoten je Pod.",
-      "required": ["replicaCount", "autoscaling", "vpa", "resources", "forwardHeadersStrategy", "service", "maxConnections", "rateLimit"],
+      "required": ["replicaCount", "autoscaling", "vpa", "resources", "initialDelaySeconds", "forwardHeadersStrategy", "service", "maxConnections", "rateLimit"],
       "properties": {
         "replicaCount": {"$ref": "#/definitions/workload/properties/replicaCount"},
         "forwardHeadersStrategy": {"$ref": "#/definitions/workload/properties/forwardHeadersStrategy"},
@@ -162,6 +163,7 @@
         "resources": {"$ref": "#/definitions/workload/properties/resources"},
         "autoscaling": {"$ref": "#/definitions/workload/properties/autoscaling"},
         "vpa": {"$ref": "#/definitions/vpa"},
+        "initialDelaySeconds": {"$ref": "#/definitions/initialDelaySeconds"},
         "maxConnections": {"type": "integer", "minimum": 1, "description": "GATEWAY_HTTP_MAX_CONNECTIONS: upstream connection pool per gateway pod."},
         "rateLimit": {
           "type": "object",
@@ -375,6 +377,12 @@
           }
         }
       }
+    },
+    "initialDelaySeconds": {
+      "type": "integer",
+      "minimum": 0,
+      "title": "Startverz\u00f6gerung der Probe (Sekunden)",
+      "description": "Wartezeit vor der ersten Startup-Probe; Standard 60 Sekunden. Nach erfolgreicher Startup-Probe beginnen die normalen Liveness- und Readiness-Pr\u00fcfungen. Die \u00fcbrigen Probe-Zeiten sind fest vorgegeben."
     },
     "vpa": {
       "type": "object",
