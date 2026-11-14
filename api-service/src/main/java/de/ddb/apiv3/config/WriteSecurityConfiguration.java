@@ -66,10 +66,12 @@ public final class WriteSecurityConfiguration {
             Assert.isTrue(environment.acceptsProfiles(Profiles.of("dev & !prod")),
                     "The development write token is allowed only in dev, never prod");
             Assert.isTrue(!configured, "Configure JWT trust or the development write token, never both");
+            Assert.isTrue(devToken.matches("[A-Za-z0-9_-]{43}"),
+                    "DDB_DEV_WRITE_TOKEN must encode 32 random bytes as unpadded Base64URL (43 characters); see docs/security.md");
             byte[] decoded = Base64.getUrlDecoder().decode(devToken);
             Assert.isTrue(decoded.length == 32 && Base64.getUrlEncoder().withoutPadding()
                             .encodeToString(decoded).equals(devToken),
-                    "The development write token must be 32 random bytes as canonical unpadded Base64URL");
+                    "DDB_DEV_WRITE_TOKEN must be 32 random bytes as canonical unpadded Base64URL");
             byte[] expected = devToken.getBytes(StandardCharsets.UTF_8);
             var principal = new DefaultOAuth2AuthenticatedPrincipal("dev-writer",
                     Map.of("client_id", "dev-writer"), List.of(new SimpleGrantedAuthority("SCOPE_records:write")));

@@ -113,11 +113,11 @@ public final class GatewaySecurityConfiguration {
     /** A local developer secret, not a token issuer: Spring still owns Bearer authentication. */
     private static ReactiveOpaqueTokenIntrospector developmentToken(String token) {
         Assert.isTrue(token.matches("[A-Za-z0-9_-]{43}"),
-                "The development write token must encode 32 random bytes as unpadded Base64URL");
+                "DDB_DEV_WRITE_TOKEN must encode 32 random bytes as unpadded Base64URL (43 characters); see docs/security.md");
         final byte[] decoded = Base64.getUrlDecoder().decode(token);
         Assert.isTrue(decoded.length == 32 && Base64.getUrlEncoder().withoutPadding()
                         .encodeToString(decoded).equals(token),
-                "The development write token must use canonical Base64URL");
+                "DDB_DEV_WRITE_TOKEN must use canonical Base64URL");
         final byte[] expected = token.getBytes(StandardCharsets.UTF_8);
         final var principal = new DefaultOAuth2AuthenticatedPrincipal("dev-writer",
                 Map.of("client_id", "dev-writer"), List.of(new SimpleGrantedAuthority("SCOPE_records:write")));

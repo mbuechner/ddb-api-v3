@@ -65,6 +65,21 @@ class WriteSecurityConfigurationTest {
         });
     }
 
+    @Test
+    void malformedBase64DevTokenReportsItsRequiredFormatWithoutLeakingTheToken() {
+        String token = "ABCDEFGHI";
+        context.withPropertyValues("spring.profiles.active=dev", "ddb.security.dev-write-token=" + token)
+                .run(application -> {
+                    assertThat(application).hasFailed();
+                    assertThat(application.getStartupFailure()).rootCause()
+                            .isInstanceOf(IllegalArgumentException.class)
+                            .hasMessageContaining("DDB_DEV_WRITE_TOKEN")
+                            .hasMessageContaining("43 characters")
+                            .hasMessageContaining("32 random bytes")
+                            .hasMessageNotContaining(token);
+                });
+    }
+
     private static Stream<Arguments> invalidConfigurations() {
         String token = "ddb.security.dev-write-token=" + "A".repeat(43);
         return Stream.of(
