@@ -2,10 +2,10 @@ apiVersion: v2
 name: ddb-api-v3
 description: DDB API v3 with S3 storage and optional Redis high availability
 type: application
-version: 0.8.0
+version: 3.0.0
 appVersion: "0.1.0"
 kubeVersion: ">=1.26.0-0"
-home: https://github.com/mbuechner/ddb-api-v3
+home: https://mbuechner.github.io/ddb-api-v3
 sources:
   - https://github.com/mbuechner/ddb-api-v3
 maintainers:

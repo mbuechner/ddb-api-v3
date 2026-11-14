@@ -68,20 +68,33 @@ def smoke(auth, passwords, configs, ha, image, group, probe):
                 name = "ddb-acl-" + uuid.uuid4().hex
                 path = "/data/conf/" + ("redis.conf", "sentinel.conf")[index]
                 containers.append(name)
-                run(["docker", "create", "--name", name, "--network", "none", image,
-                     "redis-server", path, *(["--sentinel"] if index else [])])
-                run(["docker", "cp", str(conf), name + ":/data/conf"])
-                run(["docker", "start", name])
-                for attempt in range(50):
-                    try:
-                        if cli(index, passwords[index * 2], "PING") == "PONG":
-                            break
-                    except RuntimeError:
-                        pass
-                    time.sleep(0.2)
-                else:
-                    raise RuntimeError("Redis/Sentinel did not become ready")
-                run(["docker", "exec", name, *probe], timeout=10)
+                try:
+                    run(["docker", "create", "--name", name, "--network", "none", image,
+                         "redis-server", path, *(["--sentinel"] if index else [])])
+                    # Copy into the parent: an existing /data/conf must not produce conf/conf.
+                    run(["docker", "cp", str(conf), name + ":/data/"])
+                    run(["docker", "start", name])
+                    for attempt in range(50):
+                        state = run(["docker", "inspect", "--format", "{{.State.Status}}", name], timeout=10)
+                        if state in ("exited", "dead"):
+                            raise RuntimeError("Container stopped before becoming ready")
+                        try:
+                            if cli(index, passwords[index * 2], "PING") == "PONG":
+                                break
+                        except RuntimeError:
+                            pass
+                        time.sleep(0.2)
+                    else:
+                        raise RuntimeError("Redis/Sentinel did not become ready")
+                    run(["docker", "exec", name, *probe], timeout=10)
+                except RuntimeError as error:
+                    state = run(["docker", "inspect", "--format", "{{json .State}}", name],
+                                allow_error=True, timeout=10)
+                    logs = run(["docker", "logs", "--tail", "40", name], allow_error=True, timeout=10)
+                    message = f"{'HA' if ha else 'Standalone'} {'Sentinel' if index else 'Redis'}: {error}\n{state}\n{logs}"
+                    for password in passwords:
+                        message = message.replace(password, "<redacted>")
+                    raise RuntimeError(message) from None
 
             app, replication, sentinel, peer = passwords
             if cli(0, app, "SET", "acl-smoke", "value") != "OK" or cli(0, app, "GET", "acl-smoke") != "value":
