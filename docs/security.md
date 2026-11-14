@@ -52,6 +52,13 @@ API benötigen denselben Wert. Es wird kein Token vom Server erzeugt oder
 ausgegeben. Tokenvergleich und Bearer-Verarbeitung laufen über einen kleinen
 lokalen Introspector und die native Spring-Security-Infrastruktur.
 
+VS Code: Eine geänderte `.env` ersetzt keine bereits geerbten
+Prozessvariablen. Bereits offene Terminals können ältere Werte behalten.
+Für Java eine Startkonfiguration mit `envFile: "${workspaceFolder}/.env"`,
+`cwd: "${workspaceFolder}"` und `console: "internalConsole"` verwenden;
+die interne Konsole vermeidet zusätzliche PowerShell-Profile und Startskripte.
+Bei widersprüchlichen Werten VS Code samt Terminals vollständig neu starten.
+
 Das Entwicklungstoken ist ein gemeinsamer Schlüssel mit Schreibrecht auf alle
 Records. Es hat keine automatische Ablaufzeit und keine individuellen Nutzer.
 Zum Rotieren ein neues Token erzeugen und **beide Anwendungen neu starten**.
