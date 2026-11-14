@@ -73,7 +73,6 @@ Eine absolute XML-Basis bestimmt weiterhin die Auflösung relativer Referenzen.
 Bereits absolute Ressourcen- und Vokabular-IRIs werden nicht umgeschrieben.
 Den Graphnamen vergibt die API davon unabhängig. Die Basisänderung gilt nur
 für neue POST-/PUT-Zugriffe; GET erhält gespeicherte IRIs und Graphnamen.
-Für einen Domainwechsel gegebenenfalls korrigierte Lieferdaten erneut importieren.
 
 ## Anlegen, ersetzen und bedingt lesen
 

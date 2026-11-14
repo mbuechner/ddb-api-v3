@@ -108,7 +108,7 @@ public final class S3TestServer implements AutoCloseable {
         return stored.contentType();
     }
 
-    /** Bypasses the API so read tests can exercise corrupt or legacy storage objects. */
+    /** Bypasses the API so read tests can exercise corrupt objects or invalid storage formats. */
     public synchronized void storeObject(String key, byte[] body, String contentType) {
         put(BUCKET + "/" + key, body, contentType);
     }

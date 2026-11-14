@@ -42,8 +42,8 @@ Ein Record liegt als einzelnes Objekt `{recordId}/record` mit dem Content-Type
 `application/x-jelly-rdf` im Bucket. Jelly enthält den benannten Graphen und
 Namespace-Hinweise; es gibt keine zusätzliche gzip-Schicht und kein Manifest.
 Der originale RDF/XML-Bytestrom wird nicht aufbewahrt.
-Neue Objekte verwenden Jelly 1.2 und enthalten mindestens ein Triple; leere
-Uploads ergeben `422`. Alte Jelly-Objekte im GRAPHS-Format bei Bedarf neu importieren.
+Objekte verwenden Jelly 1.2 und enthalten mindestens ein Triple; leere
+Uploads ergeben `422`.
 
 Neuanlagen verwenden einen bedingten PUT mit `If-None-Match: *`, Ersetzungen
 `If-Match`. Die Bedingung wird atomar durch den Speicher geprüft. Die API legt
@@ -52,8 +52,6 @@ automatisch wiederholt: Geht eine Erfolgsantwort verloren, ist der Schreibausgan
 unklar und die API liefert `503`. Vor einer Wiederholung den aktuellen Record
 und dessen Validator lesen.
 
-Die Anwendung migriert keine Bestände aus früheren H2-/Cassandra-, Roh-RDF/XML-
-oder Manifest-/Blob-Layouts. Vor dem Umschalten Export und Neuimport planen.
 Ein nicht lesbares Jelly-Objekt ergibt derzeit `503`; es wird nicht stillschweigend
 neu angelegt oder repariert. Es gibt keine automatisch erzeugten Demo-Datensätze.
 
@@ -74,7 +72,7 @@ eine explizite `jakarta.json.provider`-Einstellung bleibt erhalten. RDF/XML
 schreibt direkt in einen gepufferten UTF-8-Writer. Unbescape übernimmt das
 XML-Escaping nach Zeichenprüfung; andere Literaltypen schreibt Jena.
 Der Adapter für flache, typisierte Knoten verwendet geschützte Hooks von
-`RDFXML_Basic`. Bei Jena-Upgrades die XML-Roundtrip-Tests besonders beachten.
+`RDFXML_Basic`. XML-Roundtrip-Tests sichern die Ausgabe ab.
 
 Virtual Threads ersetzen keine Kapazitätsgrenzen: aktive RDF-Arbeit,
 Warteschlangen und Socket-Pools sind begrenzt. Größenlimit und RDF-Parsing

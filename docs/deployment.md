@@ -3,7 +3,8 @@
 Die Kurzinstallation steht im [Chart-README](../charts/ddb-api-v3/README.md).
 Alle Einstellungen erfolgen über YAML, Secrets und Helm; eine zusätzliche
 Konfigurationsoberfläche ist nicht erforderlich. Der Chart startet beide
-Anwendungen im Profil `prod`, drei Redis-Nodes mit Sentinel und einen Ingress.
+Anwendungen im Profil `prod`, je einen API-, Gateway- und Redis-Pod sowie einen Ingress.
+Die kleine Standardinstallation benötigt keinen Sentinel und keine drei Worker-Nodes.
 S3-Speicher und Identity Provider bleiben externe Dienste.
 
 ## Speicher und Secrets
@@ -43,33 +44,10 @@ neu starten; laufende Prozesse lesen Secret-ENV nicht automatisch neu:
 kubectl rollout restart deployment/ddb-api-v3-api-service -n ddb-api-v3
 ```
 
-Die internen Redis-/Sentinel-Zugangsdaten erzeugt und verwaltet weiterhin Helm.
+Die internen Redis-/Sentinel-Zugangsdaten erzeugt und verwaltet Helm.
 Diese Secrets sind Teil des Release-Zustands. Kein gemeinsames S3-/Redis-Passwort
 verwenden. Für private Images ein Registry-Pull-Secret über `images.pullSecrets`
 referenzieren.
-
-## Upgrade auf 0.7
-
-`s3.accessKey` und `s3.secretKey` entfallen. Bei einem bestehenden Release
-`s3.existingSecret` auf den tatsächlich vorhandenen S3-Secret-Namen setzen;
-dieser kann vom neuen Standard `ddb-api-v3-s3` abweichen. Das zuvor von Helm
-erzeugte, mit `keep` erhaltene Secret weiterverwenden oder kontrolliert in ein
-extern verwaltetes Secret überführen. Es vor dem Upgrade nicht löschen.
-Alte Inline-Werte aus der Values-Datei entfernen; frühere Helm-Revisionen
-können diese Zugangsdaten weiterhin enthalten. Deren Aufbewahrung und eine
-gegebenenfalls nötige Rotation im Betrieb berücksichtigen.
-
-Die API übernimmt ausschließlich `S3_ACCESS_KEY` und `S3_SECRET_KEY` aus dem
-referenzierten Secret. Weitere Secret-Einträge werden nicht als ENV importiert.
-
-Redis-Client-, Replikations-, Sentinel-Client- und Sentinel-Peer-Zugänge sind
-ebenfalls getrennt. Bei einem Upgrade aus der früheren gemeinsamen
-Passwortkonfiguration das Redis-StatefulSet in einem Wartungsfenster zuerst
-auf null Replikate skalieren und anschließend Helm auf 0.7 aktualisieren;
-das Upgrade startet die drei Pods mit den neuen Identitäten. Ein gemischter
-Rolling Update alter und neuer Redis-Peers kann die Authentifizierung blockieren.
-Währenddessen sind die Gateway-Quoten nicht verfügbar; die RDF-Daten in S3
-bleiben erhalten. Der Sentinel-Clientname wird vom Chart an das Gateway übergeben.
 
 ## Values und Installation
 
@@ -93,11 +71,11 @@ Für einen lokalen Chart die fixierte Redis-Abhängigkeit auflösen:
 ```bash
 helm repo add groundhog2k https://groundhog2k.github.io/helm-charts/
 helm dependency build charts/ddb-api-v3
-helm lint charts/ddb-api-v3 --values values-production.yaml
+helm lint charts/ddb-api-v3 --values values-site.yaml
 helm template ddb-api-v3 charts/ddb-api-v3 --namespace ddb-api-v3 \
-  --values values-production.yaml
-helm upgrade --install ddb-api-v3 ./charts/ddb-api-v3 \
-  --namespace ddb-api-v3 --values values-production.yaml --wait --timeout 10m
+  --values values-site.yaml
+helm install ddb-api-v3 ./charts/ddb-api-v3 \
+  --namespace ddb-api-v3 --values values-site.yaml --wait --timeout 10m
 ```
 
 `Chart.lock` fixiert die Abhängigkeit; Archive werden beim Build geladen und
@@ -109,9 +87,26 @@ Seltene Anwendungsoptionen lassen sich über `apiService.extraEnv` und
 ## Skalierung und Rollouts
 
 API und Gateway skalieren unabhängig mit `replicaCount` oder dem jeweiligen
-CPU-HPA. HPA benötigt einen Metrics Server, positive CPU-Requests und passende
+CPU-HPA. Standard sind je ein Pod, API/Gateway/Redis zusammen 175m CPU- und
+416Mi RAM-Requests bei 896Mi RAM-Limits. Die API bearbeitet vier Anfragen parallel,
+acht weitere warten höchstens eine Sekunde; S3-Pool: acht Verbindungen,
+Gateway-Pool: 32. Diese Werte sind für kleine Last gedacht und lassen sich
+unabhängig erhöhen. Die kleine Installation ist nicht hochverfügbar.
+
+Das Produktionsprofil erhöht API/Gateway auf drei/zwei Replikate, Ressourcen,
+Parallelität und Pools; Redis erhält drei Nodes mit Sentinel. So installieren:
+
+```bash
+helm install ddb-api-v3 ./charts/ddb-api-v3 -n ddb-api-v3 --create-namespace \
+  -f charts/ddb-api-v3/values-production.yaml -f values-site.yaml \
+  --wait --timeout 10m
+```
+
+HPA ist auch dort zunächst aus. Zum Aktivieren `apiService.autoscaling.enabled`
+und `gateway.autoscaling.enabled` setzen. HPA benötigt einen Metrics Server,
+positive CPU-Requests und passende
 Min-/Max-Replikagrenzen. Die Zielauslastung bezieht sich auf den CPU-Request,
-nicht auf das Limit. Vertikale Anpassungen ändern `resources` per `helm upgrade`:
+nicht auf das Limit. Vertikale Kapazität wird mit `resources` konfiguriert:
 
 ```yaml
 apiService:
@@ -147,8 +142,11 @@ erhöhen auch die Gesamtzahl möglicher S3-Verbindungen. Keep-Alive-Verbindungen
 haben eine begrenzte Lebensdauer für die Verteilung auf neue Replikate.
 
 Kein VPA-Controller ist erforderlich. Bei zusätzlichem VPA automatische
-CPU-Änderungen nicht ohne Abstimmung gegen CPU-HPA regeln lassen. Rollouts
-warten auf Bereitschaft neuer Pods. Beim Stoppen bleiben fünf Sekunden für
+CPU-Änderungen nicht ohne Abstimmung gegen CPU-HPA regeln lassen. Bei einer
+Mindest-Replikazahl von eins ersetzen Rollouts den alten Pod ohne zusätzlichen
+Surge-Pod; dabei gibt es eine Unterbrechung. Ab zwei Mindest-Replikaten startet
+zuerst ein zusätzlicher Pod und muss bereit sein, bevor ein alter stoppt.
+Beim Stoppen bleiben fünf Sekunden für
 Endpoint-Aktualisierung, anschließend bis zu 20 Sekunden für laufende Requests
 innerhalb der 30-sekündigen Grace-Period. Disruption-Budgets erlauben höchstens
 einen nicht verfügbaren Pod je Deployment; ein einzelnes Replikat bietet keine
@@ -157,23 +155,27 @@ standardmäßig auf 64 MiB; dort liegt kein fachlicher Zustand.
 
 ## Redis, Persistenz und OpenShift
 
-Der Redis-Subchart betreibt einen Primary, zwei Replicas und je Pod einen
-Sentinel. Das Quorum ist zwei; harte Anti-Affinität benötigt mindestens drei
-passende Worker-Nodes. Alle Gateways verwenden Sentinel zum Ermitteln des
-aktuellen Primary. HA verbessert die Verfügbarkeit, nicht den Schreibdurchsatz.
+Der Redis-Subchart betreibt standardmäßig eine einzelne Instanz ohne Sentinel,
+mit 32 MiB `maxmemory` und einem 1-GiB-PVC. Auch mehrere Gateway-Replikate können
+dieselbe Redis-Instanz für gemeinsame Quoten verwenden.
 
-Standardwerte: Ausfallerkennung 5 Sekunden, Failover-Timeout 60 Sekunden,
-AOF mit `appendfsync everysec`, `maxmemory 256mb` und `noeviction`. Ressourcen,
+`redis.haMode.enabled: true` aktiviert einen Primary, zwei Replicas und je Pod
+einen Sentinel. Das Produktionsprofil setzt außerdem harte Anti-Affinität und
+benötigt drei passende Worker-Nodes. Das Quorum ist zwei. Die Gateways wechseln
+automatisch von der direkten Redis-Adresse zu Sentinel-Discovery.
+HA verbessert die Verfügbarkeit, nicht den Schreibdurchsatz.
+
+HA-Werte: Ausfallerkennung 5 Sekunden, Failover-Timeout 60 Sekunden.
+AOF mit `appendfsync everysec` und `noeviction` gelten in beiden Modi;
+das Produktionsprofil erhöht `maxmemory` auf 256 MiB. Ressourcen,
 Sentinel und Speicher lassen sich über `redis.resources`, `redis.sentinelResources`,
 `redis.haMode` und `redis.storage` anpassen. Die Redis-NetworkPolicy erlaubt nur
 Redis- und Gateway-Pods desselben Namespaces den Zugriff auf Redis/Sentinel.
 Der Gateway-Benutzer besitzt keine administrativen Redis-Befehle; der
 Statusabruf bleibt erlaubt.
 
-Redis-Kennwörter nicht isoliert im Secret ändern: Redis liest die ACLs beim
-Start, Gateways übernehmen Zugangsdaten als ENV. Rotation benötigt einen
-abgestimmten Redis-/Gateway-Neustart; ohne Übergangskonfiguration ein
-Wartungsfenster wie beim [Upgrade auf 0.7](#upgrade-auf-07) einplanen.
+Redis-Kennwörter beim Rotieren zusammen mit einem abgestimmten Redis-/Gateway-
+Neustart ändern; laufende Prozesse lesen ACLs und ENV nicht neu.
 
 Verwaltete Redis-Secrets und PVCs bleiben nach `helm uninstall` erhalten:
 `helm.sh/resource-policy: keep` sowie `whenDeleted/whenScaled: Retain`. Für eine
@@ -193,6 +195,11 @@ kubectl get pods,services,ingress -n ddb-api-v3
 kubectl rollout status deployment/ddb-api-v3-api-service -n ddb-api-v3
 kubectl rollout status deployment/ddb-api-v3-gateway -n ddb-api-v3
 kubectl rollout status statefulset/ddb-api-v3-redis -n ddb-api-v3
+```
+
+Sentinel-Discovery nur bei aktiviertem HA:
+
+```bash
 kubectl exec -n ddb-api-v3 ddb-api-v3-redis-0 -c redis-sentinel -- \
   sh -c 'REDISCLI_AUTH="$(sed -n "s/^sentinel sentinel-pass //p" /data/conf/sentinel.conf)" \
   redis-cli --user sentinel-admin -p 26379 SENTINEL get-master-addr-by-name ddb-api-v3'
@@ -203,8 +210,8 @@ beziehungsweise Redis; Liveness bleibt von deren Ausfällen unabhängig. Logs
 stehen auf stdout; [Auswertung und Aufbewahrung](logging.md) übernimmt die
 vorhandene Cluster-Log-Pipeline.
 
-Die Chart-Veröffentlichung prüft die tatsächlich gerenderten Redis-/Sentinel-ACLs
-mit temporären Docker-Containern. Der Smoke-Test erlaubt Datenzugriff und
+Die Chart-Veröffentlichung prüft Standalone- und HA-ACLs aus den tatsächlich
+gerenderten Secrets mit temporären Docker-Containern. Der Smoke-Test erlaubt Datenzugriff und
 Discovery, verweigert Administration sowie die Anmeldung als Peer mit einem
 Client-Passwort. Lokal benötigt diese Prüfung Docker; reine Render-Prüfungen
 ersetzen den Lauf gegen Redis nicht.

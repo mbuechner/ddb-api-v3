@@ -1,16 +1,16 @@
 # DDB API v3 — Helm
 
-API + Gateway + Redis/Sentinel. S3 und Identity Provider extern.
+API + Gateway + Redis, standardmäßig je ein Pod. S3 und Identity Provider extern.
 Konfiguration: Values-YAML und Secrets; keine zusätzliche Oberfläche.
 
-Voraussetzungen: Helm 3, Kubernetes ≥1.26/OpenShift, drei passende Worker-Nodes,
+Voraussetzungen: Helm 3, Kubernetes ≥1.26/OpenShift, ein passender Worker-Node,
 dynamische PVs und ein S3-Bucket. Secret `ddb-api-v3-s3` im Release-Namespace
 vorab anlegen: `S3_ACCESS_KEY`, `S3_SECRET_KEY`.
 [YAML und Rechte](../../docs/deployment.md#speicher-und-secrets).
 
 ## Installieren
 
-`values-production.yaml`:
+`values-site.yaml`:
 
 ```yaml
 s3:
@@ -33,14 +33,35 @@ auth:
 ```bash
 helm repo add ddb-api-v3 https://mbuechner.github.io/ddb-api-v3
 helm repo update ddb-api-v3
-helm upgrade --install ddb-api-v3 ddb-api-v3/ddb-api-v3 \
+helm install ddb-api-v3 ddb-api-v3/ddb-api-v3 \
   --namespace ddb-api-v3 --create-namespace \
-  --values values-production.yaml --wait --timeout 10m
+  --values values-site.yaml --wait --timeout 10m
 ```
 
 Adressen ersetzen, Versionen pinnen, bei privaten Images `images.pullSecrets` setzen.
 Issuer + Audience gemeinsam; ohne beide nur Lesebetrieb. `records:write` ist ein
-privilegiertes Importrecht. [Auth](../../docs/security.md) · [Upgrade auf 0.7](../../docs/deployment.md#upgrade-auf-07).
+privilegiertes Importrecht. [Auth](../../docs/security.md).
+
+## Kapazität
+
+| Default | CPU-Request | RAM-Request / Limit |
+| --- | --- | --- |
+| API × 1 | 100m | 256Mi / 512Mi |
+| Gateway × 1 | 50m | 128Mi / 256Mi |
+| Redis × 1 | 25m | 32Mi / 128Mi |
+
+Zusammen: 175m CPU, 416Mi RAM-Requests, 896Mi RAM-Limits und 1Gi PVC.
+Kleine Startwerte; eine Einzelinstanz bietet keine Ausfallsicherheit.
+Das [Produktionsprofil](values-production.yaml) ergänzt API × 3, Gateway × 2,
+Redis/Sentinel × 3 und größere Pools. Für diese Installation drei Worker-Nodes vorsehen:
+
+```bash
+helm install ddb-api-v3 ./charts/ddb-api-v3 -n ddb-api-v3 --create-namespace \
+  -f charts/ddb-api-v3/values-production.yaml -f values-site.yaml
+```
+
+HPA optional über `apiService.autoscaling.enabled` und `gateway.autoscaling.enabled`;
+vertikal über `resources`. [Details und Grenzen](../../docs/deployment.md#skalierung-und-rollouts).
 
 ## Betrieb
 

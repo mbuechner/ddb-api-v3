@@ -277,7 +277,7 @@ class RecordsApiContractTest extends S3TestSupport {
     }
 
     @Test
-    void distinguishesAnUnknownRecordFromCorruptOrLegacyStorage() throws Exception {
+    void distinguishesAnUnknownRecordFromCorruptOrInvalidStorageMetadata() throws Exception {
         mockMvc.perform(get(path("CH".repeat(16))))
                 .andExpect(status().isNotFound())
                 .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
@@ -285,9 +285,9 @@ class RecordsApiContractTest extends S3TestSupport {
                 .andExpect(jsonPath("$.title").value("Not Found"))
                 .andExpect(header().exists("X-Request-Id"));
 
-        String legacyId = "CI".repeat(16);
-        STORAGE.storeObject(legacyId + "/record", RDF, RDF_XML);
-        mockMvc.perform(get(path(legacyId)).accept(RDF_XML))
+        String wrongFormatId = "CI".repeat(16);
+        STORAGE.storeObject(wrongFormatId + "/record", RDF, RDF_XML);
+        mockMvc.perform(get(path(wrongFormatId)).accept(RDF_XML))
                 .andExpect(status().isServiceUnavailable());
 
         String corruptId = "CJ".repeat(16);
