@@ -37,7 +37,7 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{- define "ddb-api-v3.s3SecretName" -}}
-{{- required "s3.existingSecret must name an existing Secret with S3_ACCESS_KEY and S3_SECRET_KEY" .Values.s3.existingSecret -}}
+{{- required "s3.existingSecret must name a Secret with the keys selected by s3.secretKeys" .Values.s3.existingSecret -}}
 {{- end }}
 
 {{- define "ddb-api-v3.redisSecretName" -}}

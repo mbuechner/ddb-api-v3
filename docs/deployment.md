@@ -3,7 +3,7 @@
 Die Kurzinstallation steht im [Chart-README](../charts/ddb-api-v3/README.md).
 Alle Einstellungen erfolgen über YAML, Secrets und Helm; eine zusätzliche
 Konfigurationsoberfläche ist nicht erforderlich. Der Chart startet beide
-Anwendungen im Profil `prod`, je einen API-, Gateway- und Redis-Pod sowie einen Ingress.
+Anwendungen standardmäßig im Profil `prod`, je einen API-, Gateway- und Redis-Pod sowie einen Ingress.
 Die kleine Standardinstallation benötigt keinen Sentinel und keine drei Worker-Nodes.
 S3-Speicher und Identity Provider bleiben externe Dienste.
 
@@ -36,8 +36,20 @@ kubectl apply -f s3-secret.yaml
 
 Unter OpenShift `oc new-project ddb-api-v3` und `oc apply -f s3-secret.yaml`
 verwenden. `AWS_ENDPOINT_URL` des Kontos wird als `s3.endpoint` gesetzt;
-`s3.existingSecret` verweist auf den Secret-Namen. Zugangsdaten gehören nicht
-in die Helm-Values. Nach einer Rotation Secret aktualisieren und die API-Pods
+`s3.existingSecret` verweist auf den Secret-Namen. Die Secret-Schlüsselnamen
+lassen sich an vorhandene Servicekonten anpassen:
+
+```yaml
+s3:
+  existingSecret: storage-account
+  secretKeys:
+    accessKey: AWS_ACCESS_KEY_ID
+    secretKey: AWS_SECRET_ACCESS_KEY
+```
+
+Die API erhält weiterhin `S3_ACCESS_KEY` und `S3_SECRET_KEY`; nur die Namen im
+Secret ändern sich. Zugangsdaten gehören nicht in die Helm-Values.
+Nach einer Rotation Secret aktualisieren und die API-Pods
 neu starten; laufende Prozesse lesen Secret-ENV nicht automatisch neu:
 
 ```bash
@@ -55,6 +67,27 @@ Das [Values-Beispiel](../charts/ddb-api-v3/README.md#installieren) setzt Speiche
 öffentlichen Host, TLS, RDF-Origin und optional OAuth2/OIDC. Ohne Issuer und
 Audience sind Schreibzugriffe gesperrt. Beide gemeinsam setzen; eine JWKS-URL
 ist optional. [Sicherheitskonfiguration und Keycloak](security.md).
+
+`appProfile` setzt `APP_PROFILE` für beide Anwendungen. `prod` verwendet gemeinsame
+Redis-Quoten und JWT-Schreibschutz; `dev` verwendet lokale Quoten. Ein Dev-Token
+kann aus einem vorab angelegten Secret mit Schlüssel `DDB_DEV_WRITE_TOKEN` kommen:
+
+```yaml
+appProfile: dev
+auth:
+  devWriteTokenSecret: ddb-api-v3-dev-writer
+```
+
+Das Token gemäß [Security-Anleitung](security.md#lokal-ohne-identity-provider)
+erzeugen und ausschließlich im Secret speichern. API und Gateway lesen denselben
+Wert. Diese Option ist nur mit `dev` und leeren JWT-Einstellungen zulässig;
+sonst lehnt die Schema-Validierung die Konfiguration ab.
+
+`apiService.maxDocumentSize` begrenzt den entpackten Upload, `gateway.rateLimit`
+konfiguriert Kapazität, Nachfüllmenge, Intervall und Kosten einer Anfrage.
+`apiService.forwardHeadersStrategy` und `gateway.forwardHeadersStrategy` setzen
+jeweils `SERVER_FORWARD_HEADERS_STRATEGY`; hinter vertrauenswürdigen Proxies
+bewusst wählen. [Alle ENV-Zuordnungen](../charts/ddb-api-v3/values.schema.json).
 
 `ingress.host` und `tlsSecretName` bestimmen den HTTP-Einstiegspunkt;
 ohne Secret-Namen verwendet der Ingress das Standardzertifikat seines Controllers.
@@ -82,7 +115,7 @@ helm install ddb-api-v3 ./charts/ddb-api-v3 \
 nicht versioniert. Alle Images werden aus Registries bezogen. Beim Betrieb
 gezielt Versionen auswählen; [Veröffentlichung](operations.md#container-und-releases).
 Seltene Anwendungsoptionen lassen sich über `apiService.extraEnv` und
-`gateway.extraEnv` überschreiben, beispielsweise Uploadlimit oder Quoten.
+`gateway.extraEnv` überschreiben, beispielsweise native JVM-Optionen.
 
 ## Skalierung und Rollouts
 

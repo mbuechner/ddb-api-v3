@@ -1,16 +1,34 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema#",
   "type": "object",
-  "required": ["images", "logging", "auth", "s3", "ingress", "apiService", "gateway", "redis"],
+  "required": ["appProfile", "images", "logging", "auth", "s3", "ingress", "apiService", "gateway", "redis"],
+  "allOf": [
+    {
+      "if": { "properties": { "auth": { "properties": { "devWriteTokenSecret": { "minLength": 1 } } } } },
+      "then": {
+        "properties": {
+          "appProfile": { "const": "dev" },
+          "auth": { "properties": { "issuerUri": { "const": "" }, "audience": { "const": "" }, "jwkSetUri": { "const": "" } } }
+        }
+      }
+    }
+  ],
   "properties": {
+    "appProfile": {
+      "description": "APP_PROFILE: prod uses shared Redis quotas and verified JWTs; dev uses local quotas and optionally a development token Secret.",
+      "type": "string",
+      "enum": ["dev", "prod"]
+    },
     "auth": {
       "type": "object",
-      "required": ["issuerUri", "audience", "jwkSetUri"],
+      "description": "Write authentication. Empty JWT settings keep writes locked unless a dev-only token Secret is configured.",
+      "required": ["issuerUri", "audience", "jwkSetUri", "devWriteTokenSecret"],
       "additionalProperties": false,
       "properties": {
-        "issuerUri": { "type": "string" },
-        "audience": { "type": "string" },
-        "jwkSetUri": { "type": "string" }
+        "issuerUri": { "type": "string", "description": "OAUTH2_ISSUER_URI: trusted OAuth2/OIDC issuer; requires audience." },
+        "audience": { "type": "string", "description": "OAUTH2_AUDIENCE: expected API audience; requires issuerUri." },
+        "jwkSetUri": { "type": "string", "description": "OAUTH2_JWK_SET_URI: optional public-key endpoint; otherwise issuer discovery is used." },
+        "devWriteTokenSecret": { "type": "string", "description": "Existing Secret with key DDB_DEV_WRITE_TOKEN, injected into API and gateway. Only appProfile=dev with empty JWT settings; never put the token value in values.yaml." }
       },
       "oneOf": [
         {
@@ -54,17 +72,26 @@
     "s3": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["endpoint", "region", "bucket", "pathStyleAccess", "connectionTimeout", "readTimeout", "maxConnections", "createBucket", "existingSecret"],
+      "required": ["endpoint", "region", "bucket", "pathStyleAccess", "connectionTimeout", "readTimeout", "maxConnections", "createBucket", "existingSecret", "secretKeys"],
       "properties": {
-        "endpoint": { "type": "string", "pattern": "^https?://[^/]+/?$" },
-        "region": { "type": "string", "minLength": 1 },
-        "bucket": { "type": "string", "minLength": 3, "maxLength": 63 },
+        "endpoint": { "type": "string", "pattern": "^https?://[^/]+/?$", "description": "S3_ENDPOINT: service-account AWS_ENDPOINT_URL, without bucket path or credentials." },
+        "region": { "type": "string", "minLength": 1, "description": "S3_REGION: region used for signing requests." },
+        "bucket": { "type": "string", "minLength": 3, "maxLength": 63, "description": "S3_BUCKET: bucket provisioned by the storage operator." },
         "pathStyleAccess": { "type": "boolean" },
         "connectionTimeout": { "type": "string", "minLength": 1 },
         "readTimeout": { "type": "string", "minLength": 1 },
         "maxConnections": { "type": "integer", "minimum": 1 },
         "createBucket": { "type": "boolean" },
-        "existingSecret": { "type": "string", "minLength": 1 }
+        "existingSecret": { "type": "string", "minLength": 1, "description": "Name of the operator-managed S3 credential Secret; secretKeys selects its keys. Values never contain the credentials themselves." },
+        "secretKeys": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["accessKey", "secretKey"],
+          "properties": {
+            "accessKey": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$", "description": "Secret key injected as S3_ACCESS_KEY; use AWS_ACCESS_KEY_ID for an existing AWS-named Secret." },
+            "secretKey": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$", "description": "Secret key injected as S3_SECRET_KEY; use AWS_SECRET_ACCESS_KEY for an existing AWS-named Secret." }
+          }
+        }
       }
     },
     "ingress": {
@@ -82,16 +109,17 @@
         { "$ref": "#/definitions/workload" },
         {
           "type": "object",
-          "required": ["baseUrl", "concurrency"],
+          "required": ["baseUrl", "maxDocumentSize", "concurrency"],
           "properties": {
             "baseUrl": {
-              "description": "Explicit canonical HTTP(S) origin, or auto to use the request origin.",
+              "description": "DDB_API_BASE_URL: canonical HTTP(S) origin for RDF IRIs, or auto to use the request origin.",
               "type": "string",
               "oneOf": [
                 { "const": "auto" },
                 { "pattern": "^https?://[^/?#@]+/?$" }
               ]
             },
+            "maxDocumentSize": { "type": "string", "minLength": 1, "description": "DDB_API_UPLOAD_MAX_FILE_SIZE: maximum decompressed RDF/XML body size, for example 1MB." },
             "concurrency": {
               "type": "object",
               "required": ["maxRequests", "maxQueuedRequests", "queueTimeout"],
@@ -110,9 +138,20 @@
         { "$ref": "#/definitions/workload" },
         {
           "type": "object",
-          "required": ["service", "maxConnections"],
+          "required": ["service", "maxConnections", "rateLimit"],
           "properties": {
-            "maxConnections": { "type": "integer", "minimum": 1 },
+            "maxConnections": { "type": "integer", "minimum": 1, "description": "GATEWAY_HTTP_MAX_CONNECTIONS: upstream connection pool per gateway pod." },
+            "rateLimit": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["capacity", "refillTokens", "refillPeriod", "requestedTokens"],
+              "properties": {
+                "capacity": { "type": "integer", "minimum": 1, "description": "RATE_LIMIT_BURST_CAPACITY: maximum tokens per client bucket." },
+                "refillTokens": { "type": "integer", "minimum": 1, "description": "RATE_LIMIT_REPLENISH_RATE: tokens added each refill period." },
+                "refillPeriod": { "type": "string", "minLength": 1, "description": "RATE_LIMIT_REFILL_PERIOD: refill duration, for example 1s." },
+                "requestedTokens": { "type": "integer", "minimum": 1, "description": "RATE_LIMIT_REQUESTED_TOKENS: token cost of one request." }
+              }
+            },
             "service": {
               "type": "object",
               "required": ["type", "port"],
@@ -208,10 +247,11 @@
     },
     "workload": {
       "type": "object",
-      "required": ["replicaCount", "autoscaling", "resources"],
+      "required": ["replicaCount", "autoscaling", "resources", "forwardHeadersStrategy"],
       "properties": {
         "replicaCount": { "type": "integer", "minimum": 1 },
-        "extraEnv": { "type": "object", "additionalProperties": { "type": ["string", "number", "boolean"] } },
+        "forwardHeadersStrategy": { "type": "string", "enum": ["none", "native", "framework"], "description": "SERVER_FORWARD_HEADERS_STRATEGY for this pod. Enable only behind a trusted proxy that sanitizes forwarded headers." },
+        "extraEnv": { "type": "object", "description": "Additional native Spring environment overrides for this workload, for example JAVA_TOOL_OPTIONS. Keep credentials in Secrets.", "additionalProperties": { "type": ["string", "number", "boolean"] } },
         "resources": { "type": "object" },
         "autoscaling": {
           "type": "object",

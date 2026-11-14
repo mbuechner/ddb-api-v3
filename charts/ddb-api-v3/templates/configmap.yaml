@@ -8,19 +8,17 @@ metadata:
   labels:
     {{- include "ddb-api-v3.labels" . | nindent 4 }}
 data:
-  APP_PROFILE: prod
+  APP_PROFILE: {{ .Values.appProfile | quote }}
   OAUTH2_ISSUER_URI: {{ .Values.auth.issuerUri | quote }}
   OAUTH2_AUDIENCE: {{ .Values.auth.audience | quote }}
   OAUTH2_JWK_SET_URI: {{ .Values.auth.jwkSetUri | quote }}
-  # Explicitly opt in per application only behind a header-sanitizing trusted proxy.
-  SERVER_FORWARD_HEADERS_STRATEGY: none
   LOGGING_STRUCTURED_FORMAT_CONSOLE: ecs
   DDB_ACCESS_LOG_ENABLED: {{ .Values.logging.accessEnabled | quote }}
   LOGGING_LEVEL_DE_DDB_APIV3_ACCESS: INFO
   GATEWAY_HTTP_MAX_CONNECTIONS: {{ .Values.gateway.maxConnections | quote }}
   API_SERVICE_URI: {{ printf "http://%s:8080" (include "ddb-api-v3.apiServiceName" .) | quote }}
   DDB_API_BASE_URL: {{ .Values.apiService.baseUrl | quote }}
-  DDB_API_UPLOAD_MAX_FILE_SIZE: 1MB
+  DDB_API_UPLOAD_MAX_FILE_SIZE: {{ .Values.apiService.maxDocumentSize | quote }}
   DDB_API_MAX_CONCURRENT_REQUESTS: {{ .Values.apiService.concurrency.maxRequests | quote }}
   DDB_API_MAX_QUEUED_REQUESTS: {{ .Values.apiService.concurrency.maxQueuedRequests | quote }}
   DDB_API_QUEUE_TIMEOUT: {{ .Values.apiService.concurrency.queueTimeout | quote }}
@@ -46,10 +44,10 @@ data:
   REDIS_TLS_ENABLED: "false"
   REDIS_CONNECT_TIMEOUT: 500ms
   REDIS_COMMAND_TIMEOUT: 500ms
-  RATE_LIMIT_BURST_CAPACITY: "20"
-  RATE_LIMIT_REPLENISH_RATE: "10"
-  RATE_LIMIT_REFILL_PERIOD: 1s
-  RATE_LIMIT_REQUESTED_TOKENS: "1"
+  RATE_LIMIT_BURST_CAPACITY: {{ .Values.gateway.rateLimit.capacity | quote }}
+  RATE_LIMIT_REPLENISH_RATE: {{ .Values.gateway.rateLimit.refillTokens | quote }}
+  RATE_LIMIT_REFILL_PERIOD: {{ .Values.gateway.rateLimit.refillPeriod | quote }}
+  RATE_LIMIT_REQUESTED_TOKENS: {{ .Values.gateway.rateLimit.requestedTokens | quote }}
   CLIENT_ID_HEADER_ENABLED: "false"
   CLIENT_ID_HEADER_NAME: X-Client-Id
   ANONYMOUS_RATE_LIMIT_BY_REMOTE_ADDRESS: "true"

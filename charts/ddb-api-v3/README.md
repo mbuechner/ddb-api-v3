@@ -2,6 +2,7 @@
 
 API + Gateway + Redis, standardmäßig je ein Pod. S3 und Identity Provider extern.
 Konfiguration: Values-YAML und Secrets; keine zusätzliche Oberfläche.
+`appProfile` setzt `APP_PROFILE`: standardmäßig `prod`, optional `dev`.
 
 Voraussetzungen: Helm 3, Kubernetes ≥1.26/OpenShift, ein passender Worker-Node,
 dynamische PVs und ein S3-Bucket. Secret `ddb-api-v3-s3` im Release-Namespace
@@ -41,6 +42,11 @@ helm install ddb-api-v3 ddb-api-v3/ddb-api-v3 \
 Adressen ersetzen, Versionen pinnen, bei privaten Images `images.pullSecrets` setzen.
 Issuer + Audience gemeinsam; ohne beide nur Lesebetrieb. `records:write` ist ein
 privilegiertes Importrecht. [Auth](../../docs/security.md).
+
+Uploadlimit: `apiService.maxDocumentSize`; Quoten: `gateway.rateLimit`.
+`forwardHeadersStrategy` ist je Anwendung konfigurierbar. Alle ENV-Zuordnungen
+stehen im [Schema](values.schema.json); seltene Optionen unter `extraEnv`.
+Für einen Dev-Token aus einem Secret: [Deployment-Konfiguration](../../docs/deployment.md#values-und-installation).
 
 ## Kapazität
 

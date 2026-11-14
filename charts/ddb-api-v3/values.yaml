@@ -1,6 +1,8 @@
 # Image locations, S3 storage and the public endpoint are the only values that
 # normally need adapting. Application defaults live in the chart templates;
 # extraEnv remains available for exceptional Spring configuration overrides.
+appProfile: prod
+
 images:
   apiService:
     repository: ghcr.io/mbuechner/ddb-api-v3-service
@@ -24,6 +26,8 @@ auth:
   audience: ""
   # Optional override; otherwise Spring discovers the issuer's public-key endpoint.
   jwkSetUri: ""
+  # Only with appProfile=dev and empty JWT settings. Secret key: DDB_DEV_WRITE_TOKEN.
+  devWriteTokenSecret: ""
 
 s3:
   endpoint: https://s3.example.internal
@@ -35,8 +39,11 @@ s3:
   maxConnections: 8
   # Production buckets are provisioned by the storage operator.
   createBucket: false
-  # Operator-managed Secret with S3_ACCESS_KEY and S3_SECRET_KEY; never put credentials in values.
+  # Operator-managed credential Secret; secretKeys maps its keys to the API's S3_* ENV.
   existingSecret: ddb-api-v3-s3
+  secretKeys:
+    accessKey: S3_ACCESS_KEY
+    secretKey: S3_SECRET_KEY
 
 ingress:
   enabled: true
@@ -48,8 +55,11 @@ ingress:
   tlsSecretName: ""
 
 apiService:
+  # Enable forwarding only behind a proxy that sanitizes incoming forwarded headers.
+  forwardHeadersStrategy: none
   # Canonical origin for RDF graph names, independent of ingress.host.
   baseUrl: https://api.deutsche-digitale-bibliothek.de
+  maxDocumentSize: 1MB
   replicaCount: 1
   # Bound work and the queue per pod; increase only with measured CPU/heap headroom.
   concurrency:
@@ -67,9 +77,15 @@ apiService:
   extraEnv: {}
 
 gateway:
+  forwardHeadersStrategy: none
   replicaCount: 1
   # Shared upstream pool per gateway pod, not per downstream API pod.
   maxConnections: 32
+  rateLimit:
+    capacity: 20
+    refillTokens: 10
+    refillPeriod: 1s
+    requestedTokens: 1
   service:
     type: ClusterIP
     port: 80
@@ -92,7 +108,7 @@ redis:
   image:
     registry: docker.io
     repository: library/redis
-    tag: "8.8.0"
+    tag: "8-alpine"
     pullPolicy: Always
   auth:
     username: gateway

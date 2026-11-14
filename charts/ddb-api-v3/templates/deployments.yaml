@@ -65,17 +65,26 @@ spec:
           env:
             - name: SERVER_PORT
               value: {{ ternary "8080" "8081" $api | quote }}
+            - name: SERVER_FORWARD_HEADERS_STRATEGY
+              value: {{ $settings.forwardHeadersStrategy | quote }}
+            {{- if $.Values.auth.devWriteTokenSecret }}
+            - name: DDB_DEV_WRITE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.auth.devWriteTokenSecret | quote }}
+                  key: DDB_DEV_WRITE_TOKEN
+            {{- end }}
             {{- if $api }}
             - name: S3_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ include "ddb-api-v3.s3SecretName" $ }}
-                  key: S3_ACCESS_KEY
+                  key: {{ $.Values.s3.secretKeys.accessKey | quote }}
             - name: S3_SECRET_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ include "ddb-api-v3.s3SecretName" $ }}
-                  key: S3_SECRET_KEY
+                  key: {{ $.Values.s3.secretKeys.secretKey | quote }}
             {{- else }}
             - name: REDIS_PASSWORD
               valueFrom:
