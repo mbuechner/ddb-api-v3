@@ -1,0 +1,210 @@
+# Kubernetes und OpenShift
+
+Die Kurzinstallation steht im [Chart-README](../charts/ddb-api-v3/README.md).
+Alle Einstellungen erfolgen über YAML, Secrets und Helm; eine zusätzliche
+Konfigurationsoberfläche ist nicht erforderlich. Der Chart startet beide
+Anwendungen im Profil `prod`, drei Redis-Nodes mit Sentinel und einen Ingress.
+S3-Speicher und Identity Provider bleiben externe Dienste.
+
+## Speicher und Secrets
+
+Vor der Installation einen Namespace, den S3-Bucket und das Servicekonto anlegen.
+Der Speicher muss atomare bedingte PUTs unterstützen. Das Konto braucht
+Objekt-Lese-/Schreibrechte und `HeadBucket`-Zugriff; automatische Bucket-Anlage
+bleibt in Produktion ausgeschaltet. Standardregion ist `eu-central-1`.
+
+Das S3-Secret wird außerhalb von Helm verwaltet. Im Release-Namespace eine
+private Datei anlegen und mit echten Kontowerten befüllen; nicht einchecken:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ddb-api-v3-s3
+  namespace: ddb-api-v3
+type: Opaque
+stringData:
+  S3_ACCESS_KEY: <AWS_ACCESS_KEY_ID-des-Servicekontos>
+  S3_SECRET_KEY: <AWS_SECRET_ACCESS_KEY-des-Servicekontos>
+```
+
+```bash
+kubectl create namespace ddb-api-v3
+kubectl apply -f s3-secret.yaml
+```
+
+Unter OpenShift `oc new-project ddb-api-v3` und `oc apply -f s3-secret.yaml`
+verwenden. `AWS_ENDPOINT_URL` des Kontos wird als `s3.endpoint` gesetzt;
+`s3.existingSecret` verweist auf den Secret-Namen. Zugangsdaten gehören nicht
+in die Helm-Values. Nach einer Rotation Secret aktualisieren und die API-Pods
+neu starten; laufende Prozesse lesen Secret-ENV nicht automatisch neu:
+
+```bash
+kubectl rollout restart deployment/ddb-api-v3-api-service -n ddb-api-v3
+```
+
+Die internen Redis-/Sentinel-Zugangsdaten erzeugt und verwaltet weiterhin Helm.
+Diese Secrets sind Teil des Release-Zustands. Kein gemeinsames S3-/Redis-Passwort
+verwenden. Für private Images ein Registry-Pull-Secret über `images.pullSecrets`
+referenzieren.
+
+## Upgrade auf 0.7
+
+`s3.accessKey` und `s3.secretKey` entfallen. Bei einem bestehenden Release
+`s3.existingSecret` auf den tatsächlich vorhandenen S3-Secret-Namen setzen;
+dieser kann vom neuen Standard `ddb-api-v3-s3` abweichen. Das zuvor von Helm
+erzeugte, mit `keep` erhaltene Secret weiterverwenden oder kontrolliert in ein
+extern verwaltetes Secret überführen. Es vor dem Upgrade nicht löschen.
+Alte Inline-Werte aus der Values-Datei entfernen; frühere Helm-Revisionen
+können diese Zugangsdaten weiterhin enthalten. Deren Aufbewahrung und eine
+gegebenenfalls nötige Rotation im Betrieb berücksichtigen.
+
+Die API übernimmt ausschließlich `S3_ACCESS_KEY` und `S3_SECRET_KEY` aus dem
+referenzierten Secret. Weitere Secret-Einträge werden nicht als ENV importiert.
+
+Redis-Client-, Replikations-, Sentinel-Client- und Sentinel-Peer-Zugänge sind
+ebenfalls getrennt. Bei einem Upgrade aus der früheren gemeinsamen
+Passwortkonfiguration das Redis-StatefulSet in einem Wartungsfenster zuerst
+auf null Replikate skalieren und anschließend Helm auf 0.7 aktualisieren;
+das Upgrade startet die drei Pods mit den neuen Identitäten. Ein gemischter
+Rolling Update alter und neuer Redis-Peers kann die Authentifizierung blockieren.
+Währenddessen sind die Gateway-Quoten nicht verfügbar; die RDF-Daten in S3
+bleiben erhalten. Der Sentinel-Clientname wird vom Chart an das Gateway übergeben.
+
+## Values und Installation
+
+Das [Values-Beispiel](../charts/ddb-api-v3/README.md#installieren) setzt Speicher,
+öffentlichen Host, TLS, RDF-Origin und optional OAuth2/OIDC. Ohne Issuer und
+Audience sind Schreibzugriffe gesperrt. Beide gemeinsam setzen; eine JWKS-URL
+ist optional. [Sicherheitskonfiguration und Keycloak](security.md).
+
+`ingress.host` und `tlsSecretName` bestimmen den HTTP-Einstiegspunkt;
+ohne Secret-Namen verwendet der Ingress das Standardzertifikat seines Controllers.
+Der aktivierte Ingress enthält immer einen TLS-Host; HTTP-zu-HTTPS-Weiterleitung
+am jeweiligen Controller sicherstellen.
+`apiService.baseUrl` bestimmt Ressourcen-IRIs. Hinter einem TLS-Ingress den
+passenden öffentlichen Origin setzen. `auto` folgt der HTTP-Anfrage und entfernt
+`/3`; bestehende RDF-IRIs ändert das nicht. Forwarded-Header standardmäßig nicht
+vertrauen. Abweichende Proxy-Konfigurationen gemäß den [Logging-Regeln](logging.md)
+bewusst vornehmen.
+
+Für einen lokalen Chart die fixierte Redis-Abhängigkeit auflösen:
+
+```bash
+helm repo add groundhog2k https://groundhog2k.github.io/helm-charts/
+helm dependency build charts/ddb-api-v3
+helm lint charts/ddb-api-v3 --values values-production.yaml
+helm template ddb-api-v3 charts/ddb-api-v3 --namespace ddb-api-v3 \
+  --values values-production.yaml
+helm upgrade --install ddb-api-v3 ./charts/ddb-api-v3 \
+  --namespace ddb-api-v3 --values values-production.yaml --wait --timeout 10m
+```
+
+`Chart.lock` fixiert die Abhängigkeit; Archive werden beim Build geladen und
+nicht versioniert. Alle Images werden aus Registries bezogen. Beim Betrieb
+gezielt Versionen auswählen; [Veröffentlichung](operations.md#container-und-releases).
+Seltene Anwendungsoptionen lassen sich über `apiService.extraEnv` und
+`gateway.extraEnv` überschreiben, beispielsweise Uploadlimit oder Quoten.
+
+## Skalierung und Rollouts
+
+API und Gateway skalieren unabhängig mit `replicaCount` oder dem jeweiligen
+CPU-HPA. HPA benötigt einen Metrics Server, positive CPU-Requests und passende
+Min-/Max-Replikagrenzen. Die Zielauslastung bezieht sich auf den CPU-Request,
+nicht auf das Limit. Vertikale Anpassungen ändern `resources` per `helm upgrade`:
+
+```yaml
+apiService:
+  resources:
+    requests: {cpu: "1", memory: 1Gi}
+    limits: {cpu: "2", memory: 2Gi, ephemeral-storage: 64Mi}
+  concurrency:
+    maxRequests: 32
+    maxQueuedRequests: 64
+    queueTimeout: 1s
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+s3:
+  maxConnections: 50
+gateway:
+  maxConnections: 256
+```
+
+Die JVM verwendet standardmäßig bis zu 60 % des RAM-Limits als Heap und beendet
+sich bei OOM. Der Rest bleibt für native Puffer, Metaspace und Threads. Ein
+festes `-Xmx` ist nicht eingebaut. Ressourcenänderungen werden mit neuen Pods
+wirksam; `extraEnv.JAVA_TOOL_OPTIONS` kann die Vorgabe ersetzen.
+
+RDF-Arbeit, Warteschlange und S3-Pool gemeinsam mit CPU/RAM und realen
+Dokumentgrößen abstimmen. Mehr RAM erhöht `concurrency.maxRequests` nicht von
+selbst. Volle API-Kapazität ergibt `503`. Der Gateway-Pool ist auf
+`maxConnections` begrenzt; maximal doppelt so viele Anfragen warten eine Sekunde.
+Ein voller Pool ergibt derzeit die native Gateway-Antwort `500`. Mehr API-Pods
+erhöhen auch die Gesamtzahl möglicher S3-Verbindungen. Keep-Alive-Verbindungen
+haben eine begrenzte Lebensdauer für die Verteilung auf neue Replikate.
+
+Kein VPA-Controller ist erforderlich. Bei zusätzlichem VPA automatische
+CPU-Änderungen nicht ohne Abstimmung gegen CPU-HPA regeln lassen. Rollouts
+warten auf Bereitschaft neuer Pods. Beim Stoppen bleiben fünf Sekunden für
+Endpoint-Aktualisierung, anschließend bis zu 20 Sekunden für laufende Requests
+innerhalb der 30-sekündigen Grace-Period. Disruption-Budgets erlauben höchstens
+einen nicht verfügbaren Pod je Deployment; ein einzelnes Replikat bietet keine
+Verfügbarkeit während eines Node-Drains. Nur `/tmp` ist beschreibbar und begrenzt,
+standardmäßig auf 64 MiB; dort liegt kein fachlicher Zustand.
+
+## Redis, Persistenz und OpenShift
+
+Der Redis-Subchart betreibt einen Primary, zwei Replicas und je Pod einen
+Sentinel. Das Quorum ist zwei; harte Anti-Affinität benötigt mindestens drei
+passende Worker-Nodes. Alle Gateways verwenden Sentinel zum Ermitteln des
+aktuellen Primary. HA verbessert die Verfügbarkeit, nicht den Schreibdurchsatz.
+
+Standardwerte: Ausfallerkennung 5 Sekunden, Failover-Timeout 60 Sekunden,
+AOF mit `appendfsync everysec`, `maxmemory 256mb` und `noeviction`. Ressourcen,
+Sentinel und Speicher lassen sich über `redis.resources`, `redis.sentinelResources`,
+`redis.haMode` und `redis.storage` anpassen. Die Redis-NetworkPolicy erlaubt nur
+Redis- und Gateway-Pods desselben Namespaces den Zugriff auf Redis/Sentinel.
+Der Gateway-Benutzer besitzt keine administrativen Redis-Befehle; der
+Statusabruf bleibt erlaubt.
+
+Redis-Kennwörter nicht isoliert im Secret ändern: Redis liest die ACLs beim
+Start, Gateways übernehmen Zugangsdaten als ENV. Rotation benötigt einen
+abgestimmten Redis-/Gateway-Neustart; ohne Übergangskonfiguration ein
+Wartungsfenster wie beim [Upgrade auf 0.7](#upgrade-auf-07) einplanen.
+
+Verwaltete Redis-Secrets und PVCs bleiben nach `helm uninstall` erhalten:
+`helm.sh/resource-policy: keep` sowie `whenDeleted/whenScaled: Retain`. Für eine
+Wiederinstallation denselben Release-Namen und Namespace verwenden. Die
+endgültige Daten-/Secret-Löschung ist ein eigener, bewusster Betriebsschritt.
+
+Die DDB-Container sind nicht privilegiert, verwerfen Linux-Capabilities und
+verwenden schreibgeschützte Root-Dateisysteme. DDB- und Redis-Pods mounten keine
+Service-Account-Tokens. Feste UID/GID/fsGroup und eine feste IngressClass werden
+nicht vorgegeben; OpenShift kann Namespace-IDs und den Router zuweisen.
+HTTPS und globale Anfrage-/Verbindungsgrenzen am öffentlichen Ingress erzwingen.
+
+## Zustand prüfen
+
+```bash
+kubectl get pods,services,ingress -n ddb-api-v3
+kubectl rollout status deployment/ddb-api-v3-api-service -n ddb-api-v3
+kubectl rollout status deployment/ddb-api-v3-gateway -n ddb-api-v3
+kubectl rollout status statefulset/ddb-api-v3-redis -n ddb-api-v3
+kubectl exec -n ddb-api-v3 ddb-api-v3-redis-0 -c redis-sentinel -- \
+  sh -c 'REDISCLI_AUTH="$(sed -n "s/^sentinel sentinel-pass //p" /data/conf/sentinel.conf)" \
+  redis-cli --user sentinel-admin -p 26379 SENTINEL get-master-addr-by-name ddb-api-v3'
+```
+
+Unter OpenShift dieselben Befehle mit `oc` verwenden. Readiness prüft S3
+beziehungsweise Redis; Liveness bleibt von deren Ausfällen unabhängig. Logs
+stehen auf stdout; [Auswertung und Aufbewahrung](logging.md) übernimmt die
+vorhandene Cluster-Log-Pipeline.
+
+Die Chart-Veröffentlichung prüft die tatsächlich gerenderten Redis-/Sentinel-ACLs
+mit temporären Docker-Containern. Der Smoke-Test erlaubt Datenzugriff und
+Discovery, verweigert Administration sowie die Anmeldung als Peer mit einem
+Client-Passwort. Lokal benötigt diese Prüfung Docker; reine Render-Prüfungen
+ersetzen den Lauf gegen Redis nicht.

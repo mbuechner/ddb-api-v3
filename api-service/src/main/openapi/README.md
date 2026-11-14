@@ -1,32 +1,20 @@
-# OpenAPI-Vertrag der RDF-API
+# HTTP-Vertrag
 
-`openapi.yaml` beschreibt `GET`, `POST` und `PUT` für `/3/records/{recordId}`.
-Maven validiert die Datei; der Service liefert sie für Swagger UI unverändert
-unter `/openapi/openapi.yaml` aus.
+[openapi.yaml](openapi.yaml): GET/HEAD öffentlich, POST/PUT mit Bearer-Token.
+Pfad: `/3/records/{recordId}`. Input: RDF/XML. Output: JSON-LD, RDF/XML, Jelly RDF.
+Der Vertrag beschreibt HTTP-Verhalten, keine Implementierungs- oder ENV-Details.
 
-Nach einer Änderung aus dem Repository-Wurzelverzeichnis prüfen:
+Auslieferung: `/openapi/openapi.yaml`. Swagger: `/swagger-ui.html`;
+interaktive Aufrufe verwenden den aktuellen Server. `/3` steht im Operationspfad.
+
+Vom Repository-Root:
 
 ```bash
+mvn -pl api-service validate
 mvn clean verify
 ```
 
-Die kleinen Controller sind handgeschrieben. `InputStreamResource` hält den
-Request-Body offen, bis der Upload-Service ihn mit Größenlimit einliest.
-Apache Jena liest das durch `Content-Type` gewählte RDF-Format. Alle Triples
-werden im Named Graph `{Basis-URL}/records/{recordId}` vereinigt. Die Basis steht
-in `ddb.api.base-url` beziehungsweise `DDB_API_BASE_URL` und lautet standardmäßig
-`https://api.deutsche-digitale-bibliothek.de`. Sie wird aus der Konfiguration
-gelesen, nicht aus Request-Headern. Das Ergebnis wird als unkomprimiertes Jelly RDF
-gespeichert. `GET` erhält vorhandene Graphnamen und wandelt Jelly
-in das mit `Accept` gewählte Jena-Format um; ohne Vorgabe ist es TriG.
-Dataset-Formate enthalten den Graphnamen, Graph-Formate dessen vollständige Triples.
-Fehler nutzen Springs `ProblemDetail`; eigene Metadaten-DTOs sind nicht nötig.
+Maven validiert und paketiert den Vertrag für den API-Service.
 
-Die Implementierung von `/records` liegt im Package `de.ddb.apiv3.records`.
-Gemeinsame RDF-Verarbeitung liegt unter `rdf`, die Speicherabstraktion
-`RdfDocumentStore` unter `storage` und deren S3-Implementierung unter `storage.s3`.
-Das Package `items` ist bereits dokumentiert; ein Items-Endpunkt ist noch nicht
-implementiert und deshalb nicht Teil dieses Vertrags.
-
-Das separate Projekt `apiv3-spec` kann einen weitergehenden Planungsstand
-enthalten. Änderungen vor einer Übernahme mit diesem RDF-Vertrag abgleichen.
+[Auth/Tokens](../../../../docs/security.md) · [RDF/IRIs/ETags](../../../../docs/rdf-conventions.md) ·
+[Start/Betrieb](../../../../README.md) · [Implementierung](../../../../docs/architecture.md)
