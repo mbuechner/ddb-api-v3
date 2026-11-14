@@ -32,6 +32,7 @@ import jakarta.validation.Validation;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
@@ -85,18 +86,33 @@ class S3StorageConfigurationTest {
     }
 
     @Test
-    void marksStorageUnreadyWithoutExposingClientExceptionDetails() {
+    void reportsOnlySafeClientFailureMetadata() {
         when(client.headBucket(any(HeadBucketRequest.class)))
-                .thenThrow(SdkClientException.create("signed request with credential details"));
+                .thenThrow(SdkClientException.builder().message("signed request with credential details")
+                        .cause(new UnknownHostException("private.storage.host")).build());
 
         var health = S3StorageConfiguration.s3StorageHealthIndicator(client, properties(false)).health();
 
         assertThat(health.getStatus()).isEqualTo(Status.DOWN);
-        assertThat(health.getDetails()).isEmpty();
+        assertThat(health.getDetails()).containsOnlyKeys("error").containsEntry("error", "UnknownHostException");
+        assertThat(health.toString()).doesNotContain("credential details", "signed request", "private.storage.host");
         var request = ArgumentCaptor.forClass(HeadBucketRequest.class);
         verify(client).headBucket(request.capture());
         assertThat(request.getValue().overrideConfiguration().orElseThrow().apiCallTimeout())
                 .contains(Duration.ofSeconds(2));
+    }
+
+    @Test
+    void reportsS3HttpStatusWithoutExposingExceptionMessages() {
+        when(client.headBucket(any(HeadBucketRequest.class)))
+                .thenThrow(S3Exception.builder().statusCode(403).message("private credential details").build());
+
+        final var health = S3StorageConfiguration.s3StorageHealthIndicator(client, properties(false)).health();
+
+        assertThat(health.getStatus()).isEqualTo(Status.DOWN);
+        assertThat(health.getDetails()).containsOnlyKeys("error", "httpStatus")
+                .containsEntry("error", "S3Exception").containsEntry("httpStatus", 403);
+        assertThat(health.toString()).doesNotContain("private credential details");
     }
 
     @Test

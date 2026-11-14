@@ -25,6 +25,7 @@ import org.springframework.boot.health.contributor.Health;
 import org.springframework.boot.health.contributor.HealthIndicator;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.NestedExceptionUtils;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
@@ -119,8 +120,13 @@ public final class S3StorageConfiguration {
                         .build());
                 return Health.up().build();
             } catch (SdkException exception) {
-                // Do not expose credentials or signed request details through health.
-                return Health.down().build();
+                // Safe diagnostics only: never publish exception messages or signed request URLs.
+                final var health = Health.down().withDetail("error",
+                        NestedExceptionUtils.getMostSpecificCause(exception).getClass().getSimpleName());
+                if (exception instanceof S3Exception s3Exception) {
+                    health.withDetail("httpStatus", s3Exception.statusCode());
+                }
+                return health.build();
             }
         };
     }

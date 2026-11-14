@@ -69,6 +69,11 @@ Timeouts und Verbindungspools, steht in [.env.example](../.env.example).
 | `/actuator/health` | Zusammengefasster Gesundheitszustand |
 
 Die API-Readiness prüft den S3-Bucket, die produktive Gateway-Readiness Redis.
+Die API nennt unter `components` die betroffene Prüfung. Bei `s3Storage: DOWN`
+enthält `details` nur die Fehlerklasse (`error`) und bei einer S3-Antwort den
+HTTP-Status (`httpStatus`), keine Exception-Texte oder Zugangsdaten.
+`HeadBucket` scheitert dann für den konfigurierten Bucket: Endpoint/DNS/TLS,
+S3-Zugangsdaten, Bucket-Berechtigungen und das Zwei-Sekunden-Zeitlimit prüfen.
 Ein Speicherausfall darf die Liveness nicht zu einer Neustartschleife machen.
 Für lokale Readiness-Probleme zuerst S3-Endpunkt, Konto, Bucket und Profil prüfen.
 Das Gateway bietet zusätzlich `/actuator/metrics` und `/actuator/prometheus`;

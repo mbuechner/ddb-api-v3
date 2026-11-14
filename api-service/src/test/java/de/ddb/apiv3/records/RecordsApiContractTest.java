@@ -593,7 +593,12 @@ class RecordsApiContractTest extends S3TestSupport {
                     .andExpect(jsonPath("$.detail").value("The persistence backend is temporarily unavailable"));
             mockMvc.perform(get("/actuator/health/readiness"))
                     .andExpect(status().isServiceUnavailable())
-                    .andExpect(jsonPath("$.status").value("DOWN"));
+                    .andExpect(jsonPath("$.status").value("DOWN"))
+                    .andExpect(jsonPath("$.components.s3Storage.status").value("DOWN"))
+                    .andExpect(jsonPath("$.components.readinessState.status").value("UP"))
+                    .andExpect(jsonPath("$.components.s3Storage.details.error").value("S3Exception"))
+                    .andExpect(jsonPath("$.components.s3Storage.details.httpStatus").value(503))
+                    .andExpect(jsonPath("$.components.s3Storage.details.length()").value(2));
             mockMvc.perform(get("/actuator/health/liveness"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.status").value("UP"));
@@ -618,7 +623,8 @@ class RecordsApiContractTest extends S3TestSupport {
                 .andExpect(status().isOk());
         mockMvc.perform(get("/actuator/health"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("UP"));
+                .andExpect(jsonPath("$.status").value("UP"))
+                .andExpect(jsonPath("$.components").doesNotExist());
     }
 
     private String create(String id) throws Exception {
