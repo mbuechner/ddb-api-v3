@@ -1,20 +1,20 @@
-/*
- * Copyright 2026 Michael Büchner, Deutsche Nationalbibliothek
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     https://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- * This code was generated with assistance from OpenAI ChatGPT.
+/* 
+ *  Copyright 2026 Michael Büchner, Deutsche Nationalbibliothek
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *  
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *  
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ *  
+ *  This code was made with help from OpenAI GTP-6.1 Sol Ultra.
  */
+
 package de.ddb.apiv3.storage.s3;
 
 import de.ddb.apiv3.storage.StorageException;
@@ -33,7 +33,7 @@ import software.amazon.awssdk.awscore.retry.AwsRetryStrategy;
 import software.amazon.awssdk.core.checksums.RequestChecksumCalculation;
 import software.amazon.awssdk.core.checksums.ResponseChecksumValidation;
 import software.amazon.awssdk.core.exception.SdkException;
-import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
+import software.amazon.awssdk.http.apache5.Apache5HttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.BucketAlreadyOwnedByYouException;
@@ -44,10 +44,10 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
 /** One S3 client for all profiles. Spring owns its sockets and credential-provider lifecycle. */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(S3StorageProperties.class)
-public class S3StorageConfiguration {
+public final class S3StorageConfiguration {
 
     @Bean
-    AwsCredentialsProvider s3CredentialsProvider(S3StorageProperties properties) {
+    static AwsCredentialsProvider s3CredentialsProvider(S3StorageProperties properties) {
         return properties.accessKey() == null || properties.accessKey().isBlank()
                 ? DefaultCredentialsProvider.builder().build()
                 : StaticCredentialsProvider.create(AwsBasicCredentials.create(
@@ -55,7 +55,7 @@ public class S3StorageConfiguration {
     }
 
     @Bean(destroyMethod = "close")
-    S3Client s3Client(S3StorageProperties properties, AwsCredentialsProvider credentialsProvider) {
+    static S3Client s3Client(S3StorageProperties properties, AwsCredentialsProvider credentialsProvider) {
         return S3Client.builder()
                 .endpointOverride(properties.endpoint())
                 .region(Region.of(properties.region()))
@@ -64,7 +64,10 @@ public class S3StorageConfiguration {
                 // Avoid optional AWS checksum trailers on this S3-compatible endpoint.
                 .requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED)
                 .responseChecksumValidation(ResponseChecksumValidation.WHEN_REQUIRED)
-                .httpClientBuilder(UrlConnectionHttpClient.builder()
+                .httpClientBuilder(Apache5HttpClient.builder()
+                        .maxConnections(properties.maxConnections())
+                        // Bound pool contention too; virtual threads must not wait indefinitely.
+                        .connectionAcquisitionTimeout(properties.connectionTimeout())
                         .connectionTimeout(properties.connectionTimeout())
                         .socketTimeout(properties.readTimeout()))
                 .overrideConfiguration(config -> config
@@ -76,7 +79,7 @@ public class S3StorageConfiguration {
 
     /** Only explicitly enabled development setups provision the bucket automatically. */
     @Bean
-    InitializingBean s3BucketInitializer(S3Client client, S3StorageProperties properties) {
+    static InitializingBean s3BucketInitializer(S3Client client, S3StorageProperties properties) {
         return () -> {
             if (!properties.createBucket()) {
                 return;
@@ -107,7 +110,7 @@ public class S3StorageConfiguration {
     }
 
     @Bean("s3Storage")
-    HealthIndicator s3StorageHealthIndicator(S3Client client, S3StorageProperties properties) {
+    static HealthIndicator s3StorageHealthIndicator(S3Client client, S3StorageProperties properties) {
         return () -> {
             try {
                 client.headBucket(HeadBucketRequest.builder().bucket(properties.bucket())

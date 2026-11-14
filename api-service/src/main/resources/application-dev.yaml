@@ -1,4 +1,7 @@
 ddb:
+  api:
+    # Resolve public resource IRIs from each HTTP request unless an origin is pinned.
+    base-url: ${DDB_API_BASE_URL:auto}
   storage:
     s3:
       # Public development credentials match the local SeaweedFS Compose service.

@@ -1,20 +1,20 @@
-/*
- * Copyright 2026 Michael Büchner, Deutsche Nationalbibliothek
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     https://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- * This code was generated with assistance from OpenAI ChatGPT.
+/* 
+ *  Copyright 2026 Michael Büchner, Deutsche Nationalbibliothek
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *  
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *  
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ *  
+ *  This code was made with help from OpenAI GTP-6.1 Sol Ultra.
  */
+
 package de.ddb.apiv3;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -22,6 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import de.ddb.apiv3.rdf.RdfCodec;
 import de.ddb.apiv3.support.S3TestServer;
 import de.ddb.apiv3.support.S3TestSupport;
+import de.ddb.apiv3.support.WriteTestCredentials;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.net.URI;
@@ -31,10 +32,14 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
+import org.apache.jena.query.DatasetFactory;
 import org.apache.jena.rdf.model.ModelFactory;
 import org.apache.jena.riot.Lang;
 import org.apache.jena.riot.RDFDataMgr;
+import org.apache.jena.riot.RDFLanguages;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -43,7 +48,8 @@ import org.springframework.test.context.ActiveProfiles;
 /** Tests gzip at the real Jetty boundary, including the decompressed raw RDF upload limit. */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
     "server.compression.min-response-size=1B",
-    "ddb.api.max-document-size=1KB"
+    "ddb.api.max-document-size=1KB",
+    "ddb.api.base-url=https://api.deutsche-digitale-bibliothek.de"
 })
 @ActiveProfiles("dev")
 class HttpCompressionIntegrationTest extends S3TestSupport {
@@ -60,6 +66,7 @@ class HttpCompressionIntegrationTest extends S3TestSupport {
     void decompressesGzipRdfBeforeValidationAndStoresUncompressedJelly() throws Exception {
         String id = "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ";
         HttpResponse<byte[]> response = client.send(HttpRequest.newBuilder(uri("/3/records/" + id))
+                .header("Authorization", WriteTestCredentials.AUTHORIZATION)
                 .header("Content-Type", "application/rdf+xml")
                 .header("Content-Encoding", "gzip")
                 .POST(HttpRequest.BodyPublishers.ofByteArray(gzip(S3TestServer.DEMO_RDF)))
@@ -69,13 +76,16 @@ class HttpCompressionIntegrationTest extends S3TestSupport {
         assertThat(response.headers().firstValue("ETag")).isPresent();
         assertThat(response.headers().firstValue("Location")).contains("/3/records/" + id);
         assertThat(STORAGE.storedContentType(id + "/record")).isEqualTo(RdfCodec.JELLY_CONTENT_TYPE);
-        assertRdfXml(codec.fromJelly(STORAGE.storedRdf(id), Lang.RDFXML));
+        assertRdf(codec.fromJelly(STORAGE.storedRdf(id), Lang.RDFXML), "application/rdf+xml", id);
     }
 
-    @Test
-    void compressesNegotiatedRdfWithoutChangingTheStrongStorageValidator() throws Exception {
-        String id = "CK".repeat(16);
+    @ParameterizedTest
+    @CsvSource({"CK, application/rdf+xml", "CL, application/ld+json"})
+    void compressesNegotiatedRdfWithoutChangingTheStrongStorageValidator(String idPrefix, String mediaType)
+            throws Exception {
+        String id = idPrefix.repeat(16);
         HttpResponse<byte[]> created = client.send(HttpRequest.newBuilder(uri("/3/records/" + id))
+                .header("Authorization", WriteTestCredentials.AUTHORIZATION)
                 .header("Content-Type", "application/rdf+xml")
                 .POST(HttpRequest.BodyPublishers.ofByteArray(S3TestServer.DEMO_RDF))
                 .build(), HttpResponse.BodyHandlers.ofByteArray());
@@ -83,21 +93,21 @@ class HttpCompressionIntegrationTest extends S3TestSupport {
         String storageEtag = created.headers().firstValue("ETag").orElseThrow();
 
         HttpResponse<byte[]> response = client.send(HttpRequest.newBuilder(uri("/3/records/" + id))
-                .header("Accept", "application/rdf+xml")
+                .header("Accept", mediaType)
                 .header("Accept-Encoding", "gzip")
                 .GET().build(), HttpResponse.BodyHandlers.ofByteArray());
 
         assertThat(response.statusCode()).isEqualTo(200);
-        assertThat(response.headers().firstValue("Content-Type").orElse("")).startsWith("application/rdf+xml");
+        assertThat(response.headers().firstValue("Content-Type").orElse("")).startsWith(mediaType);
         assertThat(response.headers().firstValue("Content-Encoding")).contains("gzip");
         assertThat(response.headers().firstValue("ETag").orElse("")).startsWith("W/\"");
         assertThat(response.headers().firstValue("X-Record-ETag")).contains(storageEtag);
         assertThat(String.join(",", response.headers().allValues("Vary"))).contains("Accept", "Accept-Encoding");
-        assertRdfXml(gunzip(response.body()));
+        assertRdf(gunzip(response.body()), mediaType, id);
 
         String compressedEtag = response.headers().firstValue("ETag").orElseThrow();
         HttpResponse<byte[]> unchanged = client.send(HttpRequest.newBuilder(uri("/3/records/" + id))
-                .header("Accept", "application/rdf+xml")
+                .header("Accept", mediaType)
                 .header("Accept-Encoding", "gzip")
                 .header("If-None-Match", compressedEtag)
                 .GET().build(), HttpResponse.BodyHandlers.ofByteArray());
@@ -116,6 +126,7 @@ class HttpCompressionIntegrationTest extends S3TestSupport {
         int writesBefore = STORAGE.writeCount();
         HttpResponse<byte[]> response = client.send(HttpRequest.newBuilder(uri("/3/records/" + id))
                 .header("Content-Type", "application/rdf+xml")
+                .header("Authorization", WriteTestCredentials.AUTHORIZATION)
                 .header("Content-Encoding", "gzip")
                 .POST(HttpRequest.BodyPublishers.ofByteArray(gzip(oversized)))
                 .build(), HttpResponse.BodyHandlers.ofByteArray());
@@ -128,6 +139,7 @@ class HttpCompressionIntegrationTest extends S3TestSupport {
     void returnsTheRdfValidationProblemWhenGzipIsAccepted() throws Exception {
         HttpResponse<byte[]> response = client.send(HttpRequest.newBuilder(
                         uri("/3/records/XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"))
+                .header("Authorization", WriteTestCredentials.AUTHORIZATION)
                 .header("Content-Type", "application/rdf+xml")
                 .header("Accept", "application/problem+json")
                 .header("Accept-Encoding", "gzip")
@@ -144,20 +156,23 @@ class HttpCompressionIntegrationTest extends S3TestSupport {
         if ("gzip".equals(encoding)) {
             assertThat(response.headers().firstValue("Vary").orElse("")).contains("Accept-Encoding");
         }
-        assertThat(new String(problem, StandardCharsets.UTF_8)).contains("INVALID_RDF");
+        assertThat(new String(problem, StandardCharsets.UTF_8)).contains("The request body is not valid RDF/XML");
     }
 
     private URI uri(String path) {
         return URI.create("http://127.0.0.1:" + port + path);
     }
 
-    private static void assertRdfXml(byte[] bytes) {
-        var actual = ModelFactory.createDefaultModel();
+    private static void assertRdf(byte[] bytes, String mediaType, String id) {
+        var actual = DatasetFactory.createTxnMem();
         var expected = ModelFactory.createDefaultModel();
         try {
-            RDFDataMgr.read(actual, new ByteArrayInputStream(bytes), Lang.RDFXML);
+            RDFDataMgr.read(actual, new ByteArrayInputStream(bytes), RDFLanguages.contentTypeToLang(mediaType));
             RDFDataMgr.read(expected, new ByteArrayInputStream(S3TestServer.DEMO_RDF), Lang.RDFXML);
-            assertThat(actual.isIsomorphicWith(expected)).isTrue();
+            var graph = "application/ld+json".equals(mediaType)
+                    ? actual.getNamedModel("https://api.deutsche-digitale-bibliothek.de/records/" + id)
+                    : actual.getDefaultModel();
+            assertThat(graph.isIsomorphicWith(expected)).isTrue();
         } finally {
             actual.close();
             expected.close();

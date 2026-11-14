@@ -1,52 +1,45 @@
 openapi: 3.1.0
 info:
-  title: DDB API v3 - RDF Records
+  title: DDB API v3
   version: 3.0.0-dev
   contact:
     name: Michael Büchner
     email: m.buechner@dnb.de
     url: https://github.com/mbuechner/ddb-api-v3
   description: >-
-    Receives RDF in any serialization registered with Apache Jena, validates it
-    immediately before storage, and converts it to uncompressed Jelly RDF in
-    SeaweedFS through S3. Reads convert the stored dataset to the requested RDF
-    serialization. Every input triple is stored in the single named graph
-    {baseUrl}/records/{recordId}. The configured ddb.api.base-url (environment
-    DDB_API_BASE_URL) defaults to https://api.deutsche-digitale-bibliothek.de.
-    It is an HTTP(S) origin with an optional port and trailing slash, independent
-    of request headers. Input graph names are replaced by this canonical graph
-    name when writing; reads retain the stored graph name. Record methods
-    use the exact object key {recordId}/record. Other document names are reserved
-    for future API methods and are not selected through this API. No administrative
-    metadata document or storage manifest is created. Requests support gzip content
-    coding. Application-profile validation with SHACL is not implemented.
+    Create, retrieve and replace RDF records identified by 32-character DDB IDs.
+    Uploads use RDF/XML. Responses support JSON-LD (the default), RDF/XML and
+    Jelly RDF. Reads are public; writes require a Bearer token with records:write.
+    Each record is an RDF dataset with a single named graph whose versionless
+    public IRI ends in /records/{recordId}. HTTP endpoints use /3.
+    Versionless record URLs redirect to their versioned endpoints with 308;
+    authentication also applies to redirected writes. Requests support gzip.
 servers:
-  - url: /
+  - url: https://api.deutsche-digitale-bibliothek.de
+    description: Public API
 
 security:
-  - oauth2: [records:write]
+  - bearerAuth: []
 
 tags:
   - name: Records
-    description: Validate, store and retrieve RDF datasets without an internal record model.
+    description: RDF records identified by DDB IDs.
 
 paths:
   /3/records/{recordId}:
     get:
       tags: [Records]
       operationId: getRecord
-      summary: Retrieve an RDF record in the requested serialization
+      summary: Retrieve an RDF record
       description: >-
-        Reads uncompressed Jelly RDF from {recordId}/record and converts the complete
-        dataset with Apache Jena. Accept selects an installed RDF writer; without
-        Accept, application/trig is used. The media types below are common examples,
-        not an exhaustive list of registered Jena formats. Dataset formats retain
-        the canonical named graph; graph formats such as RDF/XML and Turtle return
-        all its triples without the graph name.
-        The response ETag is weak because different serializations represent the same
-        stored dataset. Use the strong X-Record-ETag value for a subsequent PUT If-Match.
-      security:
-        - oauth2: [records:read]
+        Return the complete record in the format selected by Accept; JSON-LD is
+        the default. JSON-LD includes an inline @context and a named @graph.
+        Jelly RDF also preserves the graph name. RDF/XML represents the graph's
+        triples with flat, typed nodes where possible. Absolute IRIs are preserved.
+        Use If-None-Match for conditional reads and the strong X-Record-ETag
+        value for subsequent replacements. The response ETag is weak and cannot
+        be used with PUT If-Match.
+      security: []
       parameters:
         - $ref: '#/components/parameters/RecordId'
         - $ref: '#/components/parameters/IfNoneMatch'
@@ -66,32 +59,17 @@ paths:
             X-Request-Id:
               $ref: '#/components/headers/RequestId'
           content:
-            text/turtle:
+            application/ld+json:
               schema:
                 $ref: '#/components/schemas/RdfDocument'
             application/rdf+xml:
               schema:
                 $ref: '#/components/schemas/RdfDocument'
-            application/ld+json:
-              schema:
-                $ref: '#/components/schemas/RdfDocument'
-            application/n-triples:
-              schema:
-                $ref: '#/components/schemas/RdfDocument'
-            application/n-quads:
-              schema:
-                $ref: '#/components/schemas/RdfDocument'
-            application/trig:
-              schema:
-                $ref: '#/components/schemas/RdfDocument'
             application/x-jelly-rdf:
               schema:
                 $ref: '#/components/schemas/RdfDocument'
-            '*/*':
-              schema:
-                $ref: '#/components/schemas/RdfDocument'
         '304':
-          description: The stored dataset matches If-None-Match; response has no body
+          description: The record matches If-None-Match; no response body
           headers:
             ETag:
               $ref: '#/components/headers/WeakETag'
@@ -119,15 +97,12 @@ paths:
     post:
       tags: [Records]
       operationId: createRecord
-      summary: Validate and create an RDF record
+      summary: Create an RDF record
       description: >-
-        Parses the complete request body using its Content-Type with Apache Jena
-        before any storage write. The dataset is converted to uncompressed Jelly
-        RDF and stored directly under {recordId}/record. All input triples are merged
-        into the named graph {baseUrl}/records/{recordId}, using the configured
-        ddb.api.base-url (default: https://api.deutsche-digitale-bibliothek.de).
-        Creation is conditional: an existing object is never overwritten and returns
-        409. The successful response has no body; its ETag identifies the S3 object.
+        Validate RDF/XML syntax and create a record under the
+        supplied DDB ID. An existing record is never overwritten and returns 409.
+        The successful response has no body and includes the record location
+        and a strong revision validator in ETag.
       parameters:
         - $ref: '#/components/parameters/RecordId'
       requestBody:
@@ -166,19 +141,13 @@ paths:
     put:
       tags: [Records]
       operationId: putRecord
-      summary: Validate and replace an RDF record
+      summary: Replace an RDF record
       description: >-
-        Parses the complete request body using its Content-Type with Apache Jena
-        before any storage write. The dataset is converted to uncompressed Jelly
-        RDF, with all triples merged into the named graph
-        {baseUrl}/records/{recordId} using the configured ddb.api.base-url
-        (default: https://api.deutsche-digitale-bibliothek.de), and replaces
-        {recordId}/record only while
-        If-Match matches its current S3 ETag. A missing If-Match returns 428.
-        A stale, weak, invalid or unmatched validator returns 412; an unknown object
-        also fails the write precondition. The successful response has no body.
-        X-Record-ETag identifies the transformed Jelly object for later conditional
-        replacements; PUT does not return ETag.
+        Validate RDF/XML syntax and replace an existing record
+        only when If-Match matches its current revision. A missing precondition
+        returns 428; a failed precondition, including a missing record, returns
+        412. The successful response has no body and provides the new revision
+        validator in X-Record-ETag. PUT does not return ETag.
       parameters:
         - $ref: '#/components/parameters/RecordId'
         - $ref: '#/components/parameters/IfMatch'
@@ -215,15 +184,12 @@ paths:
 
 components:
   securitySchemes:
-    oauth2:
-      type: oauth2
-      description: OAuth 2.0 Client Credentials authorization contract.
-      flows:
-        clientCredentials:
-          tokenUrl: /oauth2/token
-          scopes:
-            records:read: Read RDF record datasets
-            records:write: Create and replace RDF record documents
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: >-
+        A Bearer access token with records:write permits creating and replacing
+        records under any DDB ID. Read operations do not require a token.
 
   parameters:
     RecordId:
@@ -236,16 +202,15 @@ components:
         minLength: 32
         maxLength: 32
         pattern: '^[A-Z2-7]{32}$'
-      example: J6KQ3UBFBEMGAHGR6ZUAQCUXOBKQCFO3
     IfMatch:
       name: If-Match
       in: header
       required: false
       description: >-
         Required for replacement; omission returns 428. Supply a quoted current
-        storage ETag from POST or the X-Record-ETag from GET/PUT, a comma-separated ETag list,
+        revision validator from POST ETag or GET/PUT X-Record-ETag, a comma-separated ETag list,
         or * by itself to require an existing
-        object. Weak tags never match. A malformed header is rejected as a whole.
+        record. Weak tags never match. A malformed header is rejected as a whole.
       schema:
         type: string
     IfNoneMatch:
@@ -260,11 +225,11 @@ components:
 
   headers:
     ETag:
-      description: Strong opaque validator of the stored Jelly object, including its HTTP quotation marks
+      description: Strong opaque record revision validator, including quotation marks
       schema:
         type: string
     WeakETag:
-      description: Weak dataset validator, for example W/"s3-object-tag"; cannot be used for PUT If-Match
+      description: Weak record validator, for example W/"revision"; cannot be used for PUT If-Match
       schema:
         type: string
     RequestId:
@@ -276,40 +241,16 @@ components:
     RdfRecord:
       required: true
       description: >-
-        Complete RDF document or dataset in a serialization registered with Apache
-        Jena, identified by Content-Type. The media types below are common examples,
-        not an exhaustive list. The complete decoded body is syntax-validated and
-        converted to uncompressed Jelly before any storage write. All input triples
-        are merged into the single named graph
-        {baseUrl}/records/{recordId}, using the configured ddb.api.base-url
-        (default: https://api.deutsche-digitale-bibliothek.de); original graph
-        names and byte representation are not retained.
-        JSON-LD contexts must be included inline; remote contexts are not loaded.
-        The configurable upload-size limit applies after HTTP content decoding,
-        including gzip decompression, and before RDF parsing.
+        A complete RDF/XML document. Its triples form the record's single named
+        graph. Use xml:base="/" with versionless, root-relative references such
+        as /records/{recordId} and /items/{recordId}. Absolute IRIs remain unchanged;
+        an explicit absolute xml:base controls resolution of relative IRIs.
+        With xml:base="/", an empty rdf:about
+        or a fragment-only reference identifies the origin root or its fragment,
+        not the record. The upload size limit applies after content decoding,
+        including gzip decompression.
       content:
-        text/turtle:
-          schema:
-            $ref: '#/components/schemas/RdfDocument'
         application/rdf+xml:
-          schema:
-            $ref: '#/components/schemas/RdfDocument'
-        application/ld+json:
-          schema:
-            $ref: '#/components/schemas/RdfDocument'
-        application/n-triples:
-          schema:
-            $ref: '#/components/schemas/RdfDocument'
-        application/n-quads:
-          schema:
-            $ref: '#/components/schemas/RdfDocument'
-        application/trig:
-          schema:
-            $ref: '#/components/schemas/RdfDocument'
-        application/x-jelly-rdf:
-          schema:
-            $ref: '#/components/schemas/RdfDocument'
-        '*/*':
           schema:
             $ref: '#/components/schemas/RdfDocument'
 
@@ -319,10 +260,12 @@ components:
       format: binary
     Problem:
       type: object
+      description: RFC 9457 problem details with a requestId for diagnostics
       additionalProperties: true
-      required: [type, title, status, requestId]
+      required: [title, status, requestId]
       properties:
         type:
+          description: Problem type URI; when omitted, RFC 9457 defines about:blank as the default
           type: string
           format: uri-reference
         title:
@@ -338,23 +281,10 @@ components:
           format: uri-reference
         requestId:
           type: string
-        code:
-          type: string
-        errors:
-          type: array
-          items:
-            type: object
-            additionalProperties: false
-            required: [detail]
-            properties:
-              detail:
-                type: string
-              pointer:
-                type: string
 
   responses:
     BadRequest:
-      description: Invalid request or DDB ID
+      description: Invalid request; write operations also reject malformed DDB IDs
       headers:
         X-Request-Id:
           $ref: '#/components/headers/RequestId'
@@ -363,17 +293,19 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
     Unauthorized:
-      description: Missing or invalid credentials
-      content:
-        application/problem+json:
+      description: Missing or invalid Bearer credentials; the response body may be empty
+      headers:
+        WWW-Authenticate:
+          description: Bearer challenge, optionally including an invalid_token error
           schema:
-            $ref: '#/components/schemas/Problem'
+            type: string
     Forbidden:
-      description: Request is not authorized
-      content:
-        application/problem+json:
+      description: Credentials do not permit the operation; the response body may be empty
+      headers:
+        WWW-Authenticate:
+          description: Bearer challenge, optionally including an insufficient_scope error
           schema:
-            $ref: '#/components/schemas/Problem'
+            type: string
     Conflict:
       description: An RDF record already exists under this DDB ID
       content:
@@ -381,13 +313,13 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
     NotFound:
-      description: No RDF record exists under this DDB ID
+      description: No RDF record exists at the requested path, including identifiers outside the DDB ID syntax
       content:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
     NotAcceptable:
-      description: Accept does not allow an installed Apache Jena RDF writer, or the chosen format cannot represent this RDF dataset
+      description: Accept does not allow JSON-LD, RDF/XML or Jelly RDF, or the chosen format cannot represent this RDF dataset
       content:
         application/problem+json:
           schema:
@@ -405,27 +337,33 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
     ContentTooLarge:
-      description: Decoded RDF document exceeds the configured upload-size limit
+      description: RDF document exceeds the upload size limit after content decoding
       content:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
     UnsupportedMediaType:
-      description: Content-Type does not identify an installed Apache Jena RDF parser
+      description: Content-Type does not identify RDF/XML
       content:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
     UnprocessableContent:
-      description: Jena cannot parse the complete request body as valid RDF in its declared serialization
+      description: The request body is not valid RDF/XML
       content:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
     TooManyRequests:
-      description: Request rejected by the gateway rate limiter
+      description: Request limit exceeded
     ServiceUnavailable:
-      description: SeaweedFS S3 storage is unavailable or the stored object is not a valid Jelly dataset
+      description: The service is temporarily unable to process the request
+      headers:
+        Retry-After:
+          description: Suggested delay in seconds before retrying
+          schema:
+            type: integer
+            minimum: 1
       content:
         application/problem+json:
           schema:

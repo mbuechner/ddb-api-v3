@@ -1,7 +1,7 @@
 ddb:
   storage:
     s3:
-      # Production must explicitly name its SeaweedFS S3 endpoint and bucket.
+      # Production must explicitly name its S3 endpoint and bucket.
       endpoint: ${S3_ENDPOINT}
       bucket: ${S3_BUCKET}
       create-bucket: ${S3_CREATE_BUCKET:false}

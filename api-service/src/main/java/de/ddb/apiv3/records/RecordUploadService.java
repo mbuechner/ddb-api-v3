@@ -1,28 +1,28 @@
-/*
- * Copyright 2026 Michael Büchner, Deutsche Nationalbibliothek
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     https://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- * This code was generated with assistance from OpenAI ChatGPT.
+/* 
+ *  Copyright 2026 Michael Büchner, Deutsche Nationalbibliothek
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *  
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *  
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ *  
+ *  This code was made with help from OpenAI GTP-6.1 Sol Ultra.
  */
+
 package de.ddb.apiv3.records;
 
 import de.ddb.apiv3.config.ApiProperties;
-import de.ddb.apiv3.storage.RdfDocumentStore;
+import de.ddb.apiv3.storage.s3.S3RdfDocumentStore;
 import de.ddb.apiv3.rdf.RdfCodec;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.List;
+import java.net.URI;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
@@ -33,7 +33,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.unit.DataSize;
 import org.springframework.web.server.ResponseStatusException;
 
-/** Bound the body, let Jena parse it, then store one named graph as Jelly. */
+/** Bound the RDF/XML body, let Jena validate it, then store one named graph as Jelly. */
 @Service
 public final class RecordUploadService {
 
@@ -42,13 +42,13 @@ public final class RecordUploadService {
     private static final Pattern ENTITY_TAG_LIST = Pattern.compile(
             ENTITY_TAG + "(?:[ \\t]*,[ \\t]*" + ENTITY_TAG + ")*");
 
-    private final RdfDocumentStore repository;
+    private final S3RdfDocumentStore repository;
     private final RdfCodec rdfCodec;
     private final int maxDocumentBytes;
-    private final String recordGraphPrefix;
+    private final ApiProperties apiProperties;
 
     public RecordUploadService(
-            RdfDocumentStore repository,
+            S3RdfDocumentStore repository,
             RdfCodec rdfCodec,
             ApiProperties apiProperties,
             @Value("${ddb.api.max-document-size:1MB}") DataSize maxDocumentSize) {
@@ -59,26 +59,27 @@ public final class RecordUploadService {
         this.repository = repository;
         this.rdfCodec = rdfCodec;
         this.maxDocumentBytes = (int) bytes;
-        this.recordGraphPrefix = apiProperties.baseUrl() + "/records/";
+        this.apiProperties = apiProperties;
     }
 
     /** A DDB ID is a namespace: creating its record leaves its item alone. */
-    public String create(String recordId, InputStreamSource content, String contentType) {
-        byte[] jelly = validatedContent(recordId, content, contentType);
+    public String create(String recordId, InputStreamSource content, URI requestUri) {
+        byte[] jelly = validatedContent(recordId, content, requestUri);
         return repository.create(recordId, DOCUMENT_NAME, jelly)
-                .orElseThrow(() -> new RecordAlreadyExistsException(recordId));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT,
+                        "RDF document '" + recordId + "/record' already exists"));
     }
 
     /** Replaces an existing record document only while its S3 ETag still matches. */
-    public String update(String recordId, InputStreamSource content, String contentType, String ifMatch) {
+    public String update(String recordId, InputStreamSource content, String ifMatch, URI requestUri) {
         String condition = strongIfMatch(ifMatch);
-        byte[] jelly = validatedContent(recordId, content, contentType);
+        byte[] jelly = validatedContent(recordId, content, requestUri);
         return repository.replace(recordId, DOCUMENT_NAME, jelly, condition)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.PRECONDITION_FAILED, "If-Match does not match an existing record document"));
     }
 
-    private byte[] validatedContent(String recordId, InputStreamSource content, String contentType) {
+    private byte[] validatedContent(String recordId, InputStreamSource content, URI requestUri) {
         byte[] rdf;
         try (InputStream stream = content.getInputStream()) {
             // Limit decompressed input, including requests without a Content-Length header.
@@ -90,7 +91,7 @@ public final class RecordUploadService {
         if (rdf.length > maxDocumentBytes) {
             throw new ResponseStatusException(HttpStatus.CONTENT_TOO_LARGE, "The RDF document exceeds the size limit");
         }
-        return rdfCodec.toJelly(rdf, contentType, recordGraphPrefix + recordId);
+        return rdfCodec.toJelly(rdf, apiProperties.resolveOrigin(requestUri) + "/records/" + recordId);
     }
 
     private static String strongIfMatch(String ifMatch) {
@@ -106,9 +107,10 @@ public final class RecordUploadService {
             throw new ResponseStatusException(HttpStatus.PRECONDITION_FAILED, "If-Match is not a valid ETag list");
         }
         try {
-            List<ETag> tags = ETag.parse(condition).stream().filter(tag -> !tag.weak()).toList();
-            if (!tags.isEmpty()) {
-                return tags.stream().map(tag -> tag.formattedTag()).collect(Collectors.joining(", "));
+            String strongTags = ETag.parse(condition).stream()
+                    .filter(tag -> !tag.weak()).map(tag -> tag.formattedTag()).collect(Collectors.joining(", "));
+            if (!strongTags.isEmpty()) {
+                return strongTags;
             }
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.PRECONDITION_FAILED, "If-Match is not a valid strong ETag");

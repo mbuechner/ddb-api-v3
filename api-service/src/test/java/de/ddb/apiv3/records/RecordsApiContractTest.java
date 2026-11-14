@@ -1,20 +1,20 @@
-/*
- * Copyright 2026 Michael Büchner, Deutsche Nationalbibliothek
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     https://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- * This code was generated with assistance from OpenAI ChatGPT.
+/* 
+ *  Copyright 2026 Michael Büchner, Deutsche Nationalbibliothek
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *  
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *  
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ *  
+ *  This code was made with help from OpenAI GTP-6.1 Sol Ultra.
  */
+
 package de.ddb.apiv3.records;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -36,14 +36,15 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import javax.xml.parsers.DocumentBuilderFactory;
 import org.apache.jena.query.Dataset;
 import org.apache.jena.query.DatasetFactory;
 import org.apache.jena.rdf.model.Model;
 import org.apache.jena.rdf.model.ModelFactory;
 import org.apache.jena.riot.Lang;
 import org.apache.jena.riot.RDFDataMgr;
-import org.apache.jena.riot.RDFLanguages;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -52,13 +53,18 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpMethod;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
 
 /** Exercises RDF negotiation, Jelly persistence and conditional writes at the HTTP boundary. */
-@SpringBootTest(properties = "ddb.api.max-document-size=1KB")
+@SpringBootTest(properties = {"ddb.api.max-document-size=1KB",
+        "ddb.api.base-url=https://api.deutsche-digitale-bibliothek.de"})
 @AutoConfigureMockMvc
 @ActiveProfiles("dev")
+@WithMockUser(username = "test-writer", authorities = "SCOPE_records:write")
 class RecordsApiContractTest extends S3TestSupport {
 
     private static final String RDF_XML = "application/rdf+xml";
@@ -108,34 +114,32 @@ class RecordsApiContractTest extends S3TestSupport {
     }
 
     @Test
-    void acceptsCommonJenaInputFormatsAndStoresTheSameCanonicalGraph() throws Exception {
-        String[][] inputs = {
-            {"A", "text/turtle", TRIPLE},
-            {"B", "application/n-triples", TRIPLE},
-            {"C", "application/trig", "<https://example.org/old-graph> { " + TRIPLE + " }"},
-            {"D", "application/n-quads", TRIPLE.substring(0, TRIPLE.length() - 1)
-                    + "<https://example.org/old-graph> ."},
-            {"E", "application/ld+json", "{\"@id\":\"https://example.org/record/demo-001\","
-                    + "\"@type\":\"http://www.europeana.eu/schemas/edm/ProvidedCHO\"}"}
-        };
-        for (String[] input : inputs) {
-            String id = "BC".repeat(15) + "A" + input[0];
-            mockMvc.perform(post(path(id)).contentType(input[1])
-                            .content(input[2].getBytes(StandardCharsets.UTF_8)))
-                    .andExpect(status().isCreated());
-            assertStoredRdf(id, RDF);
+    void rejectsEveryRetiredInputFormatForCreateAndReplacementBeforeStorage() throws Exception {
+        String existingId = "BC".repeat(15) + "AF";
+        String newId = "BC".repeat(15) + "AG";
+        String etag = create(existingId);
+        var inputs = Map.of(
+                "text/turtle", TRIPLE.getBytes(StandardCharsets.UTF_8),
+                "application/n-triples", TRIPLE.getBytes(StandardCharsets.UTF_8),
+                "application/trig", ("<https://example.org/graph> { " + TRIPLE + " }")
+                        .getBytes(StandardCharsets.UTF_8),
+                "application/n-quads", (TRIPLE.substring(0, TRIPLE.length() - 1)
+                        + "<https://example.org/graph> .").getBytes(StandardCharsets.UTF_8),
+                "application/ld+json", "{}".getBytes(StandardCharsets.UTF_8),
+                RdfCodec.JELLY_CONTENT_TYPE, codec.toJelly(RDF, "https://example.org/graph"));
+        int writesBefore = STORAGE.writeCount();
+
+        for (var input : inputs.entrySet()) {
+            mockMvc.perform(post(path(newId)).contentType(input.getKey()).content(input.getValue()))
+                    .andExpect(status().isUnsupportedMediaType())
+                    .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+            mockMvc.perform(put(path(existingId)).contentType(input.getKey()).header("If-Match", etag)
+                            .content(input.getValue()))
+                    .andExpect(status().isUnsupportedMediaType());
         }
-    }
 
-    @Test
-    void acceptsJellyInputAndReplacesItsOriginalGraphName() throws Exception {
-        String id = "BC".repeat(15) + "AF";
-        byte[] uploadedJelly = codec.toJelly(RDF, RDF_XML, "https://example.org/previous-graph");
-
-        mockMvc.perform(post(path(id)).contentType(RdfCodec.JELLY_CONTENT_TYPE).content(uploadedJelly))
-                .andExpect(status().isCreated());
-
-        assertStoredRdf(id, RDF);
+        assertThat(STORAGE.writeCount()).isEqualTo(writesBefore);
+        assertStoredRdf(existingId, RDF);
     }
 
     @Test
@@ -145,56 +149,89 @@ class RecordsApiContractTest extends S3TestSupport {
 
         var defaultResponse = mockMvc.perform(get(path(id)))
                 .andExpect(status().isOk())
-                .andExpect(content().contentTypeCompatibleWith("application/trig"))
+                .andExpect(content().contentTypeCompatibleWith("application/ld+json"))
                 .andExpect(header().string("ETag", "W/" + storageEtag))
                 .andExpect(header().string("X-Record-ETag", storageEtag))
                 .andReturn().getResponse();
-        assertCanonicalDataset(id, defaultResponse.getContentAsByteArray(), Lang.TRIG, RDF, Lang.RDFXML);
+        assertCanonicalDataset(id, defaultResponse.getContentAsByteArray(), Lang.JSONLD, RDF, Lang.RDFXML);
         assertThat(String.join(",", defaultResponse.getHeaders("Vary"))).contains("Accept", "Accept-Encoding");
 
-        for (String mediaType : List.of(RDF_XML, "text/turtle", "application/n-triples")) {
-            var response = mockMvc.perform(get(path(id)).accept(mediaType))
-                    .andExpect(status().isOk())
-                    .andExpect(content().contentTypeCompatibleWith(mediaType))
-                    .andExpect(header().string("ETag", "W/" + storageEtag))
-                    .andExpect(header().string("X-Record-ETag", storageEtag))
-                    .andReturn().getResponse();
-            assertGraph(response.getContentAsByteArray(),
-                    RDFLanguages.contentTypeToLang(mediaType), RDF, Lang.RDFXML);
-        }
-        for (String mediaType : List.of("application/n-quads", "application/ld+json")) {
-            var response = mockMvc.perform(get(path(id)).accept(mediaType))
-                    .andExpect(status().isOk())
-                    .andExpect(content().contentTypeCompatibleWith(mediaType))
-                    .andReturn().getResponse();
-            assertCanonicalDataset(id, response.getContentAsByteArray(),
-                    RDFLanguages.contentTypeToLang(mediaType), RDF, Lang.RDFXML);
-        }
+        var xml = mockMvc.perform(get(path(id)).accept(RDF_XML))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(RDF_XML))
+                .andExpect(header().string("ETag", "W/" + storageEtag))
+                .andExpect(header().string("X-Record-ETag", storageEtag))
+                .andReturn().getResponse().getContentAsByteArray();
+        assertGraph(xml, Lang.RDFXML, RDF, Lang.RDFXML);
         var jelly = mockMvc.perform(get(path(id)).accept(RdfCodec.JELLY_CONTENT_TYPE))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(RdfCodec.JELLY_CONTENT_TYPE))
                 .andReturn().getResponse().getContentAsByteArray();
-        assertCanonicalDataset(id, codec.fromJelly(jelly, Lang.TRIG), Lang.TRIG, RDF, Lang.RDFXML);
+        assertThat(jelly).containsExactly(STORAGE.storedRdf(id));
+        assertCanonicalDataset(id, codec.fromJelly(jelly, Lang.JSONLD), Lang.JSONLD, RDF, Lang.RDFXML);
     }
 
     @Test
-    void mergesAllInputGraphsAndCanReturnTheirCompleteContentAsRdfXml() throws Exception {
-        String id = "CE".repeat(16);
-        String secondTriple = TRIPLE.replace("demo-001", "demo-002");
-        String trig = "<https://example.org/first> { " + TRIPLE + " }\n"
-                + "<https://example.org/second> { " + secondTriple + " }\n"
-                + TRIPLE;
-        byte[] expected = (TRIPLE + "\n" + secondTriple).getBytes(StandardCharsets.UTF_8);
-        mockMvc.perform(post(path(id)).contentType("application/trig").content(trig))
+    void returnsFlatTypedXmlAndCompactNamedJsonLd() throws Exception {
+        String id = "DK".repeat(16);
+        byte[] rdf = """
+                <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+                         xmlns:ex="https://example.org/">
+                  <ex:Record rdf:about="https://example.org/first">
+                    <ex:related rdf:resource="https://example.org/second"/>
+                    <ex:detail rdf:nodeID="detail"/>
+                  </ex:Record>
+                  <ex:Item rdf:about="https://example.org/second"><ex:label>first&#10;second</ex:label></ex:Item>
+                  <ex:Detail rdf:nodeID="detail"><ex:label>detail</ex:label></ex:Detail>
+                </rdf:RDF>
+                """.getBytes(StandardCharsets.UTF_8);
+        mockMvc.perform(post(path(id)).contentType(RDF_XML).content(rdf))
                 .andExpect(status().isCreated());
 
-        assertCanonicalDataset(id, codec.fromJelly(STORAGE.storedRdf(id), Lang.TRIG),
-                Lang.TRIG, expected, Lang.TURTLE);
-        var response = mockMvc.perform(get(path(id)).accept(RDF_XML))
+        byte[] xml = mockMvc.perform(get(path(id)).accept(RDF_XML))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(RDF_XML))
-                .andReturn().getResponse();
-        assertGraph(response.getContentAsByteArray(), Lang.RDFXML, expected, Lang.TURTLE);
+                .andReturn().getResponse().getContentAsByteArray();
+        var xmlFactory = DocumentBuilderFactory.newInstance();
+        xmlFactory.setNamespaceAware(true);
+        Document document = xmlFactory.newDocumentBuilder().parse(new ByteArrayInputStream(xml));
+        Element record = assertTopLevelTypedNode(document, "Record");
+        assertTopLevelTypedNode(document, "Item");
+        assertTopLevelTypedNode(document, "Detail");
+        Element related = (Element) record.getElementsByTagNameNS("https://example.org/", "related").item(0);
+        assertThat(related.getAttributeNS("http://www.w3.org/1999/02/22-rdf-syntax-ns#", "resource"))
+                .isEqualTo("https://example.org/second");
+        assertThat(related.getElementsByTagName("*").getLength()).isZero();
+        Element detail = (Element) record.getElementsByTagNameNS("https://example.org/", "detail").item(0);
+        assertThat(detail.getAttributeNS("http://www.w3.org/1999/02/22-rdf-syntax-ns#", "nodeID"))
+                .isNotEmpty();
+        assertThat(detail.getElementsByTagName("*").getLength()).isZero();
+        assertGraph(xml, Lang.RDFXML, rdf, Lang.RDFXML);
+
+        byte[] jsonLd = mockMvc.perform(get(path(id)).accept("application/ld+json"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith("application/ld+json"))
+                .andExpect(jsonPath("$['@context']").isMap())
+                .andExpect(jsonPath("$['@context'].ex").value("https://example.org/"))
+                .andExpect(jsonPath("$['@graph']").isArray())
+                .andExpect(jsonPath("$['@id']").value(graphName(id)))
+                .andExpect(jsonPath("$['@graph'].length()").value(3))
+                .andReturn().getResponse().getContentAsByteArray();
+        assertCanonicalDataset(id, jsonLd, Lang.JSONLD, rdf, Lang.RDFXML);
+    }
+
+    @Test
+    void rejectsRetiredSerializationsAsOutput() throws Exception {
+        String id = "DL".repeat(16);
+        create(id);
+
+        for (String mediaType : List.of("text/turtle", "application/trig", "application/n-quads",
+                "application/n-triples", "application/rdf+json",
+                "application/trix", "application/trix+xml", "text/n3", "application/rdf+protobuf")) {
+            mockMvc.perform(get(path(id)).accept(mediaType))
+                    .andExpect(status().isNotAcceptable())
+                    .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+        }
     }
 
     @Test
@@ -202,15 +239,15 @@ class RecordsApiContractTest extends S3TestSupport {
         String id = "CF".repeat(16);
         create(id);
 
-        mockMvc.perform(get(path(id)).header("Accept", "application/rdf+xml;q=0.2, text/turtle;q=0.8"))
+        mockMvc.perform(get(path(id)).header("Accept", "application/rdf+xml;q=0.2, application/ld+json;q=0.8"))
                 .andExpect(status().isOk())
-                .andExpect(content().contentTypeCompatibleWith("text/turtle"));
-        mockMvc.perform(get(path(id)).header("Accept", "application/rdf+xml;q=0, text/turtle;q=0.5"))
+                .andExpect(content().contentTypeCompatibleWith("application/ld+json"));
+        mockMvc.perform(get(path(id)).header("Accept", "application/ld+json;q=0, application/rdf+xml;q=0.5"))
                 .andExpect(status().isOk())
-                .andExpect(content().contentTypeCompatibleWith("text/turtle"));
+                .andExpect(content().contentTypeCompatibleWith(RDF_XML));
         mockMvc.perform(get(path(id)).accept("*/*"))
                 .andExpect(status().isOk())
-                .andExpect(content().contentTypeCompatibleWith("application/trig"));
+                .andExpect(content().contentTypeCompatibleWith("application/ld+json"));
         mockMvc.perform(get(path(id)).accept("application/x-unknown-rdf"))
                 .andExpect(status().isNotAcceptable())
                 .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
@@ -224,7 +261,7 @@ class RecordsApiContractTest extends S3TestSupport {
         String storageEtag = create(id);
 
         for (String condition : List.of(storageEtag, "W/" + storageEtag, "\"stale\", W/" + storageEtag, "*")) {
-            mockMvc.perform(get(path(id)).accept("text/turtle").header("If-None-Match", condition))
+            mockMvc.perform(get(path(id)).accept(RDF_XML).header("If-None-Match", condition))
                     .andExpect(status().isNotModified())
                     .andExpect(header().string("ETag", "W/" + storageEtag))
                     .andExpect(header().string("X-Record-ETag", storageEtag))
@@ -243,7 +280,10 @@ class RecordsApiContractTest extends S3TestSupport {
     void distinguishesAnUnknownRecordFromCorruptOrLegacyStorage() throws Exception {
         mockMvc.perform(get(path("CH".repeat(16))))
                 .andExpect(status().isNotFound())
-                .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
+                .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
+                .andExpect(jsonPath("$.status").value(404))
+                .andExpect(jsonPath("$.title").value("Not Found"))
+                .andExpect(header().exists("X-Request-Id"));
 
         String legacyId = "CI".repeat(16);
         STORAGE.storeObject(legacyId + "/record", RDF, RDF_XML);
@@ -287,7 +327,11 @@ class RecordsApiContractTest extends S3TestSupport {
                         .contentType(RDF_XML).content("<rdf:RDF>"))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
-                .andExpect(jsonPath("$.code").value("INVALID_RDF"));
+                .andExpect(header().exists("X-Request-Id"))
+                .andExpect(jsonPath("$.requestId").isNotEmpty())
+                .andExpect(jsonPath("$.title").value("Unprocessable Content"))
+                .andExpect(jsonPath("$.detail").value("The request body is not valid RDF/XML"))
+                .andExpect(jsonPath("$.instance").value(path("IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII")));
 
         assertThat(STORAGE.writeCount()).isEqualTo(writesBefore);
     }
@@ -310,7 +354,8 @@ class RecordsApiContractTest extends S3TestSupport {
         byte[] replacement = replacementRdf();
 
         mockMvc.perform(post(path(id)).contentType(RDF_XML).content(replacement))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.title").value("Conflict"));
 
         assertStoredRdf(id, RDF);
     }
@@ -418,20 +463,15 @@ class RecordsApiContractTest extends S3TestSupport {
                 .andExpect(status().isUnsupportedMediaType())
                 .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
                 .andExpect(jsonPath("$.status").value(415))
-                .andExpect(jsonPath("$.code").value("UNSUPPORTED_MEDIA_TYPE"));
+                .andExpect(jsonPath("$.title").value("Unsupported Media Type"));
 
         assertThat(STORAGE.writeCount()).isEqualTo(writesBefore);
     }
 
     @Test
-    void returnsAProblemAndAllowHeaderForUnsupportedMethods() throws Exception {
+    void securityRejectsUnsupportedUnsafeMethods() throws Exception {
         mockMvc.perform(request(HttpMethod.PATCH, path("QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ")))
-                .andExpect(status().isMethodNotAllowed())
-                .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
-                .andExpect(header().string("Allow", org.hamcrest.Matchers.allOf(
-                        org.hamcrest.Matchers.containsString("GET"),
-                        org.hamcrest.Matchers.containsString("POST"), org.hamcrest.Matchers.containsString("PUT"))))
-                .andExpect(jsonPath("$.code").value("METHOD_NOT_ALLOWED"));
+                .andExpect(status().isForbidden());
     }
 
     @Test
@@ -448,29 +488,54 @@ class RecordsApiContractTest extends S3TestSupport {
 
     @ParameterizedTest
     @ValueSource(strings = {"invalid", "00000000000000000000000000000000"})
-    void validatesTheDdbIdentifierBeforeStorage(String id) throws Exception {
+    void validatesTheDdbIdentifierForWritesBeforeStorage(String id) throws Exception {
         int writesBefore = STORAGE.writeCount();
 
         mockMvc.perform(post(path(id)).contentType(RDF_XML).content(RDF))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(put(path(id)).contentType(RDF_XML).header("If-Match", "*").content(RDF))
                 .andExpect(status().isBadRequest());
 
         assertThat(STORAGE.writeCount()).isEqualTo(writesBefore);
     }
 
     @ParameterizedTest
+    @ValueSource(strings = {"invalid", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "00000000000000000000000000000000", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"})
+    void anInvalidReadIdentifierIsAnUnknownResource(String id) throws Exception {
+        mockMvc.perform(get(path(id)))
+                .andExpect(status().isNotFound())
+                .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
+                .andExpect(jsonPath("$.status").value(404))
+                .andExpect(jsonPath("$.title").value("Not Found"))
+                .andExpect(jsonPath("$.requestId").isNotEmpty())
+                .andExpect(header().exists("X-Request-Id"));
+    }
+
+    @Test
+    void malformedAcceptRemainsABadRequestForAnExistingRecord() throws Exception {
+        String id = "DQ".repeat(16);
+        create(id);
+
+        mockMvc.perform(get(path(id)).header("Accept", "not a media type"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @ParameterizedTest
     @CsvSource({
-        "PATCH, /3/records/{recordId}, 405",
-        "DELETE, /3/records/{recordId}, 405",
-        "POST, /3/records, 404",
+        "PATCH, /3/records/{recordId}, 403",
+        "DELETE, /3/records/{recordId}, 403",
+        "POST, /3/records, 403",
         "GET, /3/records/{recordId}/content, 404",
         "HEAD, /3/records/{recordId}/content, 404",
         "GET, /3/records/{recordId}/representations, 404",
         "GET, /3/records/{recordId}/source, 404",
         "GET, /3/records/{recordId}/display, 404",
-        "POST, /3/records/{recordId}/item, 404",
-        "POST, /3/records:batchGet, 404",
-        "POST, /3/records:batchWrite, 404",
-        "POST, /3/records:validate, 404",
+        "POST, /3/records/{recordId}/item, 403",
+        "POST, /3/records:batchGet, 403",
+        "POST, /3/records:batchWrite, 403",
+        "POST, /3/records:validate, 403",
         "GET, /contexts/record-metadata-v1.jsonld, 404",
         "GET, /contexts/ddb-api-v3-2.jsonld, 404"
     })
@@ -489,10 +554,10 @@ class RecordsApiContractTest extends S3TestSupport {
                             .contentType(RDF_XML).content(RDF))
                     .andExpect(status().isServiceUnavailable())
                     .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
-                    .andExpect(jsonPath("$.code").value("SERVICE_UNAVAILABLE"));
+                    .andExpect(jsonPath("$.detail").value("The persistence backend is temporarily unavailable"));
             mockMvc.perform(get(path("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")))
                     .andExpect(status().isServiceUnavailable())
-                    .andExpect(jsonPath("$.code").value("SERVICE_UNAVAILABLE"));
+                    .andExpect(jsonPath("$.detail").value("The persistence backend is temporarily unavailable"));
             mockMvc.perform(get("/actuator/health/readiness"))
                     .andExpect(status().isServiceUnavailable())
                     .andExpect(jsonPath("$.status").value("DOWN"));
@@ -539,8 +604,8 @@ class RecordsApiContractTest extends S3TestSupport {
     }
 
     private void assertStoredRdf(String id, byte[] expectedRdfXml) {
-        byte[] trig = codec.fromJelly(STORAGE.storedRdf(id), Lang.TRIG);
-        assertCanonicalDataset(id, trig, Lang.TRIG, expectedRdfXml, Lang.RDFXML);
+        byte[] jsonLd = codec.fromJelly(STORAGE.storedRdf(id), Lang.JSONLD);
+        assertCanonicalDataset(id, jsonLd, Lang.JSONLD, expectedRdfXml, Lang.RDFXML);
     }
 
     private static void assertCanonicalDataset(String id, byte[] bytes, Lang language,
@@ -572,6 +637,14 @@ class RecordsApiContractTest extends S3TestSupport {
             actual.close();
             expected.close();
         }
+    }
+
+    private static Element assertTopLevelTypedNode(Document document, String type) {
+        var nodes = document.getElementsByTagNameNS("https://example.org/", type);
+        assertThat(nodes.getLength()).isEqualTo(1);
+        Element element = (Element) nodes.item(0);
+        assertThat(element.getParentNode()).isSameAs(document.getDocumentElement());
+        return element;
     }
 
     private static String graphName(String id) {

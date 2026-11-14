@@ -1,5 +1,7 @@
 server:
   port: ${SERVER_PORT:8080}
+  # Enable native forwarding only behind a proxy that sanitizes incoming forwarding headers.
+  forward-headers-strategy: ${SERVER_FORWARD_HEADERS_STRATEGY:none}
   shutdown: graceful
   compression:
     # Jetty handles negotiation, gzip request decompression, response compression and
@@ -9,13 +11,7 @@ server:
     additional-mime-types:
       - application/problem+json
       - application/rdf+xml
-      - text/turtle
-      - application/trig
-      - application/n-triples
-      - application/n-quads
       - application/ld+json
-      - application/rdf+protobuf
-      - application/rdf+thrift
       - application/x-jelly-rdf
 
 spring:
@@ -27,8 +23,20 @@ spring:
       - optional:file:../.env[.properties]
   application:
     name: ddb-api-v3-service
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${OAUTH2_ISSUER_URI:}
+          audiences: ${OAUTH2_AUDIENCE:}
+          jwk-set-uri: ${OAUTH2_JWK_SET_URI:}
+  main:
+    banner-mode: "off"
   profiles:
     active: ${APP_PROFILE:dev}
+  mvc:
+    problemdetails:
+      enabled: true
   lifecycle:
     timeout-per-shutdown-phase: 20s
   threads:
@@ -49,12 +57,32 @@ management:
         readiness:
           include: readinessState,s3Storage
 
+logging:
+  level:
+    de.ddb.apiv3.access: ${LOGGING_LEVEL_DE_DDB_APIV3_ACCESS:INFO}
+  structured:
+    format:
+      # Spring Boot escapes and writes one ECS JSON object per console event.
+      console: ${LOGGING_STRUCTURED_FORMAT_CONSOLE:ecs}
+
 ddb:
+  security:
+    # Empty means write access stays locked. Production accepts only verified JWTs.
+    dev-write-token: ${DDB_DEV_WRITE_TOKEN:}
+  logging:
+    access:
+      enabled: ${DDB_ACCESS_LOG_ENABLED:true}
+      client-id-header-name: ${CLIENT_ID_HEADER_NAME:X-Client-Id}
   api:
-    # Canonical RDF graph origin, independent of proxy or request headers.
+    # Canonical production origin; dev defaults to request-based auto mode.
     base-url: ${DDB_API_BASE_URL:https://api.deutsche-digitale-bibliothek.de}
     # Applied to the decompressed RDF body before validation and storage.
     max-document-size: ${DDB_API_UPLOAD_MAX_FILE_SIZE:1MB}
+    concurrency:
+      # Bound active RDF work and waiting requests; health/documentation bypass this gate.
+      max-requests: ${DDB_API_MAX_CONCURRENT_REQUESTS:32}
+      max-queued-requests: ${DDB_API_MAX_QUEUED_REQUESTS:64}
+      queue-timeout: ${DDB_API_QUEUE_TIMEOUT:1s}
   storage:
     s3:
       endpoint: ${S3_ENDPOINT:http://127.0.0.1:8333}
@@ -65,4 +93,5 @@ ddb:
       path-style-access: ${S3_PATH_STYLE_ACCESS:true}
       connection-timeout: ${S3_CONNECTION_TIMEOUT:2s}
       read-timeout: ${S3_READ_TIMEOUT:10s}
+      max-connections: ${S3_MAX_CONNECTIONS:50}
       create-bucket: ${S3_CREATE_BUCKET:false}

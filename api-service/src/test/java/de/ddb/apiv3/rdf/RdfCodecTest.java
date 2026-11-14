@@ -1,18 +1,20 @@
-/*
- * Copyright 2026 Michael Büchner, Deutsche Nationalbibliothek
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     https://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+/* 
+ *  Copyright 2026 Michael Büchner, Deutsche Nationalbibliothek
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *  
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *  
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ *  
+ *  This code was made with help from OpenAI GTP-6.1 Sol Ultra.
  */
+
 package de.ddb.apiv3.rdf;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -20,48 +22,83 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.sun.net.httpserver.HttpServer;
 import de.ddb.apiv3.storage.StorageException;
+import eu.neverblink.jelly.convert.jena.JenaConverterFactory;
 import eu.neverblink.jelly.convert.jena.riot.JellyLanguage;
+import eu.neverblink.jelly.core.JellyOptions;
+import eu.neverblink.jelly.core.ProtoEncoder;
+import eu.neverblink.jelly.core.memory.RowBuffer;
+import eu.neverblink.jelly.core.proto.v1.LogicalStreamType;
 import eu.neverblink.jelly.core.proto.v1.PhysicalStreamType;
 import eu.neverblink.jelly.core.proto.v1.RdfStreamFrame;
+import jakarta.json.Json;
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Stream;
+import java.util.function.Consumer;
+import java.util.stream.IntStream;
+import org.apache.jena.graph.Node;
 import org.apache.jena.graph.NodeFactory;
-import org.apache.jena.graph.GraphMemFactory;
-import org.apache.jena.graph.Triple;
 import org.apache.jena.riot.Lang;
 import org.apache.jena.riot.RDFLanguages;
 import org.apache.jena.riot.RDFParser;
-import org.apache.jena.riot.RDFWriter;
-import org.apache.jena.riot.RDFWriterRegistry;
 import org.apache.jena.sparql.core.DatasetGraph;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
-import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.server.ResponseStatusException;
 
-/** Exercises the wire formats, not implementation-shaped mocks: RDF in, actual Jelly out. */
+/** XML in, one named Jelly graph in the bucket, three actual wire formats out. */
 class RdfCodecTest {
 
-    private static final String GRAPH =
-            "https://api.deutsche-digitale-bibliothek.de/records/J6KQ3UBFBEMGAHGR6ZUAQCUXOBKQCFO3";
-    private static final String NT = "<https://example.org/s> <https://example.org/p> \"München\"@de .";
+    private static final String GRAPH = "https://api.deutsche-digitale-bibliothek.de/records/" + "A".repeat(32);
+    private static final String XML = xml("""
+            <rdf:Description rdf:about="https://example.org/s"><ex:p xml:lang="de">München</ex:p></rdf:Description>
+            """);
     private final RdfCodec codec = new RdfCodec();
 
-    @ParameterizedTest
-    @MethodSource("rdfSerializations")
-    void acceptsRegisteredSerializationsAndWritesUncompressedDelimitedJelly(String contentType, String source)
-            throws Exception {
-        byte[] jelly = codec.toJelly(bytes(source), contentType, GRAPH);
+    @Test
+    void neverFetchesExternalXmlEntitiesOrDtds() throws Exception {
+        var fetches = new AtomicInteger();
+        var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/", exchange -> {
+            fetches.incrementAndGet();
+            exchange.sendResponseHeaders(204, -1);
+            exchange.close();
+        });
+        server.start();
+        try {
+            String external = "http://127.0.0.1:" + server.getAddress().getPort() + "/external";
+            codec.toJelly(bytes("<!DOCTYPE rdf:RDF [<!ENTITY remote SYSTEM '" + external + "'>]>"
+                    + xml("<rdf:Description rdf:about='https://example.org/s'><ex:p>&remote;</ex:p></rdf:Description>")), GRAPH);
+            codec.toJelly(bytes("<!DOCTYPE rdf:RDF SYSTEM '" + external + "'>"
+                    + xml("<rdf:Description rdf:about='https://example.org/s'><ex:p>plain</ex:p></rdf:Description>")), GRAPH);
+            codec.toJelly(bytes("<!DOCTYPE rdf:RDF [<!ENTITY % remote SYSTEM '" + external + "'>%remote;]>"
+                    + xml("<rdf:Description rdf:about='https://example.org/s'><ex:p>plain</ex:p></rdf:Description>")), GRAPH);
+            assertThat(fetches.get()).isZero();
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void nativeXmlLimitsRejectEntityAmplificationBeforeItBecomesAnRdfGraph() {
+        String source = "<!DOCTYPE rdf:RDF [<!ENTITY chunk '" + "x".repeat(512)
+                + "'><!ENTITY expanded '" + "&chunk;".repeat(256) + "'>]>"
+                + xml("<rdf:Description rdf:about='https://example.org/s'><ex:p>&expanded;</ex:p></rdf:Description>");
+        assertThat(source.length()).isLessThan(4096);
+        assertInvalidXml(source);
+    }
+
+    @Test
+    void writesRdfXmlAsUncompressedDelimitedJellyWithTheCanonicalGraphName() throws Exception {
+        byte[] jelly = codec.toJelly(bytes(XML), GRAPH);
 
         RdfStreamFrame frame = RdfStreamFrame.parseDelimitedFrom(new ByteArrayInputStream(jelly));
         assertThat(frame.getRows().stream().filter(row -> row.hasOptions()).findFirst().orElseThrow()
@@ -71,24 +108,19 @@ class RdfCodecTest {
     }
 
     @Test
-    void mergesAllInputGraphsWithoutLosingBlankNodeLinksOrLiteralValues() {
-        String source = """
-                @prefix ex: <https://example.org/> .
-                @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
-                ex:s ex:p _:shared .
-                ex:one { _:shared ex:label "München"@de . }
-                ex:two { _:shared ex:count "0042"^^xsd:integer . ex:s ex:p _:shared . }
-                """;
-        byte[] jelly = codec.toJelly(bytes(source), "application/trig", GRAPH);
+    void preservesBlankNodeLinksAndLiteralLexicalValues() {
+        String source = xml("""
+                <rdf:Description rdf:about="https://example.org/s"><ex:detail rdf:nodeID="shared"/></rdf:Description>
+                <rdf:Description rdf:nodeID="shared">
+                  <ex:label xml:lang="de">München</ex:label>
+                  <ex:count rdf:datatype="http://www.w3.org/2001/XMLSchema#integer">0042</ex:count>
+                </rdf:Description>
+                """);
+        byte[] jelly = codec.toJelly(bytes(source), GRAPH);
 
         assertCanonicalGraph(jelly, 3);
-        var expected = RDFParser.create().fromString("""
-                @prefix ex: <https://example.org/> .
-                @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
-                ex:s ex:p _:shared .
-                _:shared ex:label "München"@de ; ex:count "0042"^^xsd:integer .
-                """).lang(Lang.TURTLE).toGraph();
-        var actual = RDFParser.create().source(new ByteArrayInputStream(codec.fromJelly(jelly, Lang.RDFXML)))
+        var expected = RDFParser.create().fromString(source).lang(Lang.RDFXML).toGraph();
+        var actual = RDFParser.source(new ByteArrayInputStream(codec.fromJelly(jelly, Lang.RDFXML)))
                 .lang(Lang.RDFXML).toGraph();
         try {
             assertThat(actual.isIsomorphicWith(expected)).isTrue();
@@ -98,21 +130,35 @@ class RdfCodecTest {
         }
     }
 
+    @Test
+    void resolvesRelativeIrisAgainstTheCanonicalGraph() {
+        byte[] jelly = codec.toJelly(bytes(xml("""
+                <rdf:Description rdf:about="#root"><ex:link rdf:resource="#linked"/></rdf:Description>
+                """)), GRAPH);
+        DatasetGraph result = readJelly(jelly);
+        try {
+            assertThat(result.getGraph(NodeFactory.createURI(GRAPH)).contains(
+                    NodeFactory.createURI(GRAPH + "#root"), NodeFactory.createURI("https://example.org/link"),
+                    NodeFactory.createURI(GRAPH + "#linked"))).isTrue();
+        } finally {
+            result.close();
+        }
+    }
+
     @ParameterizedTest
-    @ValueSource(strings = {"application/rdf+xml", "text/turtle", "application/n-triples", "application/trig",
-            "application/n-quads", "application/ld+json", "application/rdf+json", "application/trix"})
-    void convertsStoredJellyIntoRegisteredGraphAndDatasetSerializations(String mediaType) {
-        byte[] jelly = codec.toJelly(bytes(NT), "application/n-triples; charset=UTF-8", GRAPH);
+    @ValueSource(strings = {"application/rdf+xml", "application/ld+json", "application/x-jelly-rdf"})
+    void convertsStoredJellyIntoTheThreeApiOutputSerializations(String mediaType) {
+        byte[] jelly = codec.toJelly(bytes(XML), GRAPH);
         Lang language = RDFLanguages.contentTypeToLang(mediaType);
-        byte[] representation = codec.fromJelly(jelly, language);
-        DatasetGraph result = RDFParser.create().source(new ByteArrayInputStream(representation))
+        DatasetGraph result = RDFParser.source(new ByteArrayInputStream(codec.fromJelly(jelly, language)))
                 .lang(language).toDatasetGraph();
         try {
-            if (RDFWriterRegistry.getWriterDatasetFactory(language) != null) {
+            if (language.equals(Lang.RDFXML)) {
+                assertThat(result.getDefaultGraph().size()).isEqualTo(1);
+            } else {
+                assertThat(result.listGraphNodes()).toIterable().containsExactly(NodeFactory.createURI(GRAPH));
                 assertThat(result.getGraph(NodeFactory.createURI(GRAPH)).size()).isEqualTo(1);
                 assertThat(result.getDefaultGraph().isEmpty()).isTrue();
-            } else {
-                assertThat(result.getDefaultGraph().size()).isEqualTo(1);
             }
         } finally {
             result.close();
@@ -120,126 +166,199 @@ class RdfCodecTest {
     }
 
     @Test
-    void emptyRdfStillStoresAnExplicitCanonicalGraph() throws Exception {
-        byte[] jelly = codec.toJelly(bytes(""), "text/turtle", GRAPH);
+    void emptyRdfXmlRetainsAnExplicitNamedGraphInJellyAndJsonLd() throws Exception {
+        byte[] jelly = codec.toJelly(bytes(xml("")), GRAPH);
         RdfStreamFrame frame = RdfStreamFrame.parseDelimitedFrom(new ByteArrayInputStream(jelly));
         assertThat(frame.getRows().stream().anyMatch(row -> row.hasGraphStart())).isTrue();
         assertThat(frame.getRows().stream().anyMatch(row -> row.hasGraphEnd())).isTrue();
-        // RIOT parsers omit empty graph declarations; Jelly's explicit boundaries do retain them.
-        assertThat(new String(codec.fromJelly(jelly, Lang.TRIG), StandardCharsets.UTF_8)).contains(GRAPH);
+        try (var reader = Json.createReader(new ByteArrayInputStream(codec.fromJelly(jelly, Lang.JSONLD)))) {
+            var document = reader.readObject();
+            assertThat(document.getString("@id")).isEqualTo(GRAPH);
+            assertThat(document.getJsonArray("@graph")).isEmpty();
+        }
         assertThat(codec.fromJelly(jelly, JellyLanguage.JELLY)).containsExactly(jelly);
     }
 
     @Test
-    void jellyInputAndOutputAreAlsoSupported() {
-        byte[] first = codec.toJelly(bytes(NT), "application/n-triples", "https://example.org/foreign");
-        byte[] stored = codec.toJelly(first, RdfCodec.JELLY_CONTENT_TYPE, GRAPH);
-        assertCanonicalGraph(stored, 1);
-        assertThat(codec.fromJelly(stored, JellyLanguage.JELLY)).containsExactly(stored);
+    void preservesDeclaredNamespacesForCompactJsonLdAndTypedXml() {
+        String source = """
+                <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+                         xmlns:custom="https://example.org/vocab/" xmlns:types="https://example.org/types/"
+                         xmlns:unused="https://unused.example.org/">
+                  <types:Record rdf:about="https://example.org/record"><custom:label>value</custom:label></types:Record>
+                </rdf:RDF>
+                """;
+        byte[] jelly = codec.toJelly(bytes(source), GRAPH);
+        try (var reader = Json.createReader(new ByteArrayInputStream(codec.fromJelly(jelly, Lang.JSONLD)))) {
+            var document = reader.readObject();
+            var context = document.getJsonObject("@context");
+            assertThat(context.getString("custom")).isEqualTo("https://example.org/vocab/");
+            assertThat(context.getString("types")).isEqualTo("https://example.org/types/");
+            assertThat(context.getString("unused")).isEqualTo("https://unused.example.org/");
+            assertThat(document.getJsonArray("@graph").getJsonObject(0).getString("@type")).isEqualTo("types:Record");
+        }
+        assertThat(new String(codec.fromJelly(jelly, Lang.RDFXML), StandardCharsets.UTF_8))
+                .contains("xmlns:custom=", "xmlns:types=", "types:Record");
     }
 
     @Test
-    void splitsLargeGraphsIntoDecodableDelimitedFrames() throws Exception {
-        StringBuilder source = new StringBuilder();
+    void storedNamespaceHintsCannotBecomeRemoteJsonLdContextDirectives() {
+        byte[] untrusted = storedJelly(encoder -> {
+            encoder.handleNamespace("@import", NodeFactory.createURI("https://example.org/context"));
+            encoder.handleGraphStart(NodeFactory.createURI(GRAPH));
+            encoder.handleGraphEnd();
+        });
+        assertThatThrownBy(() -> codec.fromJelly(untrusted, Lang.JSONLD)).isInstanceOf(StorageException.class);
+    }
+
+    @Test
+    void preservesAllTriplesOfALargeXmlDocument() {
+        var descriptions = new StringBuilder();
         for (int index = 0; index < 1500; index++) {
-            source.append("<https://example.org/s").append(index).append("> <https://example.org/p> \"value\" .\n");
+            descriptions.append("<rdf:Description rdf:about=\"https://example.org/s").append(index)
+                    .append("\"><ex:p>value</ex:p></rdf:Description>");
         }
-        byte[] jelly = codec.toJelly(bytes(source.toString()), "application/n-triples", GRAPH);
-        ByteArrayInputStream input = new ByteArrayInputStream(jelly);
-        int frames = 0;
-        while (input.available() > 0) {
-            RdfStreamFrame.parseDelimitedFrom(input);
-            frames++;
-        }
-        assertThat(frames).isGreaterThan(1);
-        assertCanonicalGraph(jelly, 1500);
+        assertCanonicalGraph(codec.toJelly(bytes(xml(descriptions.toString())), GRAPH), 1500);
     }
 
     @ParameterizedTest
-    @NullAndEmptySource
-    @ValueSource(strings = {"application/json", "application/octet-stream", "*/*", "broken", "text/plain"})
-    void rejectsMediaTypesWithoutARegisteredRdfParser(String mediaType) {
-        assertThatThrownBy(() -> codec.toJelly(bytes(NT), mediaType, GRAPH))
-                .isInstanceOfSatisfying(ResponseStatusException.class,
-                        exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.UNSUPPORTED_MEDIA_TYPE));
+    @ValueSource(strings = {"", "not XML", "<rdf:RDF", "{\"@id\":\"https://example.org/s\"}"})
+    void rejectsBodiesThatAreNotRdfXml(String source) {
+        assertInvalidXml(source);
     }
 
     @Test
-    void rejectsMalformedRdfEvenAfterACompleteFirstStatement() {
-        assertThatThrownBy(() -> codec.toJelly(bytes(NT + "\n<https://example.org/broken>"),
-                "application/n-triples", GRAPH)).isInstanceOf(InvalidRdfException.class);
+    void rejectsMalformedXmlEvenAfterACompleteFirstStatement() {
+        assertInvalidXml(XML + "<broken>");
     }
 
     @ParameterizedTest
     @ValueSource(strings = {"", "not Jelly", "\u001f\u008bcompressed bytes"})
     void storedCorruptionIsAStorageFailure(String corrupt) {
-        assertThatThrownBy(() -> codec.fromJelly(bytes(corrupt), Lang.TRIG))
-                .isInstanceOf(StorageException.class);
+        assertThatThrownBy(() -> codec.fromJelly(bytes(corrupt), Lang.JSONLD)).isInstanceOf(StorageException.class);
     }
 
     @Test
-    void writerLimitationsBecomeNotAcceptable() {
-        byte[] jelly = codec.toJelly(bytes("<https://example.org/s> <https://example.org/123> \"value\" ."),
-                "application/n-triples", GRAPH);
+    void storedObjectsMustContainExactlyOneNamedGraph() {
+        byte[] untrusted = storedJelly(encoder -> {
+            encoder.handleGraphStart(NodeFactory.createURI(GRAPH));
+            encoder.handleGraphEnd();
+            encoder.handleGraphStart(NodeFactory.createURI("https://example.org/another"));
+            encoder.handleGraphEnd();
+        });
+        assertThatThrownBy(() -> codec.fromJelly(untrusted, Lang.JSONLD)).isInstanceOf(StorageException.class);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void storedGraphsMustNotEndBeforeTheirStartOrMoreThanOnce(boolean endBeforeStart) throws Exception {
+        byte[] valid = storedJelly(encoder -> {
+            encoder.handleGraphStart(NodeFactory.createURI(GRAPH));
+            encoder.handleGraphEnd();
+        });
+        var frame = RdfStreamFrame.parseDelimitedFrom(new ByteArrayInputStream(valid));
+        var rows = new ArrayList<>(frame.getRows());
+        // Keep the options first, then insert a graph-end row outside its valid boundary.
+        rows.add(endBeforeStart ? 1 : rows.size(), rows.getLast());
+        var damaged = RdfStreamFrame.newInstance();
+        rows.forEach(damaged::addRows);
+        byte[] untrusted = damaged.toByteArrayDelimited();
+        assertThatThrownBy(() -> codec.fromJelly(untrusted, Lang.JSONLD)).isInstanceOf(StorageException.class);
+    }
+
+    @Test
+    void sharedCodecKeepsConcurrentConversionsIsolated() throws Exception {
+        final var executor = Executors.newVirtualThreadPerTaskExecutor();
+        try {
+            var conversions = IntStream.range(0, 64).mapToObj(index -> executor.submit(() -> {
+                String graphName = GRAPH + "/" + index;
+                String prefix = "p" + index;
+                String namespace = "https://example.org/vocab/" + index + "/";
+                String source = """
+                        <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:%s="%s">
+                          <rdf:Description rdf:about="https://example.org/resource">
+                            <rdf:type rdf:resource="https://example.org/types/%d/Record"/>
+                            <%s:value>request %d</%s:value>
+                          </rdf:Description>
+                        </rdf:RDF>
+                        """.formatted(prefix, namespace, index, prefix, index, prefix);
+                byte[] jelly = codec.toJelly(bytes(source), graphName);
+
+                byte[] xml = codec.fromJelly(jelly, Lang.RDFXML);
+                var expected = RDFParser.create().fromString(source).lang(Lang.RDFXML).toGraph();
+                var actual = RDFParser.source(new ByteArrayInputStream(xml)).lang(Lang.RDFXML).toGraph();
+                try {
+                    assertThat(actual.isIsomorphicWith(expected)).isTrue();
+                } finally {
+                    expected.close();
+                    actual.close();
+                }
+
+                try (var reader = Json.createReader(new ByteArrayInputStream(codec.fromJelly(jelly, Lang.JSONLD)))) {
+                    var document = reader.readObject();
+                    assertThat(document.getString("@id")).isEqualTo(graphName);
+                    assertThat(document.getJsonObject("@context").getString(prefix)).isEqualTo(namespace);
+                    assertThat(document.getJsonArray("@graph").getJsonObject(0).getString(prefix + ":value"))
+                            .isEqualTo("request " + index);
+                }
+                assertThat(codec.fromJelly(jelly, JellyLanguage.JELLY)).containsExactly(jelly);
+            })).toList();
+            for (var conversion : conversions) {
+                conversion.get(30, TimeUnit.SECONDS);
+            }
+        } finally {
+            // Executor.close() could wait forever on a broken task; bound failure cleanup too.
+            executor.shutdownNow();
+            executor.awaitTermination(30, TimeUnit.SECONDS);
+        }
+    }
+
+    @Test
+    void unrepresentableStoredDataBecomesNotAcceptable() {
+        byte[] jelly = storedJelly(encoder -> {
+            encoder.handleGraphStart(NodeFactory.createURI(GRAPH));
+            encoder.handleTriple(NodeFactory.createURI("https://example.org/s"),
+                    NodeFactory.createURI("https://example.org/123"), NodeFactory.createLiteralString("value"));
+            encoder.handleGraphEnd();
+        });
         assertThatThrownBy(() -> codec.fromJelly(jelly, Lang.RDFXML))
                 .isInstanceOfSatisfying(ResponseStatusException.class,
                         exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.NOT_ACCEPTABLE));
     }
 
-    @Test
-    void rdfJsonCannotSilentlyDropTripleTerms() {
-        var graph = GraphMemFactory.createDefaultGraph();
-        var subject = NodeFactory.createURI("https://example.org/s");
-        var predicate = NodeFactory.createURI("https://example.org/p");
-        graph.add(Triple.create(subject, predicate, NodeFactory.createTripleTerm(subject, predicate, subject)));
-        ByteArrayOutputStream source = new ByteArrayOutputStream();
-        try {
-            RDFWriter.create().source(graph).lang(JellyLanguage.JELLY).output(source);
-        } finally {
-            graph.close();
-        }
-        byte[] jelly = codec.toJelly(source.toByteArray(), RdfCodec.JELLY_CONTENT_TYPE, GRAPH);
-        assertThatThrownBy(() -> codec.fromJelly(jelly, Lang.RDFJSON))
+    @ParameterizedTest
+    @ValueSource(strings = {"text/turtle", "application/trig", "application/n-quads", "application/n-triples",
+            "application/rdf+json", "application/trix", "text/n3", "application/rdf+protobuf"})
+    void rejectsRemovedAndOtherOutputFormats(String mediaType) {
+        byte[] jelly = codec.toJelly(bytes(XML), GRAPH);
+        assertThatThrownBy(() -> codec.outputMediaType(MediaType.parseMediaTypes(mediaType)))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.NOT_ACCEPTABLE));
+        assertThatThrownBy(() -> codec.fromJelly(jelly, RDFLanguages.contentTypeToLang(mediaType)))
                 .isInstanceOfSatisfying(ResponseStatusException.class,
                         exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.NOT_ACCEPTABLE));
     }
 
     @Test
-    void jsonLdCannotFetchContextsOrImports() throws Exception {
-        AtomicInteger fetches = new AtomicInteger();
-        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        server.createContext("/context", exchange -> {
-            fetches.incrementAndGet();
-            byte[] context = bytes("{\"@context\":{\"p\":\"https://example.org/p\"}}");
-            exchange.getResponseHeaders().add("Content-Type", "application/ld+json");
-            exchange.sendResponseHeaders(200, context.length);
-            exchange.getResponseBody().write(context);
-            exchange.close();
-        });
-        server.start();
-        try {
-            String remote = "http://127.0.0.1:" + server.getAddress().getPort() + "/context";
-            for (String context : List.of("\"" + remote + "\"", "{\"@import\":\"" + remote + "\"}")) {
-                String source = "{\"@context\":" + context + ",\"@id\":\"https://example.org/s\",\"p\":\"value\"}";
-                assertThatThrownBy(() -> codec.toJelly(bytes(source), "application/ld+json", GRAPH))
-                        .isInstanceOf(InvalidRdfException.class);
-            }
-            assertThat(fetches).hasValue(0);
-        } finally {
-            server.stop(0);
-        }
+    void defaultsToJsonLdForMissingOrWildcardAccept() {
+        assertThat(codec.outputLanguage(null)).isEqualTo(Lang.JSONLD);
+        assertThat(codec.outputLanguage(List.of())).isEqualTo(Lang.JSONLD);
+        assertThat(codec.outputLanguage(MediaType.parseMediaTypes("*/*"))).isEqualTo(Lang.JSONLD);
+        assertThat(codec.outputLanguage(MediaType.parseMediaTypes("application/*"))).isEqualTo(Lang.JSONLD);
     }
 
     @Test
-    void negotiatesQualityAndSpecificExclusions() {
-        assertThat(codec.outputLanguage(List.of())).isEqualTo(Lang.TRIG);
-        assertThat(codec.outputLanguage(MediaType.parseMediaTypes("*/*"))).isEqualTo(Lang.TRIG);
-        assertThat(codec.outputLanguage(MediaType.parseMediaTypes("application/rdf+xml;q=0.2,text/turtle;q=0.8")))
-                .isEqualTo(Lang.TURTLE);
-        assertThat(codec.outputLanguage(MediaType.parseMediaTypes("application/trig;q=0,*/*;q=1")))
-                .isNotEqualTo(Lang.TRIG);
-        assertThat(codec.outputLanguage(MediaType.parseMediaTypes("text/*;q=0,text/turtle;q=0.5,*/*;q=0")))
-                .isEqualTo(Lang.TURTLE);
+    void negotiatesQualitySpecificExclusionsAndClientOrderForTies() {
+        assertThat(codec.outputLanguage(MediaType.parseMediaTypes(
+                "application/rdf+xml;q=0.2,application/ld+json;q=0.8"))).isEqualTo(Lang.JSONLD);
+        assertThat(codec.outputLanguage(MediaType.parseMediaTypes("application/ld+json;q=0,*/*;q=1")))
+                .isIn(Lang.RDFXML, JellyLanguage.JELLY);
+        assertThat(codec.outputLanguage(MediaType.parseMediaTypes("application/*;q=0,application/rdf+xml;q=0.8")))
+                .isEqualTo(Lang.RDFXML);
+        assertThat(codec.outputLanguage(MediaType.parseMediaTypes("application/rdf+xml,application/ld+json")))
+                .isEqualTo(Lang.RDFXML);
+        assertThat(codec.outputLanguage(MediaType.parseMediaTypes("application/ld+json,application/rdf+xml")))
+                .isEqualTo(Lang.JSONLD);
         for (String accept : List.of("*/*;q=0", "text/html", "application/rdf+xml;q=0")) {
             assertThatThrownBy(() -> codec.outputLanguage(MediaType.parseMediaTypes(accept)))
                     .isInstanceOfSatisfying(ResponseStatusException.class,
@@ -248,23 +367,28 @@ class RdfCodecTest {
     }
 
     @Test
-    void negotiatesAliasesAndOnlySupportedMediaTypeParameters() {
-        MediaType alias = MediaType.parseMediaType("application/trix+xml");
-        assertThat(codec.outputMediaType(List.of(alias))).isEqualTo(alias);
-        assertThat(codec.outputLanguage(List.of(alias))).isEqualTo(Lang.TRIX);
-        assertThat(codec.outputMediaType(MediaType.parseMediaTypes("text/turtle;charset=UTF-8")))
-                .isEqualTo(MediaType.parseMediaType("text/turtle;charset=UTF-8"));
-        for (String unsupported : List.of("text/turtle;charset=UTF-16", "text/turtle;profile=unavailable",
-                "application/ld+json;profile=unavailable")) {
+    void negotiatesCanonicalFormatsAndOnlySupportedMediaTypeParameters() {
+        MediaType rdfXml = MediaType.parseMediaType("APPLICATION/RDF+XML");
+        assertThat(codec.outputMediaType(List.of(rdfXml))).isEqualTo(MediaType.parseMediaType("application/rdf+xml"));
+        assertThat(codec.outputLanguage(List.of(rdfXml))).isEqualTo(Lang.RDFXML);
+        assertThat(codec.outputMediaType(MediaType.parseMediaTypes("application/ld+json;charset=UTF-8")))
+                .isEqualTo(MediaType.parseMediaType("application/ld+json;charset=UTF-8"));
+        for (String unsupported : List.of("application/ld+json;charset=UTF-16", "application/ld+json;profile=unavailable",
+                "application/rdf+xml;profile=unavailable")) {
             assertThatThrownBy(() -> codec.outputMediaType(MediaType.parseMediaTypes(unsupported)))
                     .isInstanceOfSatisfying(ResponseStatusException.class,
                             exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.NOT_ACCEPTABLE));
         }
     }
 
-    private void assertCanonicalGraph(byte[] jelly, int expectedSize) {
-        DatasetGraph result = RDFParser.create().source(new ByteArrayInputStream(codec.fromJelly(jelly, Lang.TRIG)))
-                .lang(Lang.TRIG).toDatasetGraph();
+    private void assertInvalidXml(String source) {
+        assertThatThrownBy(() -> codec.toJelly(bytes(source), GRAPH))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT));
+    }
+
+    private static void assertCanonicalGraph(byte[] jelly, int expectedSize) {
+        DatasetGraph result = readJelly(jelly);
         try {
             assertThat(result.listGraphNodes()).toIterable().containsExactly(NodeFactory.createURI(GRAPH));
             assertThat(result.getDefaultGraph().isEmpty()).isTrue();
@@ -274,30 +398,22 @@ class RdfCodecTest {
         }
     }
 
-    private static Stream<Arguments> rdfSerializations() {
-        return Stream.of(
-                Arguments.of("application/rdf+xml", """
-                        <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:ex="https://example.org/">
-                          <rdf:Description rdf:about="https://example.org/s"><ex:p xml:lang="de">München</ex:p></rdf:Description>
-                        </rdf:RDF>
-                        """),
-                Arguments.of("text/turtle", NT),
-                Arguments.of("application/n-triples", NT),
-                Arguments.of("application/trig", "<https://example.org/foreign> { " + NT + " }"),
-                Arguments.of("application/n-quads", NT.substring(0, NT.length() - 1) + "<https://example.org/foreign> ."),
-                Arguments.of("application/ld+json", """
-                        {"@context":{"p":"https://example.org/p"},"@id":"https://example.org/s",
-                         "p":{"@value":"München","@language":"de"}}
-                        """),
-                Arguments.of("application/rdf+json", """
-                        {"https://example.org/s":{"https://example.org/p":[{"type":"literal","value":"München","lang":"de"}]}}
-                        """),
-                Arguments.of("application/trix", """
-                        <TriX xmlns="http://www.w3.org/2004/03/trix/trix-1/"><graph>
-                          <triple><uri>https://example.org/s</uri><uri>https://example.org/p</uri>
-                          <plainLiteral xml:lang="de">München</plainLiteral></triple>
-                        </graph></TriX>
-                        """));
+    private static DatasetGraph readJelly(byte[] jelly) {
+        return RDFParser.source(new ByteArrayInputStream(jelly)).lang(JellyLanguage.JELLY).toDatasetGraph();
+    }
+
+    private static byte[] storedJelly(Consumer<ProtoEncoder<Node>> statements) {
+        RowBuffer rows = RowBuffer.newLazyImmutable();
+        var options = JellyOptions.SMALL_ALL_FEATURES.clone().setPhysicalType(PhysicalStreamType.GRAPHS)
+                .setLogicalType(LogicalStreamType.NAMED_GRAPHS);
+        var encoder = JenaConverterFactory.getInstance().encoder(ProtoEncoder.Params.of(options, true, rows));
+        statements.accept(encoder);
+        return RdfStreamFrame.newInstance().setRows(rows).toByteArrayDelimited();
+    }
+
+    private static String xml(String descriptions) {
+        return "<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\" xmlns:ex=\"https://example.org/\">"
+                + descriptions + "</rdf:RDF>";
     }
 
     private static byte[] bytes(String source) {

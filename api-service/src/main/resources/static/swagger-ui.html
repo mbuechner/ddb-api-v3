@@ -13,10 +13,24 @@
 <script src="/webjars/swagger-ui/swagger-ui-standalone-preset.js"></script>
 <script>
     window.onload = function () {
-        SwaggerUIBundle({
+        const ui = SwaggerUIBundle({
             url: "/openapi/openapi.yaml",
             dom_id: "#swagger-ui",
             deepLinking: true,
+            // Keep Try-it-out on this server; the published contract names the public API.
+            onComplete: function () {
+                const spec = ui.specSelectors.specJS();
+                ui.specActions.updateJsonSpec({
+                    ...spec,
+                    servers: [{url: window.location.origin, description: "Current server"}]
+                });
+                ui.oas3Actions.setSelectedServer(window.location.origin);
+            },
+            // Try-it-out must fetch the selected format, even after an earlier cached response.
+            requestInterceptor: function (request) {
+                request.cache = "no-store";
+                return request;
+            },
             presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
             layout: "StandaloneLayout"
         });

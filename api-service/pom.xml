@@ -13,7 +13,7 @@
 
     <groupId>de.ddb</groupId>
     <artifactId>ddb-api-v3-service</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
     <name>DDB API v3 Service</name>
     <description>Contract-first API service for DDB API v3</description>
     <url>https://github.com/mbuechner/ddb-api-v3</url>
@@ -42,10 +42,13 @@
     <properties>
         <java.version>25</java.version>
         <apache-jena.version>6.2.0</apache-jena.version>
+        <jakarta-json.version>2.1.3</jakarta-json.version>
+        <parsson.version>1.1.9</parsson.version>
         <jelly.version>3.7.3</jelly.version>
+        <unbescape.version>1.1.6.RELEASE</unbescape.version>
         <openapi-generator.version>7.27.0</openapi-generator.version>
         <swagger-ui.version>5.34.1</swagger-ui.version>
-        <aws-sdk.version>2.59.0</aws-sdk.version>
+        <aws-sdk.version>2.59.1</aws-sdk.version>
         <maven-compiler-plugin.version>3.16.0</maven-compiler-plugin.version>
         <maven-surefire-plugin.version>3.6.1</maven-surefire-plugin.version>
         <versions-maven-plugin.version>2.25.1</versions-maven-plugin.version>
@@ -78,14 +81,14 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
         <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security-oauth2-resource-server</artifactId>
+        </dependency>
+        <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>s3</artifactId>
             <version>${aws-sdk.version}</version>
             <exclusions>
-                <exclusion>
-                    <groupId>software.amazon.awssdk</groupId>
-                    <artifactId>apache-client</artifactId>
-                </exclusion>
                 <exclusion>
                     <groupId>software.amazon.awssdk</groupId>
                     <artifactId>netty-nio-client</artifactId>
@@ -94,13 +97,36 @@
         </dependency>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
-            <artifactId>url-connection-client</artifactId>
+            <artifactId>apache5-client</artifactId>
             <version>${aws-sdk.version}</version>
         </dependency>
         <dependency>
             <groupId>org.apache.jena</groupId>
             <artifactId>jena-arq</artifactId>
             <version>${apache-jena.version}</version>
+            <exclusions>
+                <!-- JSON-P 2.1 supports selecting the provider once instead of discovering it per value. -->
+                <exclusion>
+                    <groupId>org.glassfish</groupId>
+                    <artifactId>jakarta.json</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.json</groupId>
+            <artifactId>jakarta.json-api</artifactId>
+            <version>${jakarta-json.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.parsson</groupId>
+            <artifactId>parsson</artifactId>
+            <version>${parsson.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.unbescape</groupId>
+            <artifactId>unbescape</artifactId>
+            <version>${unbescape.version}</version>
         </dependency>
         <dependency>
             <groupId>eu.neverblink.jelly</groupId>
@@ -137,6 +163,11 @@
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>testcontainers-junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security-oauth2-resource-server-test</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

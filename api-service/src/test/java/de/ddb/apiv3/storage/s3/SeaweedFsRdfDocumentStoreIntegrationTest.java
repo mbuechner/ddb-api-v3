@@ -1,3 +1,20 @@
+/* 
+ *  Copyright 2026 Michael Büchner, Deutsche Nationalbibliothek
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *  
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *  
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ *  
+ *  This code was made with help from OpenAI GTP-6.1 Sol Ultra.
+ */
+
 package de.ddb.apiv3.storage.s3;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -23,12 +40,6 @@ import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.utility.DockerImageName;
-import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
-import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
-import software.amazon.awssdk.core.checksums.RequestChecksumCalculation;
-import software.amazon.awssdk.core.checksums.ResponseChecksumValidation;
-import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
-import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 
 /** Verifies real Jelly objects and atomic conditional writes against real SeaweedFS. */
@@ -61,17 +72,8 @@ class SeaweedFsRdfDocumentStoreIntegrationTest {
         }
         properties = new S3StorageProperties(URI.create(endpoint), "eu-central-1",
                 "ddb-api-integration-" + UUID.randomUUID(), accessKey, secretKey,
-                true, Duration.ofSeconds(2), Duration.ofSeconds(10), false);
-        client = S3Client.builder()
-                .endpointOverride(properties.endpoint())
-                .region(Region.of(properties.region()))
-                .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey)))
-                .forcePathStyle(true)
-                .requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED)
-                .responseChecksumValidation(ResponseChecksumValidation.WHEN_REQUIRED)
-                .httpClientBuilder(UrlConnectionHttpClient.builder()
-                        .connectionTimeout(properties.connectionTimeout()).socketTimeout(properties.readTimeout()))
-                .build();
+                true, 50, Duration.ofSeconds(2), Duration.ofSeconds(10), false);
+        client = S3StorageConfiguration.s3Client(properties, S3StorageConfiguration.s3CredentialsProvider(properties));
         client.createBucket(request -> request.bucket(properties.bucket())
                 .createBucketConfiguration(config -> config.locationConstraint(properties.region())));
         repository = new S3RdfDocumentStore(client, properties);
@@ -196,7 +198,7 @@ class SeaweedFsRdfDocumentStoreIntegrationTest {
     private static byte[] jelly(String recordId, String value) {
         byte[] rdf = new String(S3TestServer.DEMO_RDF, StandardCharsets.UTF_8).replace("demo-001", value)
                 .getBytes(StandardCharsets.UTF_8);
-        return CODEC.toJelly(rdf, "application/rdf+xml",
+        return CODEC.toJelly(rdf,
                 "https://api.deutsche-digitale-bibliothek.de/records/" + recordId);
     }
 

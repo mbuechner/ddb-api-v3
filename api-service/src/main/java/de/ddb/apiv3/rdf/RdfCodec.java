@@ -1,23 +1,22 @@
-/*
- * Copyright 2026 Michael Büchner, Deutsche Nationalbibliothek
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     https://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+/* 
+ *  Copyright 2026 Michael Büchner, Deutsche Nationalbibliothek
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *  
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *  
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ *  
+ *  This code was made with help from OpenAI GTP-6.1 Sol Ultra.
  */
+
 package de.ddb.apiv3.rdf;
 
-import com.apicatalog.jsonld.JsonLdError;
-import com.apicatalog.jsonld.JsonLdErrorCode;
-import com.apicatalog.jsonld.JsonLdOptions;
 import de.ddb.apiv3.storage.StorageException;
 import eu.neverblink.jelly.convert.jena.JenaConverterFactory;
 import eu.neverblink.jelly.convert.jena.riot.JellyLanguage;
@@ -29,27 +28,24 @@ import eu.neverblink.jelly.core.proto.v1.LogicalStreamType;
 import eu.neverblink.jelly.core.proto.v1.PhysicalStreamType;
 import eu.neverblink.jelly.core.proto.v1.RdfStreamFrame;
 import eu.neverblink.jelly.core.utils.IoUtils;
+import jakarta.json.spi.JsonProvider;
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import org.apache.jena.graph.Node;
 import org.apache.jena.graph.NodeFactory;
+import org.apache.jena.graph.Graph;
 import org.apache.jena.graph.Triple;
 import org.apache.jena.graph.GraphMemFactory;
 import org.apache.jena.riot.Lang;
 import org.apache.jena.riot.RDFLanguages;
 import org.apache.jena.riot.RDFParser;
-import org.apache.jena.riot.RDFWriter;
-import org.apache.jena.riot.RDFWriterRegistry;
 import org.apache.jena.riot.RiotException;
 import org.apache.jena.riot.system.ErrorHandlerFactory;
-import org.apache.jena.riot.system.StreamRDFBase;
-import org.apache.jena.riot.system.jsonld.TitaniumJsonLdOptions;
 import org.apache.jena.sparql.core.DatasetGraph;
 import org.apache.jena.sparql.core.DatasetGraphFactory;
 import org.apache.jena.sparql.core.Quad;
@@ -58,57 +54,54 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
 
-/** RIOT at the edges, Jelly in the bucket. Jena objects live only for one conversion. */
+/** RDF/XML in, three formats out, Jelly in the bucket. Graphs live for one conversion. */
 @Component
 public final class RdfCodec {
 
     public static final String JELLY_CONTENT_TYPE = "application/x-jelly-rdf";
+    private static final List<Lang> OUTPUT_LANGUAGES = List.of(
+            Lang.JSONLD, Lang.RDFXML, JellyLanguage.JELLY);
+    private static final List<MediaType> OUTPUT_MEDIA_TYPES;
+    private static final Comparator<MediaType> PRECEDENCE = Comparator.comparingInt(RdfCodec::specificity)
+            .thenComparingDouble(range -> range.getQualityValue());
 
-    public RdfCodec() {
+    static {
+        // JSON-P provider discovery per literal is costly inside an executable JAR.
+        System.getProperties().putIfAbsent(JsonProvider.JSONP_PROVIDER_FACTORY,
+                JsonProvider.provider().getClass().getName());
         JellyLanguage.register();
+
+        // Protocol metadata is immutable; graphs, parsers and writers remain request-local.
+        final var offeredTypes = new LinkedHashSet<MediaType>();
+        for (final Lang language : OUTPUT_LANGUAGES) {
+            offeredTypes.add(MediaType.parseMediaType(contentType(language)));
+            language.getAltContentTypes().forEach(type -> offeredTypes.add(MediaType.parseMediaType(type)));
+        }
+        OUTPUT_MEDIA_TYPES = List.copyOf(offeredTypes);
     }
 
-    /** Parses the complete upload and merges its triples into the requested canonical graph. */
-    public byte[] toJelly(byte[] source, String contentType, String baseIri) {
-        Lang language = inputLanguage(contentType);
-        DatasetGraph dataset = DatasetGraphFactory.createGeneral();
-        Node graphName = NodeFactory.createURI(baseIri);
-        dataset.addGraph(graphName, GraphMemFactory.createDefaultGraph());
+    /** Validates RDF/XML and stores all its triples under the canonical graph name. */
+    public byte[] toJelly(byte[] source, String baseIri) {
+        Graph graph = GraphMemFactory.createDefaultGraph();
         try {
             try {
                 RDFParser.create()
                         .source(new ByteArrayInputStream(source))
-                        .lang(language)
+                        .lang(Lang.RDFXML)
                         .base(baseIri)
                         .strict(true)
                         .checking(true)
-                        // JSON-LD is self-contained; resolving identifiers never fetches documents.
-                        .set(TitaniumJsonLdOptions.JSONLD_OPTIONS, localJsonLdOptions())
                         .errorHandler(ErrorHandlerFactory.errorHandlerStrictNoLogging)
-                        .parse(new StreamRDFBase() {
-                            @Override
-                            public void triple(Triple triple) {
-                                dataset.add(Quad.create(graphName, triple));
-                            }
-
-                            @Override
-                            public void quad(Quad quad) {
-                                triple(quad.asTriple());
-                            }
-
-                            @Override
-                            public void prefix(String prefix, String iri) {
-                                dataset.prefixes().add(prefix, iri);
-                            }
-                        });
+                        .parse(graph);
             } catch (RuntimeException exception) {
-                throw new InvalidRdfException(exception);
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT,
+                        "The request body is not valid RDF/XML", exception);
             }
 
             // TODO: SHACL ergänzen.
-            return encodeGraph(dataset, graphName);
+            return encodeGraph(graph, NodeFactory.createURI(baseIri));
         } finally {
-            dataset.close();
+            graph.close();
         }
     }
 
@@ -128,32 +121,23 @@ public final class RdfCodec {
                 throw new StorageException("The stored RDF object is not valid Jelly", exception);
             }
 
-            if (outputLanguage.equals(JellyLanguage.JELLY)) {
-                return jelly.clone();
-            }
-            ByteArrayOutputStream output = new ByteArrayOutputStream();
             try {
-                if (outputLanguage.equals(Lang.RDFJSON) && dataset.stream().anyMatch(quad ->
-                        quad.getSubject().isTripleTerm() || quad.getObject().isTripleTerm())) {
-                    // Jena's legacy RDF/JSON writer silently drops triple terms instead of failing.
-                    throw new RiotException("RDF/JSON cannot represent RDF triple terms");
-                }
-                if (RDFWriterRegistry.getWriterDatasetFactory(outputLanguage) != null) {
-                    RDFWriter.create().source(dataset).lang(outputLanguage).output(output);
-                } else {
-                    RDFWriter.create().source(dataset.getUnionGraph()).lang(outputLanguage).output(output);
-                }
+                return switch (contentType(outputLanguage)) {
+                    case "application/rdf+xml" -> RdfXmlRecordWriter.write(graphWithPrefixes(dataset));
+                    case "application/ld+json" -> JsonLdRecordWriter.write(dataset);
+                    case JELLY_CONTENT_TYPE -> jelly;
+                    default -> throw notAcceptable();
+                };
             } catch (RuntimeException exception) {
                 throw new ResponseStatusException(HttpStatus.NOT_ACCEPTABLE,
                         "The RDF object cannot be represented in the requested serialization", exception);
             }
-            return output.toByteArray();
         } finally {
             dataset.close();
         }
     }
 
-    /** Negotiates registered RDF writers, including quality factors and explicit q=0 exclusions. */
+    /** Negotiates three output formats; JSON-LD wins ties and wildcard requests. */
     public Lang outputLanguage(List<MediaType> accepted) {
         MediaType type = outputMediaType(accepted);
         return RDFLanguages.contentTypeToLang(type.getType() + "/" + type.getSubtype());
@@ -162,49 +146,19 @@ public final class RdfCodec {
     /** Keeps an accepted media-type alias on the response instead of replacing it with its canonical name. */
     public MediaType outputMediaType(List<MediaType> accepted) {
         List<MediaType> ranges = accepted == null || accepted.isEmpty() ? List.of(MediaType.ALL) : accepted;
-        List<Lang> languages = new ArrayList<>(RDFWriterRegistry.registeredLangs());
-        languages.removeIf(language -> !isOutputLanguage(language));
-        languages.sort(Comparator.comparing(language -> language.equals(Lang.TRIG) ? "" : contentType(language)));
-        var offeredTypes = new LinkedHashSet<MediaType>();
-        for (Lang language : languages) {
-            offeredTypes.add(MediaType.parseMediaType(contentType(language)));
-            language.getAltContentTypes().forEach(type -> offeredTypes.add(MediaType.parseMediaType(type)));
-        }
-
-        MediaType selected = null;
-        double quality = 0;
-        int specificity = -1;
-        int order = Integer.MAX_VALUE;
-        for (MediaType offered : offeredTypes) {
-            MediaType bestRange = null;
-            int bestSpecificity = -1;
-            int bestOrder = Integer.MAX_VALUE;
-            for (int index = 0; index < ranges.size(); index++) {
-                MediaType range = ranges.get(index);
-                int rank = specificity(range);
-                if (range.isCompatibleWith(offered) && supportedParameters(range) && (rank > bestSpecificity
-                        || rank == bestSpecificity && bestRange != null
-                                && range.getQualityValue() > bestRange.getQualityValue())) {
-                    bestRange = range;
-                    bestSpecificity = rank;
-                    bestOrder = index;
-                }
-            }
-            if (bestRange != null && bestRange.getQualityValue() > 0
-                    && (bestRange.getQualityValue() > quality
-                            || bestRange.getQualityValue() == quality && bestSpecificity > specificity
-                            || bestRange.getQualityValue() == quality && bestSpecificity == specificity
-                                    && bestOrder < order)) {
-                selected = bestRange.getCharset() == null ? offered : new MediaType(offered, StandardCharsets.UTF_8);
-                quality = bestRange.getQualityValue();
-                specificity = bestSpecificity;
-                order = bestOrder;
-            }
-        }
-        if (selected == null) {
-            throw notAcceptable();
-        }
-        return selected;
+        Comparator<MediaType> preference = Comparator.comparingDouble((MediaType range) -> range.getQualityValue())
+                .thenComparingInt(RdfCodec::specificity)
+                .thenComparingInt(range -> -ranges.indexOf(range));
+        return OUTPUT_MEDIA_TYPES.stream()
+                .flatMap(offered -> ranges.stream()
+                        .filter(range -> range.isCompatibleWith(offered) && supportedParameters(range))
+                        .max(PRECEDENCE)
+                        .filter(range -> range.getQualityValue() > 0)
+                        .map(range -> Map.entry(offered, range)).stream())
+                .max(Map.Entry.comparingByValue(preference))
+                .map(match -> match.getValue().getCharset() == null ? match.getKey()
+                        : new MediaType(match.getKey(), StandardCharsets.UTF_8))
+                .orElseThrow(RdfCodec::notAcceptable);
     }
 
     /** The canonical media type registered by the actual Jena writer. */
@@ -212,69 +166,49 @@ public final class RdfCodec {
         return language.getContentType().getContentTypeStr();
     }
 
-    private static Lang inputLanguage(String contentType) {
-        try {
-            MediaType type = MediaType.parseMediaType(contentType == null ? "" : contentType);
-            Lang language = RDFLanguages.contentTypeToLang(type.getType() + "/" + type.getSubtype());
-            if (!type.isWildcardType() && !type.isWildcardSubtype() && language != null
-                    && RDFLanguages.hasRegisteredParser(language) && isRdfLanguage(language)) {
-                return language;
-            }
-        } catch (IllegalArgumentException exception) {
-            throw new ResponseStatusException(HttpStatus.UNSUPPORTED_MEDIA_TYPE,
-                    "Content-Type must identify a registered Jena RDF parser", exception);
-        }
-        throw new ResponseStatusException(HttpStatus.UNSUPPORTED_MEDIA_TYPE,
-                "Content-Type must identify a registered Jena RDF parser");
-    }
-
     private static boolean isOutputLanguage(Lang language) {
-        return language != null && language.getContentType() != null && isRdfLanguage(language)
-                && (RDFWriterRegistry.getWriterGraphFactory(language) != null
-                        || RDFWriterRegistry.getWriterDatasetFactory(language) != null);
+        return language != null && OUTPUT_LANGUAGES.contains(language);
     }
 
-    private static boolean isRdfLanguage(Lang language) {
-        // RIOT's debug dumps and /dev/null writer are not RDF serializations.
-        return !language.equals(Lang.RDFNULL) && !language.equals(Lang.RDFRAW);
+    private static Graph graphWithPrefixes(DatasetGraph dataset) {
+        Graph graph = dataset.getGraph(dataset.listGraphNodes().next());
+        graph.getPrefixMapping().setNsPrefixes(dataset.prefixes().getMappingCopy());
+        return graph;
     }
 
-    private static JsonLdOptions localJsonLdOptions() {
-        return new JsonLdOptions((uri, options) -> {
-            throw new JsonLdError(JsonLdErrorCode.LOADING_REMOTE_CONTEXT_FAILED,
-                    "External JSON-LD contexts are disabled; include the context in the request body");
-        });
+    private static void addPrefix(DatasetGraph dataset, String prefix, String iri) {
+        // JSON-LD keywords are not namespace names and must never become context directives.
+        if (prefix.startsWith("@")) {
+            throw new RiotException("A namespace prefix must not start with @");
+        }
+        dataset.prefixes().add(prefix, iri);
     }
 
-    private static byte[] encodeGraph(DatasetGraph dataset, Node graphName) {
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-        RowBuffer rows = RowBuffer.newReusableForEncoder(256);
+    // RIOT's Jelly writer uses flat quads and loses empty graphs; keep explicit boundaries.
+    private static byte[] encodeGraph(Graph graph, Node graphName) {
+        RowBuffer rows = RowBuffer.newLazyImmutable();
         var options = JellyOptions.SMALL_ALL_FEATURES.clone()
                 .setPhysicalType(PhysicalStreamType.GRAPHS)
                 .setLogicalType(LogicalStreamType.NAMED_GRAPHS);
-        var encoder = JenaConverterFactory.getInstance().encoder(ProtoEncoder.Params.of(options, false, rows));
+        var encoder = JenaConverterFactory.getInstance().encoder(ProtoEncoder.Params.of(options, true, rows));
+        graph.getPrefixMapping().getNsPrefixMap()
+                .forEach((prefix, iri) -> encoder.handleNamespace(prefix, NodeFactory.createURI(iri)));
         encoder.handleGraphStart(graphName);
-        dataset.getGraph(graphName).find().forEachRemaining(triple -> {
-            encoder.handleTriple(triple.getSubject(), triple.getPredicate(), triple.getObject());
-            if (rows.size() >= 256) {
-                flushFrame(rows, output);
-            }
-        });
+        graph.find().forEachRemaining(triple ->
+                encoder.handleTriple(triple.getSubject(), triple.getPredicate(), triple.getObject()));
         encoder.handleGraphEnd();
-        flushFrame(rows, output);
-        return output.toByteArray();
-    }
-
-    private static void flushFrame(RowBuffer rows, ByteArrayOutputStream output) {
-        // Explicit graph boundaries survive even an empty upload. No outer compression, ever.
-        output.writeBytes(RdfStreamFrame.newInstance().setRows(rows).toByteArrayDelimited());
-        rows.clear();
+        return RdfStreamFrame.newInstance().setRows(rows).toByteArrayDelimited();
     }
 
     private static void decodeGraphs(byte[] jelly, DatasetGraph dataset) throws IOException {
-        class StoredGraphHandler implements RdfHandler.GraphHandler<Node> {
-            private Node currentGraph;
+        final class StoredGraphHandler implements RdfHandler.GraphHandler<Node> {
+            private Graph currentGraph;
             private int graphCount;
+
+            @Override
+            public void handleNamespace(String prefix, Node iri) {
+                addPrefix(dataset, prefix, iri.getURI());
+            }
 
             @Override
             public void handleGraphStart(Node graph) {
@@ -283,8 +217,8 @@ public final class RdfCodec {
                     throw new RiotException("Stored Jelly must contain exactly one named graph");
                 }
                 graphCount++;
-                currentGraph = graph;
-                dataset.addGraph(graph, GraphMemFactory.createDefaultGraph());
+                currentGraph = GraphMemFactory.createDefaultGraph();
+                dataset.addGraph(graph, currentGraph);
             }
 
             @Override
@@ -292,7 +226,7 @@ public final class RdfCodec {
                 if (currentGraph == null) {
                     throw new RiotException("A stored Jelly triple has no graph");
                 }
-                dataset.add(currentGraph, subject, predicate, object);
+                currentGraph.add(Triple.create(subject, predicate, object));
             }
 
             @Override
@@ -325,6 +259,6 @@ public final class RdfCodec {
 
     private static ResponseStatusException notAcceptable() {
         return new ResponseStatusException(HttpStatus.NOT_ACCEPTABLE,
-                "Accept must allow a registered Jena RDF serialization");
+                "Accept must allow JSON-LD, RDF/XML or Jelly-RDF");
     }
 }

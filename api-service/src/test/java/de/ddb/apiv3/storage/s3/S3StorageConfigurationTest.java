@@ -1,20 +1,20 @@
-/*
- * Copyright 2026 Michael Büchner, Deutsche Nationalbibliothek
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     https://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- * This code was generated with assistance from OpenAI ChatGPT.
+/* 
+ *  Copyright 2026 Michael Büchner, Deutsche Nationalbibliothek
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *  
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *  
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ *  
+ *  This code was made with help from OpenAI GTP-6.1 Sol Ultra.
  */
+
 package de.ddb.apiv3.storage.s3;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -28,13 +28,20 @@ import static org.mockito.Mockito.when;
 
 import de.ddb.apiv3.storage.StorageException;
 import com.sun.net.httpserver.HttpServer;
+import jakarta.validation.Validation;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.boot.health.contributor.Status;
 import software.amazon.awssdk.core.exception.SdkClientException;
@@ -46,11 +53,10 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
 class S3StorageConfigurationTest {
 
     private final S3Client client = mock(S3Client.class);
-    private final S3StorageConfiguration configuration = new S3StorageConfiguration();
 
     @Test
     void leavesBucketProvisioningToTheOperatorByDefault() throws Exception {
-        configuration.s3BucketInitializer(client, properties(false)).afterPropertiesSet();
+        S3StorageConfiguration.s3BucketInitializer(client, properties(false)).afterPropertiesSet();
 
         verifyNoInteractions(client);
     }
@@ -60,7 +66,7 @@ class S3StorageConfigurationTest {
         when(client.headBucket(any(HeadBucketRequest.class)))
                 .thenThrow(S3Exception.builder().statusCode(404).build());
 
-        configuration.s3BucketInitializer(client, properties(true)).afterPropertiesSet();
+        S3StorageConfiguration.s3BucketInitializer(client, properties(true)).afterPropertiesSet();
 
         var request = ArgumentCaptor.forClass(CreateBucketRequest.class);
         verify(client).createBucket(request.capture());
@@ -73,7 +79,7 @@ class S3StorageConfigurationTest {
         when(client.headBucket(any(HeadBucketRequest.class)))
                 .thenThrow(S3Exception.builder().statusCode(403).build());
 
-        assertThatThrownBy(() -> configuration.s3BucketInitializer(client, properties(true)).afterPropertiesSet())
+        assertThatThrownBy(() -> S3StorageConfiguration.s3BucketInitializer(client, properties(true)).afterPropertiesSet())
                 .isInstanceOf(StorageException.class);
         verify(client, never()).createBucket(any(CreateBucketRequest.class));
     }
@@ -83,7 +89,7 @@ class S3StorageConfigurationTest {
         when(client.headBucket(any(HeadBucketRequest.class)))
                 .thenThrow(SdkClientException.create("signed request with credential details"));
 
-        var health = configuration.s3StorageHealthIndicator(client, properties(false)).health();
+        var health = S3StorageConfiguration.s3StorageHealthIndicator(client, properties(false)).health();
 
         assertThat(health.getStatus()).isEqualTo(Status.DOWN);
         assertThat(health.getDetails()).isEmpty();
@@ -112,10 +118,10 @@ class S3StorageConfigurationTest {
         server.start();
         var properties = new S3StorageProperties(
                 URI.create("http://127.0.0.1:" + server.getAddress().getPort()),
-                "eu-central-1", "records", "test-access", "test-secret", true,
+                "eu-central-1", "records", "test-access", "test-secret", true, 50,
                 Duration.ofSeconds(1), Duration.ofSeconds(2), false);
-        try (S3Client actualClient = configuration.s3Client(properties,
-                configuration.s3CredentialsProvider(properties))) {
+        try (S3Client actualClient = S3StorageConfiguration.s3Client(properties,
+                S3StorageConfiguration.s3CredentialsProvider(properties))) {
             var repository = new S3RdfDocumentStore(actualClient, properties);
 
             assertThatThrownBy(() -> repository.create("J6KQ3UBFBEMGAHGR6ZUAQCUXOBKQCFO3", "record",
@@ -128,10 +134,59 @@ class S3StorageConfigurationTest {
     }
 
     @Test
+    void boundsWaitingForASaturatedConnectionPool() throws Exception {
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var requests = new AtomicInteger();
+        var serverExecutor = Executors.newVirtualThreadPerTaskExecutor();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.setExecutor(serverExecutor);
+        server.createContext("/", exchange -> {
+            try (exchange) {
+                if (requests.incrementAndGet() == 1) {
+                    entered.countDown();
+                    try {
+                        release.await(10, TimeUnit.SECONDS);
+                    } catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                        throw new IOException(exception);
+                    }
+                }
+                exchange.sendResponseHeaders(200, -1);
+            }
+        });
+        server.start();
+        var properties = new S3StorageProperties(
+                URI.create("http://127.0.0.1:" + server.getAddress().getPort()),
+                "eu-central-1", "records", "test-access", "test-secret", true, 1,
+                Duration.ofMillis(250), Duration.ofSeconds(5), false);
+        try (var actualClient = S3StorageConfiguration.s3Client(properties,
+                S3StorageConfiguration.s3CredentialsProvider(properties));
+                var calls = Executors.newVirtualThreadPerTaskExecutor()) {
+            var first = calls.submit(() -> actualClient.headBucket(request -> request.bucket("records")));
+            try {
+                assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+                long started = System.nanoTime();
+                assertThatThrownBy(() -> actualClient.headBucket(request -> request.bucket("records")))
+                        .isInstanceOf(SdkClientException.class);
+                assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofSeconds(2));
+                assertThat(requests).hasValue(1);
+            } finally {
+                release.countDown();
+            }
+            first.get(5, TimeUnit.SECONDS);
+        } finally {
+            release.countDown();
+            server.stop(0);
+            serverExecutor.close();
+        }
+    }
+
+    @Test
     void doesNotPrintSecretsEvenWhenTheEndpointIsInvalid() {
         var properties = new S3StorageProperties(
                 URI.create("http://user:uri-secret@localhost/?token=query-secret#fragment-secret"),
-                "eu-central-1", "records", "access-secret", "secret-secret", true,
+                "eu-central-1", "records", "access-secret", "secret-secret", true, 50,
                 Duration.ofSeconds(1), Duration.ofSeconds(2), false);
 
         assertThat(properties.toString()).doesNotContain(
@@ -139,8 +194,46 @@ class S3StorageConfigurationTest {
         assertThat(properties.isEndpointValid()).isFalse();
     }
 
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = {"PT0S", "-PT0.000000001S", "PT0.000000001S", "PT0.000999999S"})
+    void rejectsTimeoutsThatWouldDisableMillisecondBasedTransportLimits(String configured) {
+        Duration timeout = configured == null ? null : Duration.parse(configured);
+        var properties = new S3StorageProperties(URI.create("http://localhost:8333"), "eu-central-1", "records",
+                null, null, true, 50, timeout, timeout, false);
+
+        try (var factory = Validation.buildDefaultValidatorFactory()) {
+            assertThat(factory.getValidator().validate(properties))
+                    .extracting(violation -> violation.getPropertyPath().toString())
+                    .containsExactlyInAnyOrder("connectionTimeout", "readTimeout");
+        }
+    }
+
+    @Test
+    void acceptsTheSmallestSupportedTransportTimeout() {
+        var properties = new S3StorageProperties(URI.create("http://localhost:8333"), "eu-central-1", "records",
+                null, null, true, 50, Duration.ofMillis(1), Duration.ofMillis(1), false);
+
+        try (var factory = Validation.buildDefaultValidatorFactory()) {
+            assertThat(factory.getValidator().validate(properties)).isEmpty();
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, -1})
+    void rejectsNonPositiveConnectionPoolSizes(int maxConnections) {
+        var properties = new S3StorageProperties(URI.create("http://localhost:8333"), "eu-central-1", "records",
+                null, null, true, maxConnections, Duration.ofSeconds(1), Duration.ofSeconds(2), false);
+
+        try (var factory = Validation.buildDefaultValidatorFactory()) {
+            assertThat(factory.getValidator().validate(properties))
+                    .extracting(violation -> violation.getPropertyPath().toString())
+                    .containsExactly("maxConnections");
+        }
+    }
+
     private static S3StorageProperties properties(boolean createBucket) {
         return new S3StorageProperties(URI.create("http://127.0.0.1:8333"), "eu-central-1", "records",
-                "test-access", "test-secret", true, Duration.ofSeconds(1), Duration.ofSeconds(2), createBucket);
+                "test-access", "test-secret", true, 50, Duration.ofSeconds(1), Duration.ofSeconds(2), createBucket);
     }
 }
