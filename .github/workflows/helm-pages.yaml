@@ -63,6 +63,11 @@ jobs:
           docker buildx imagetools inspect "ghcr.io/$owner/ddb-api-v3-service:$image_tag"
           docker buildx imagetools inspect "ghcr.io/$owner/ddb-api-v3-gateway:$image_tag"
 
+      - name: Install ACL smoke-test dependency
+        run: |
+          python3 -m venv "$RUNNER_TEMP/acl-smoke"
+          "$RUNNER_TEMP/acl-smoke/bin/python" -m pip install --disable-pip-version-check PyYAML==6.0.3
+
       - name: Prepare published chart
         env:
           COMMIT_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
@@ -89,8 +94,8 @@ jobs:
           # in Chart.yaml. Dependency archives are not stored in this repo.
           helm dependency build "$chart_dir"
           helm dependency list "$chart_dir"
-          helm lint "$chart_dir" \
-            --set-string s3.accessKey=lint,s3.secretKey=lint
+          helm lint "$chart_dir" --strict
+          "$RUNNER_TEMP/acl-smoke/bin/python" .github/scripts/check-redis-acl.py "$chart_dir"
 
           # Stable SemVer: major.minor.(run * 1000 + attempt), no --devel needed.
           chart_version="$(helm show chart "$chart_dir" | awk '$1 == "version:" {print $2; exit}')"

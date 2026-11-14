@@ -2,7 +2,7 @@ The DDB API v3 has been installed.
 
 Public entry point:
 {{- if .Values.ingress.enabled }}
-  {{ if .Values.ingress.tlsSecretName }}https{{ else }}http{{ end }}://{{ .Values.ingress.host }}
+  https://{{ .Values.ingress.host }}
 {{- else if eq .Values.gateway.service.type "LoadBalancer" }}
   kubectl get service {{ include "ddb-api-v3.gatewayName" . }}
 {{- else }}
@@ -16,8 +16,9 @@ therefore be scaled independently.
 
 Redis Sentinel is available only inside the cluster as
 {{ include "ddb-api-v3.redisName" . }}:26379. The generated Redis password,
-its configuration Secrets, any chart-managed S3 Secret and all Redis PVCs are retained
+its configuration Secrets and all Redis PVCs are retained
 on uninstall. Container images are always pulled from their configured registries.
 
-Record data is stored in the external SeaweedFS S3 bucket
+Record data is stored in the external S3 bucket
 {{ .Values.s3.bucket }} at {{ .Values.s3.endpoint }}.
+S3 credentials come from the operator-managed Secret {{ .Values.s3.existingSecret }}.

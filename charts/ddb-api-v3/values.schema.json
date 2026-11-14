@@ -1,8 +1,46 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema#",
   "type": "object",
-  "required": ["images", "s3", "ingress", "apiService", "gateway", "redis"],
+  "required": ["images", "logging", "auth", "s3", "ingress", "apiService", "gateway", "redis"],
   "properties": {
+    "auth": {
+      "type": "object",
+      "required": ["issuerUri", "audience", "jwkSetUri"],
+      "additionalProperties": false,
+      "properties": {
+        "issuerUri": { "type": "string" },
+        "audience": { "type": "string" },
+        "jwkSetUri": { "type": "string" }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "issuerUri": { "const": "" },
+            "audience": { "const": "" },
+            "jwkSetUri": { "const": "" }
+          }
+        },
+        {
+          "properties": {
+            "issuerUri": { "pattern": "^https://[^/?#@\\s]+(?:/[^?#\\s]*)?$" },
+            "audience": { "pattern": "^\\S+$" },
+            "jwkSetUri": {
+              "oneOf": [
+                { "const": "" },
+                { "pattern": "^https://[^/?#@\\s]+(?:/[^?#\\s]*)?$" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "logging": {
+      "type": "object",
+      "required": ["accessEnabled"],
+      "properties": {
+        "accessEnabled": { "type": "boolean" }
+      }
+    },
     "images": {
       "type": "object",
       "required": ["apiService", "gateway", "pullPolicy"],
@@ -15,7 +53,8 @@
     },
     "s3": {
       "type": "object",
-      "required": ["endpoint", "region", "bucket", "pathStyleAccess", "connectionTimeout", "readTimeout", "createBucket", "existingSecret", "accessKey", "secretKey"],
+      "additionalProperties": false,
+      "required": ["endpoint", "region", "bucket", "pathStyleAccess", "connectionTimeout", "readTimeout", "maxConnections", "createBucket", "existingSecret"],
       "properties": {
         "endpoint": { "type": "string", "pattern": "^https?://[^/]+/?$" },
         "region": { "type": "string", "minLength": 1 },
@@ -23,10 +62,9 @@
         "pathStyleAccess": { "type": "boolean" },
         "connectionTimeout": { "type": "string", "minLength": 1 },
         "readTimeout": { "type": "string", "minLength": 1 },
+        "maxConnections": { "type": "integer", "minimum": 1 },
         "createBucket": { "type": "boolean" },
-        "existingSecret": { "type": "string" },
-        "accessKey": { "type": "string" },
-        "secretKey": { "type": "string" }
+        "existingSecret": { "type": "string", "minLength": 1 }
       }
     },
     "ingress": {
@@ -44,9 +82,25 @@
         { "$ref": "#/definitions/workload" },
         {
           "type": "object",
-          "required": ["baseUrl"],
+          "required": ["baseUrl", "concurrency"],
           "properties": {
-            "baseUrl": { "type": "string", "pattern": "^https?://[^/?#@]+/?$" }
+            "baseUrl": {
+              "description": "Explicit canonical HTTP(S) origin, or auto to use the request origin.",
+              "type": "string",
+              "oneOf": [
+                { "const": "auto" },
+                { "pattern": "^https?://[^/?#@]+/?$" }
+              ]
+            },
+            "concurrency": {
+              "type": "object",
+              "required": ["maxRequests", "maxQueuedRequests", "queueTimeout"],
+              "properties": {
+                "maxRequests": { "type": "integer", "minimum": 1 },
+                "maxQueuedRequests": { "type": "integer", "minimum": 0 },
+                "queueTimeout": { "type": "string", "minLength": 1 }
+              }
+            }
           }
         }
       ]
@@ -56,8 +110,9 @@
         { "$ref": "#/definitions/workload" },
         {
           "type": "object",
-          "required": ["service"],
+          "required": ["service", "maxConnections"],
           "properties": {
+            "maxConnections": { "type": "integer", "minimum": 1 },
             "service": {
               "type": "object",
               "required": ["type", "port"],
@@ -88,7 +143,7 @@
           "type": "object",
           "required": ["username", "secretName"],
           "properties": {
-            "username": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+            "username": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$", "not": { "enum": ["default", "replication", "sentinel-admin"] } },
             "secretName": { "type": "string", "minLength": 1 }
           }
         },
@@ -145,6 +200,7 @@
       "properties": {
         "replicaCount": { "type": "integer", "minimum": 1 },
         "extraEnv": { "type": "object", "additionalProperties": { "type": ["string", "number", "boolean"] } },
+        "resources": { "type": "object" },
         "autoscaling": {
           "type": "object",
           "required": ["enabled", "minReplicas", "maxReplicas", "targetCPUUtilizationPercentage"],
@@ -152,10 +208,37 @@
             "enabled": { "type": "boolean" },
             "minReplicas": { "type": "integer", "minimum": 1 },
             "maxReplicas": { "type": "integer", "minimum": 1 },
-            "targetCPUUtilizationPercentage": { "type": "integer", "minimum": 1, "maximum": 100 }
+            "targetCPUUtilizationPercentage": { "type": "integer", "minimum": 1 }
           }
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "autoscaling": { "properties": { "enabled": { "const": true } } } } },
+          "then": {
+            "properties": {
+              "resources": {
+                "required": ["requests"],
+                "properties": {
+                  "requests": {
+                    "type": "object",
+                    "required": ["cpu"],
+                    "properties": {
+                      "cpu": {
+                        "description": "CPU utilization HPA needs a positive CPU request.",
+                        "oneOf": [
+                          { "type": "number", "exclusiveMinimum": 0 },
+                          { "type": "string", "pattern": "^[+0-9.]*[1-9]" }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
     }
   }
 }

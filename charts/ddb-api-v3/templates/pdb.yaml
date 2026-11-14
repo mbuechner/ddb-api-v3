@@ -1,27 +1,17 @@
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: {{ include "ddb-api-v3.apiServiceName" . }}
-  labels:
-    {{- include "ddb-api-v3.labels" . | nindent 4 }}
-    app.kubernetes.io/component: api-service
-spec:
-  minAvailable: 1
-  selector:
-    matchLabels:
-      {{- include "ddb-api-v3.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: api-service
+{{- range $role, $component := dict "apiService" "api-service" "gateway" "gateway" }}
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: {{ include "ddb-api-v3.gatewayName" . }}
+  name: {{ include (ternary "ddb-api-v3.apiServiceName" "ddb-api-v3.gatewayName" (eq $role "apiService")) $ }}
   labels:
-    {{- include "ddb-api-v3.labels" . | nindent 4 }}
-    app.kubernetes.io/component: gateway
+    {{- include "ddb-api-v3.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
 spec:
-  minAvailable: 1
+  # At most one pod may be unavailable; use >=2 replicas to survive a drain.
+  maxUnavailable: 1
   selector:
     matchLabels:
-      {{- include "ddb-api-v3.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: gateway
+      {{- include "ddb-api-v3.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: {{ $component }}
+{{- end }}

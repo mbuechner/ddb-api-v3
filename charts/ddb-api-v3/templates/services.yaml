@@ -1,0 +1,27 @@
+{{- range $role, $component := dict "apiService" "api-service" "gateway" "gateway" }}
+{{- $api := eq $role "apiService" }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include (ternary "ddb-api-v3.apiServiceName" "ddb-api-v3.gatewayName" $api) $ }}
+  labels:
+    {{- include "ddb-api-v3.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+  {{- if not $api }}
+  {{- with $.Values.gateway.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- end }}
+spec:
+  type: {{ ternary "ClusterIP" $.Values.gateway.service.type $api }}
+  ports:
+    - name: http
+      port: {{ ternary 8080 $.Values.gateway.service.port $api }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "ddb-api-v3.selectorLabels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+{{- end }}

@@ -6,11 +6,23 @@ metadata:
     {{- include "ddb-api-v3.labels" . | nindent 4 }}
 data:
   APP_PROFILE: prod
+  OAUTH2_ISSUER_URI: {{ .Values.auth.issuerUri | quote }}
+  OAUTH2_AUDIENCE: {{ .Values.auth.audience | quote }}
+  OAUTH2_JWK_SET_URI: {{ .Values.auth.jwkSetUri | quote }}
   SERVER_PORT: "8080"
   GATEWAY_PORT: "8081"
+  # Explicitly opt in per application only behind a header-sanitizing trusted proxy.
+  SERVER_FORWARD_HEADERS_STRATEGY: none
+  LOGGING_STRUCTURED_FORMAT_CONSOLE: ecs
+  DDB_ACCESS_LOG_ENABLED: {{ .Values.logging.accessEnabled | quote }}
+  LOGGING_LEVEL_DE_DDB_APIV3_ACCESS: INFO
+  GATEWAY_HTTP_MAX_CONNECTIONS: {{ .Values.gateway.maxConnections | quote }}
   API_SERVICE_URI: {{ printf "http://%s:8080" (include "ddb-api-v3.apiServiceName" .) | quote }}
   DDB_API_BASE_URL: {{ .Values.apiService.baseUrl | quote }}
   DDB_API_UPLOAD_MAX_FILE_SIZE: 1MB
+  DDB_API_MAX_CONCURRENT_REQUESTS: {{ .Values.apiService.concurrency.maxRequests | quote }}
+  DDB_API_MAX_QUEUED_REQUESTS: {{ .Values.apiService.concurrency.maxQueuedRequests | quote }}
+  DDB_API_QUEUE_TIMEOUT: {{ .Values.apiService.concurrency.queueTimeout | quote }}
   DDB_API_COMPRESSION_ENABLED: "true"
   DDB_API_COMPRESSION_MIN_RESPONSE_SIZE: 1KB
   S3_ENDPOINT: {{ required "s3.endpoint is required" .Values.s3.endpoint | quote }}
@@ -19,6 +31,7 @@ data:
   S3_PATH_STYLE_ACCESS: {{ .Values.s3.pathStyleAccess | quote }}
   S3_CONNECTION_TIMEOUT: {{ .Values.s3.connectionTimeout | quote }}
   S3_READ_TIMEOUT: {{ .Values.s3.readTimeout | quote }}
+  S3_MAX_CONNECTIONS: {{ .Values.s3.maxConnections | quote }}
   S3_CREATE_BUCKET: {{ .Values.s3.createBucket | quote }}
   # Spring Boot prefers the Sentinel settings below over this fallback address.
   REDIS_HOST: {{ include "ddb-api-v3.redisName" . | quote }}
@@ -26,6 +39,7 @@ data:
   REDIS_USERNAME: {{ required "redis.auth.username is required" .Values.redis.auth.username | quote }}
   SPRING_DATA_REDIS_SENTINEL_MASTER: {{ .Values.redis.haMode.masterGroupName | quote }}
   SPRING_DATA_REDIS_SENTINEL_NODES: {{ printf "%s:26379" (include "ddb-api-v3.redisName" .) | quote }}
+  SPRING_DATA_REDIS_SENTINEL_USERNAME: {{ .Values.redis.auth.username | quote }}
   REDIS_TLS_ENABLED: "false"
   REDIS_CONNECT_TIMEOUT: 500ms
   REDIS_COMMAND_TIMEOUT: 500ms
@@ -35,4 +49,4 @@ data:
   RATE_LIMIT_REQUESTED_TOKENS: "1"
   CLIENT_ID_HEADER_ENABLED: "false"
   CLIENT_ID_HEADER_NAME: X-Client-Id
-  ANONYMOUS_RATE_LIMIT_BY_REMOTE_ADDRESS: "false"
+  ANONYMOUS_RATE_LIMIT_BY_REMOTE_ADDRESS: "true"

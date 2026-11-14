@@ -13,22 +13,30 @@ images:
   pullPolicy: Always
   pullSecrets: []
 
+# Both applications write ECS JSON to stdout. Collect centrally with the cluster log agent.
+logging:
+  accessEnabled: true
+
+# External OAuth2/OIDC issuer. All empty keeps writes locked; GET remains public.
+# No development bearer token is accepted by the production profile.
+auth:
+  issuerUri: ""
+  audience: ""
+  # Optional override; otherwise Spring discovers the issuer's public-key endpoint.
+  jwkSetUri: ""
+
 s3:
-  endpoint: https://seaweedfs.example.internal:8333
+  endpoint: https://s3.example.internal
   region: eu-central-1
   bucket: ddb-records
   pathStyleAccess: true
   connectionTimeout: 2s
   readTimeout: 10s
+  maxConnections: 50
   # Production buckets are provisioned by the storage operator.
   createBucket: false
-  # Use an existing Secret with S3_ACCESS_KEY and S3_SECRET_KEY to manage
-  # credentials outside Helm. Leave empty to generate a retained Secret.
-  existingSecret: ""
-  # Used when existingSecret is empty. Updating both values rotates the Secret
-  # and rolls the API pods; Helm release values also contain these credentials.
-  accessKey: ""
-  secretKey: ""
+  # Operator-managed Secret with S3_ACCESS_KEY and S3_SECRET_KEY; never put credentials in values.
+  existingSecret: ddb-api-v3-s3
 
 ingress:
   enabled: true
@@ -36,15 +44,21 @@ ingress:
   className: ""
   host: api.example.org
   annotations: {}
+  # Empty selects the ingress controller's default TLS certificate.
   tlsSecretName: ""
 
 apiService:
   # Canonical origin for RDF graph names, independent of ingress.host.
   baseUrl: https://api.deutsche-digitale-bibliothek.de
   replicaCount: 3
+  # Bound work and the queue per pod; increase only with measured CPU/heap headroom.
+  concurrency:
+    maxRequests: 32
+    maxQueuedRequests: 64
+    queueTimeout: 1s
   resources:
     requests: { cpu: 250m, memory: 512Mi }
-    limits: { memory: 1Gi }
+    limits: { memory: 1Gi, ephemeral-storage: 64Mi }
   autoscaling:
     enabled: false
     minReplicas: 2
@@ -54,13 +68,15 @@ apiService:
 
 gateway:
   replicaCount: 2
+  # Shared upstream pool per gateway pod, not per downstream API pod.
+  maxConnections: 256
   service:
     type: ClusterIP
     port: 80
     annotations: {}
   resources:
     requests: { cpu: 100m, memory: 256Mi }
-    limits: { memory: 512Mi }
+    limits: { memory: 512Mi, ephemeral-storage: 64Mi }
   autoscaling:
     enabled: false
     minReplicas: 2
@@ -110,37 +126,24 @@ redis:
     maxmemory-policy noeviction
   extraSecretRedisConfigs: ddb-api-v3-redis-server-config
   extraSecretSentinelConfigs: ddb-api-v3-redis-sentinel-config
-  customStartupProbe:
+  customStartupProbe: &redisProbe
     exec:
       command:
         - sh
         - -c
         - >-
-          password="$(awk '/^requirepass / {print $2; exit}' /data/conf/sentinel.conf)" &&
-          REDISCLI_AUTH="$password" redis-cli -p 26379 ping | grep -q PONG &&
-          REDISCLI_AUTH="$password" redis-cli --user replication -p 6379 ping | grep -q PONG
+          sentinel_password="$(awk '/^sentinel sentinel-pass / {print $3; exit}' /data/conf/sentinel.conf)" &&
+          replication_password="$(awk '/^sentinel auth-pass / {print $4; exit}' /data/conf/sentinel.conf)" &&
+          REDISCLI_AUTH="$sentinel_password" redis-cli --user sentinel-admin -p 26379 ping | grep -q PONG &&
+          REDISCLI_AUTH="$replication_password" redis-cli --user replication -p 6379 ping | grep -q PONG
     periodSeconds: 5
     failureThreshold: 30
   customLivenessProbe:
-    exec:
-      command:
-        - sh
-        - -c
-        - >-
-          password="$(awk '/^requirepass / {print $2; exit}' /data/conf/sentinel.conf)" &&
-          REDISCLI_AUTH="$password" redis-cli -p 26379 ping | grep -q PONG &&
-          REDISCLI_AUTH="$password" redis-cli --user replication -p 6379 ping | grep -q PONG
+    <<: *redisProbe
     periodSeconds: 10
     failureThreshold: 3
   customReadinessProbe:
-    exec:
-      command:
-        - sh
-        - -c
-        - >-
-          password="$(awk '/^requirepass / {print $2; exit}' /data/conf/sentinel.conf)" &&
-          REDISCLI_AUTH="$password" redis-cli -p 26379 ping | grep -q PONG &&
-          REDISCLI_AUTH="$password" redis-cli --user replication -p 6379 ping | grep -q PONG
+    <<: *redisProbe
     periodSeconds: 5
     failureThreshold: 3
   haMode:
