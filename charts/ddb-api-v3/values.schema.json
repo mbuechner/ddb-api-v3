@@ -1,18 +1,28 @@
 {
-  "$schema": "https://json-schema.org/draft-07/schema#",
+  "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
   "required": ["appProfile", "images", "logging", "auth", "s3", "ingress", "apiService", "gateway", "redis"],
-  "allOf": [
-    {
-      "if": { "properties": { "auth": { "properties": { "devWriteTokenSecret": { "minLength": 1 } } } } },
-      "then": {
+  "if": {
+    "properties": {
+      "auth": {
         "properties": {
-          "appProfile": { "const": "dev" },
-          "auth": { "properties": { "issuerUri": { "const": "" }, "audience": { "const": "" }, "jwkSetUri": { "const": "" } } }
+          "devWriteTokenSecret": {"minLength": 1}
         }
       }
     }
-  ],
+  },
+  "then": {
+    "properties": {
+      "appProfile": { "type": "string", "const": "dev" },
+      "auth": {
+        "properties": {
+          "issuerUri": { "type": "string", "const": "" },
+          "audience": { "type": "string", "const": "" },
+          "jwkSetUri": { "type": "string", "const": "" }
+        }
+      }
+    }
+  },
   "properties": {
     "appProfile": {
       "description": "APP_PROFILE: prod uses shared Redis quotas and verified JWTs; dev uses local quotas and optionally a development token Secret.",
@@ -25,32 +35,29 @@
       "required": ["issuerUri", "audience", "jwkSetUri", "devWriteTokenSecret"],
       "additionalProperties": false,
       "properties": {
-        "issuerUri": { "type": "string", "description": "OAUTH2_ISSUER_URI: trusted OAuth2/OIDC issuer; requires audience." },
-        "audience": { "type": "string", "description": "OAUTH2_AUDIENCE: expected API audience; requires issuerUri." },
-        "jwkSetUri": { "type": "string", "description": "OAUTH2_JWK_SET_URI: optional public-key endpoint; otherwise issuer discovery is used." },
-        "devWriteTokenSecret": { "type": "string", "description": "Existing Secret with key DDB_DEV_WRITE_TOKEN, injected into API and gateway. Only appProfile=dev with empty JWT settings; never put the token value in values.yaml." }
+        "issuerUri": {"type": "string", "description": "OAUTH2_ISSUER_URI: trusted OAuth2/OIDC issuer; requires audience."},
+        "audience": {"type": "string", "description": "OAUTH2_AUDIENCE: expected API audience; requires issuerUri."},
+        "jwkSetUri": {"type": "string", "description": "OAUTH2_JWK_SET_URI: optional public-key endpoint; otherwise issuer discovery is used."},
+        "devWriteTokenSecret": {"type": "string", "description": "Existing Secret with key DDB_DEV_WRITE_TOKEN, injected into API and gateway. Only appProfile=dev with empty JWT settings; never put the token value in values.yaml."}
       },
-      "oneOf": [
-        {
-          "properties": {
-            "issuerUri": { "const": "" },
-            "audience": { "const": "" },
-            "jwkSetUri": { "const": "" }
-          }
-        },
-        {
-          "properties": {
-            "issuerUri": { "pattern": "^https://[^/?#@\\s]+(?:/[^?#\\s]*)?$" },
-            "audience": { "pattern": "^\\S+$" },
-            "jwkSetUri": {
-              "oneOf": [
-                { "const": "" },
-                { "pattern": "^https://[^/?#@\\s]+(?:/[^?#\\s]*)?$" }
-              ]
-            }
-          }
+      "if": {
+        "properties": {
+          "issuerUri": {"type": "string", "const": ""}
         }
-      ]
+      },
+      "then": {
+        "properties": {
+          "audience": {"type": "string", "const": ""},
+          "jwkSetUri": {"type": "string", "const": ""}
+        }
+      },
+      "else": {
+        "properties": {
+          "issuerUri": {"type": "string", "pattern": "^https://[^/?#@\\s]+(?:/[^?#\\s]*)?$"},
+          "audience": {"type": "string", "pattern": "^\\S+$"},
+          "jwkSetUri": {"type": "string", "pattern": "^(?:https://[^/?#@\\s]+(?:/[^?#\\s]*)?)?$"}
+        }
+      }
     },
     "logging": {
       "type": "object",
@@ -65,8 +72,8 @@
       "properties": {
         "apiService": { "$ref": "#/definitions/image" },
         "gateway": { "$ref": "#/definitions/image" },
-        "pullPolicy": { "const": "Always" },
-        "pullSecrets": { "type": "array" }
+        "pullPolicy": { "type": "string", "const": "Always" },
+        "pullSecrets": { "type": "array", "items": { "type": "object", "required": ["name"], "properties": { "name": { "type": "string", "minLength": 1 } } } }
       }
     },
     "s3": {
@@ -105,70 +112,67 @@
       }
     },
     "apiService": {
-      "allOf": [
-        { "$ref": "#/definitions/workload" },
-        {
+      "type": "object",
+      "required": ["replicaCount", "autoscaling", "resources", "forwardHeadersStrategy", "baseUrl", "maxDocumentSize", "concurrency"],
+      "properties": {
+        "replicaCount": {"$ref": "#/definitions/workload/properties/replicaCount"},
+        "forwardHeadersStrategy": {"$ref": "#/definitions/workload/properties/forwardHeadersStrategy"},
+        "extraEnv": {"$ref": "#/definitions/workload/properties/extraEnv"},
+        "resources": {"$ref": "#/definitions/workload/properties/resources"},
+        "autoscaling": {"$ref": "#/definitions/workload/properties/autoscaling"},
+        "baseUrl": {"description": "DDB_API_BASE_URL: canonical HTTP(S) origin for RDF IRIs, or auto to use the request origin.", "type": "string", "pattern": "^(?:auto|https?://[^/?#@]+/?)$"},
+        "maxDocumentSize": {"type": "string", "minLength": 1, "description": "DDB_API_UPLOAD_MAX_FILE_SIZE: maximum decompressed RDF/XML body size, for example 1MB."},
+        "concurrency": {
           "type": "object",
-          "required": ["baseUrl", "maxDocumentSize", "concurrency"],
+          "required": ["maxRequests", "maxQueuedRequests", "queueTimeout"],
           "properties": {
-            "baseUrl": {
-              "description": "DDB_API_BASE_URL: canonical HTTP(S) origin for RDF IRIs, or auto to use the request origin.",
-              "type": "string",
-              "oneOf": [
-                { "const": "auto" },
-                { "pattern": "^https?://[^/?#@]+/?$" }
-              ]
-            },
-            "maxDocumentSize": { "type": "string", "minLength": 1, "description": "DDB_API_UPLOAD_MAX_FILE_SIZE: maximum decompressed RDF/XML body size, for example 1MB." },
-            "concurrency": {
-              "type": "object",
-              "required": ["maxRequests", "maxQueuedRequests", "queueTimeout"],
-              "properties": {
-                "maxRequests": { "type": "integer", "minimum": 1 },
-                "maxQueuedRequests": { "type": "integer", "minimum": 0 },
-                "queueTimeout": { "type": "string", "minLength": 1 }
-              }
-            }
+            "maxRequests": {"type": "integer", "minimum": 1},
+            "maxQueuedRequests": {"type": "integer", "minimum": 0},
+            "queueTimeout": {"type": "string", "minLength": 1}
           }
         }
-      ]
+      },
+      "if": {"$ref": "#/definitions/workload/if"},
+      "then": {"$ref": "#/definitions/workload/then"}
     },
     "gateway": {
-      "allOf": [
-        { "$ref": "#/definitions/workload" },
-        {
+      "type": "object",
+      "required": ["replicaCount", "autoscaling", "resources", "forwardHeadersStrategy", "service", "maxConnections", "rateLimit"],
+      "properties": {
+        "replicaCount": {"$ref": "#/definitions/workload/properties/replicaCount"},
+        "forwardHeadersStrategy": {"$ref": "#/definitions/workload/properties/forwardHeadersStrategy"},
+        "extraEnv": {"$ref": "#/definitions/workload/properties/extraEnv"},
+        "resources": {"$ref": "#/definitions/workload/properties/resources"},
+        "autoscaling": {"$ref": "#/definitions/workload/properties/autoscaling"},
+        "maxConnections": {"type": "integer", "minimum": 1, "description": "GATEWAY_HTTP_MAX_CONNECTIONS: upstream connection pool per gateway pod."},
+        "rateLimit": {
           "type": "object",
-          "required": ["service", "maxConnections", "rateLimit"],
+          "additionalProperties": false,
+          "required": ["capacity", "refillTokens", "refillPeriod", "requestedTokens"],
           "properties": {
-            "maxConnections": { "type": "integer", "minimum": 1, "description": "GATEWAY_HTTP_MAX_CONNECTIONS: upstream connection pool per gateway pod." },
-            "rateLimit": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["capacity", "refillTokens", "refillPeriod", "requestedTokens"],
-              "properties": {
-                "capacity": { "type": "integer", "minimum": 1, "description": "RATE_LIMIT_BURST_CAPACITY: maximum tokens per client bucket." },
-                "refillTokens": { "type": "integer", "minimum": 1, "description": "RATE_LIMIT_REPLENISH_RATE: tokens added each refill period." },
-                "refillPeriod": { "type": "string", "minLength": 1, "description": "RATE_LIMIT_REFILL_PERIOD: refill duration, for example 1s." },
-                "requestedTokens": { "type": "integer", "minimum": 1, "description": "RATE_LIMIT_REQUESTED_TOKENS: token cost of one request." }
-              }
-            },
-            "service": {
-              "type": "object",
-              "required": ["type", "port"],
-              "properties": {
-                "type": { "type": "string", "enum": ["ClusterIP", "LoadBalancer", "NodePort"] },
-                "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
-              }
-            }
+            "capacity": {"type": "integer", "minimum": 1, "description": "RATE_LIMIT_BURST_CAPACITY: maximum tokens per client bucket."},
+            "refillTokens": {"type": "integer", "minimum": 1, "description": "RATE_LIMIT_REPLENISH_RATE: tokens added each refill period."},
+            "refillPeriod": {"type": "string", "minLength": 1, "description": "RATE_LIMIT_REFILL_PERIOD: refill duration, for example 1s."},
+            "requestedTokens": {"type": "integer", "minimum": 1, "description": "RATE_LIMIT_REQUESTED_TOKENS: token cost of one request."}
+          }
+        },
+        "service": {
+          "type": "object",
+          "required": ["type", "port"],
+          "properties": {
+            "type": {"type": "string", "enum": ["ClusterIP", "LoadBalancer", "NodePort"]},
+            "port": {"type": "integer", "minimum": 1, "maximum": 65535}
           }
         }
-      ]
+      },
+      "if": {"$ref": "#/definitions/workload/if"},
+      "then": {"$ref": "#/definitions/workload/then"}
     },
     "redis": {
       "type": "object",
       "required": ["image", "auth", "serviceAccount", "extraSecretRedisConfigs", "extraSecretSentinelConfigs", "haMode", "storage", "useDeploymentWhenNonHA"],
       "properties": {
-        "useDeploymentWhenNonHA": { "const": false },
+        "useDeploymentWhenNonHA": { "type": "boolean", "const": false },
         "image": {
           "type": "object",
           "required": ["registry", "repository", "tag", "pullPolicy"],
@@ -176,7 +180,7 @@
             "registry": { "type": "string", "minLength": 1 },
             "repository": { "type": "string", "minLength": 1 },
             "tag": { "type": "string", "minLength": 1 },
-            "pullPolicy": { "const": "Always" }
+            "pullPolicy": { "type": "string", "const": "Always" }
           }
         },
         "auth": {
@@ -191,7 +195,7 @@
           "type": "object",
           "required": ["create", "name"],
           "properties": {
-            "create": { "const": false },
+            "create": { "type": "boolean", "const": false },
             "name": { "type": "string", "minLength": 1 }
           }
         },
@@ -201,22 +205,22 @@
           "type": "object",
           "required": ["enabled", "masterGroupName", "replicas", "quorum"],
           "properties": {
-            "enabled": { "type": "boolean" },
-            "masterGroupName": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+$" },
-            "replicas": { "type": "integer", "minimum": 1 },
-            "quorum": { "type": "integer", "minimum": 1 }
+            "enabled": {"type": "boolean"},
+            "masterGroupName": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+$"},
+            "replicas": {"type": "integer", "minimum": 1},
+            "quorum": {"type": "integer", "minimum": 1}
           },
-          "allOf": [
-            {
-              "if": { "properties": { "enabled": { "const": true } } },
-              "then": {
-                "properties": {
-                  "replicas": { "minimum": 3 },
-                  "quorum": { "minimum": 2 }
-                }
-              }
+          "if": {
+            "properties": {
+              "enabled": { "type": "boolean", "const": true }
             }
-          ]
+          },
+          "then": {
+            "properties": {
+              "replicas": {"minimum": 3},
+              "quorum": {"minimum": 2}
+            }
+          }
         },
         "storage": {
           "type": "object",
@@ -227,8 +231,8 @@
               "type": "object",
               "required": ["whenScaled", "whenDeleted"],
               "properties": {
-                "whenScaled": { "const": "Retain" },
-                "whenDeleted": { "const": "Retain" }
+                "whenScaled": { "type": "string", "const": "Retain" },
+                "whenDeleted": { "type": "string", "const": "Retain" }
               }
             }
           }
@@ -249,48 +253,56 @@
       "type": "object",
       "required": ["replicaCount", "autoscaling", "resources", "forwardHeadersStrategy"],
       "properties": {
-        "replicaCount": { "type": "integer", "minimum": 1 },
-        "forwardHeadersStrategy": { "type": "string", "enum": ["none", "native", "framework"], "description": "SERVER_FORWARD_HEADERS_STRATEGY for this pod. Enable only behind a trusted proxy that sanitizes forwarded headers." },
-        "extraEnv": { "type": "object", "description": "Additional native Spring environment overrides for this workload, for example JAVA_TOOL_OPTIONS. Keep credentials in Secrets.", "additionalProperties": { "type": ["string", "number", "boolean"] } },
-        "resources": { "type": "object" },
+        "replicaCount": {"type": "integer", "minimum": 1},
+        "forwardHeadersStrategy": {"type": "string", "enum": ["none", "native", "framework"], "description": "SERVER_FORWARD_HEADERS_STRATEGY for this pod. Enable only behind a trusted proxy that sanitizes forwarded headers."},
+        "extraEnv": {
+          "type": "object",
+          "description": "Additional native Spring environment overrides for this workload, for example JAVA_TOOL_OPTIONS. Keep credentials in Secrets.",
+          "additionalProperties": {"type": ["string", "number", "boolean"]}
+        },
+        "resources": {"type": "object"},
         "autoscaling": {
           "type": "object",
           "required": ["enabled", "minReplicas", "maxReplicas", "targetCPUUtilizationPercentage"],
           "properties": {
-            "enabled": { "type": "boolean" },
-            "minReplicas": { "type": "integer", "minimum": 1 },
-            "maxReplicas": { "type": "integer", "minimum": 1 },
-            "targetCPUUtilizationPercentage": { "type": "integer", "minimum": 1 }
+            "enabled": {"type": "boolean"},
+            "minReplicas": {"type": "integer", "minimum": 1},
+            "maxReplicas": {"type": "integer", "minimum": 1},
+            "targetCPUUtilizationPercentage": {"type": "integer", "minimum": 1}
           }
         }
       },
-      "allOf": [
-        {
-          "if": { "properties": { "autoscaling": { "properties": { "enabled": { "const": true } } } } },
-          "then": {
+      "if": {
+        "properties": {
+          "autoscaling": {
             "properties": {
-              "resources": {
-                "required": ["requests"],
+              "enabled": { "type": "boolean", "const": true }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "resources": {
+            "required": ["requests"],
+            "properties": {
+              "requests": {
+                "type": "object",
+                "required": ["cpu"],
                 "properties": {
-                  "requests": {
-                    "type": "object",
-                    "required": ["cpu"],
-                    "properties": {
-                      "cpu": {
-                        "description": "CPU utilization HPA needs a positive CPU request.",
-                        "oneOf": [
-                          { "type": "number", "exclusiveMinimum": 0 },
-                          { "type": "string", "pattern": "^[+0-9.]*[1-9]" }
-                        ]
-                      }
-                    }
+                  "cpu": {
+                    "description": "CPU utilization HPA needs a positive CPU request.",
+                    "oneOf": [
+                      {"type": "number", "exclusiveMinimum": 0},
+                      {"type": "string", "pattern": "^[+0-9.]*[1-9]"}
+                    ]
                   }
                 }
               }
             }
           }
         }
-      ]
+      }
     }
   }
 }
