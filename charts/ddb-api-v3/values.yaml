@@ -101,7 +101,7 @@ gateway:
     requestedTokens: 1
   service:
     type: ClusterIP
-    port: 80
+    port: 8081
     annotations: {}
   resources:
     requests:

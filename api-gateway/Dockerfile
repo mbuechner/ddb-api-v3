@@ -5,8 +5,9 @@ COPY src ./src
 RUN mvn --batch-mode clean package
 
 FROM eclipse-temurin:25-jre
-# Netty also needs native memory; avoid a fixed -Xmx that defeats vertical scaling.
-ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=60.0 -XX:+ExitOnOutOfMemoryError"
+# Netty loads native transport libraries from the classpath; authorize that on Java 25.
+# Leave headroom for native memory instead of fixing -Xmx.
+ENV JAVA_TOOL_OPTIONS="--enable-native-access=ALL-UNNAMED -XX:MaxRAMPercentage=60.0 -XX:+ExitOnOutOfMemoryError"
 LABEL org.opencontainers.image.title="DDB API v3 Gateway" \
       org.opencontainers.image.authors="Michael Büchner <m.buechner@dnb.de>" \
       org.opencontainers.image.source="https://github.com/mbuechner/ddb-api-v3"

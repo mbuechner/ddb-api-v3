@@ -182,7 +182,7 @@
           "required": ["type", "port"],
           "properties": {
             "type": {"type": "string", "enum": ["ClusterIP", "LoadBalancer", "NodePort"], "description": "ClusterIP f\u00fcr den internen Ingress-Zugriff; andere Typen nur f\u00fcr einen bewusst extern verwalteten Einstiegspunkt."},
-            "port": {"type": "integer", "minimum": 1, "maximum": 65535, "description": "Port des Gateway-Service; der Container lauscht unabh\u00e4ngig davon auf 8081."}
+            "port": {"type": "integer", "minimum": 1, "maximum": 65535, "description": "Port des Gateway-Service; Standard 8081 wie der Container-Port. Ein abweichender Service-Port wird auf den Container-Port 8081 weitergeleitet."}
           }
         }
       },

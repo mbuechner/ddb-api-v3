@@ -85,6 +85,19 @@ berechnen, API-Logs getrennt für die Backend-Performance auswerten:
 [Logging und Statistiken](logging.md). Daten und Log-Backend werden nicht
 im API-Prozess zwischengespeichert oder betrieben.
 
+### Gateway-Startmeldungen
+
+`Picked up JAVA_TOOL_OPTIONS` ist eine JVM-Startinformation. Das Gateway-Image
+erlaubt Nettys nativen Classpath-Zugriff mit `--enable-native-access=ALL-UNNAMED`.
+Beim Ersetzen von `JAVA_TOOL_OPTIONS` diese Option zusammen mit den gewünschten
+Heap-Einstellungen beibehalten.
+
+Spring Cloud kann beim Start `not eligible for getting processed by all
+BeanPostProcessors` für früh erzeugte Framework-Konfigurationen melden.
+`HV000271` betrifft veraltete `@Valid`-Annotationen auf Gateway-Listen;
+deren Kaskadenvalidierung ist weiterhin aktiv. Diese Framework-Meldungen
+verhindern den Start im geprüften Setup nicht. Sie bleiben sichtbar.
+
 ## Container und Releases
 
 Die Module haben eigene mehrstufige Dockerfiles. Sie bauen mit Maven und
