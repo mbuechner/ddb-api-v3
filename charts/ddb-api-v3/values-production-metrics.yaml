@@ -1,0 +1,13 @@
+# Apply after values-production.yaml: HA Redis plus its Prometheus exporter.
+redis:
+  haMode:
+    enabled: true
+  metrics:
+    enabled: true
+  # All four paths must exist: a stale optional-container path aborts OpenShift updates.
+  customAnnotations:
+    image.openshift.io/triggers: >-
+      [{"from":{"kind":"ImageStreamTag","name":"ddb-api-v3-redis:latest"},"fieldPath":"spec.template.spec.initContainers[?(@.name==\"redis-init\")].image","paused":false},
+      {"from":{"kind":"ImageStreamTag","name":"ddb-api-v3-redis:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"redis-server\")].image","paused":false},
+      {"from":{"kind":"ImageStreamTag","name":"ddb-api-v3-redis:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"redis-sentinel\")].image","paused":false},
+      {"from":{"kind":"ImageStreamTag","name":"ddb-api-v3-redis-exporter:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"redis-exporter\")].image","paused":false}]

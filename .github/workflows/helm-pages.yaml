@@ -1,8 +1,8 @@
 name: Helm repository
 
 on:
-  # A successful matrix build guarantees that both commit-addressed images were
-  # pushed before a chart can refer to them.
+  # Publish only after the image matrix succeeds. Charts keep tracking the
+  # configured registry tags through OpenShift's scheduled ImageStream imports.
   workflow_run:
     workflows:
       - Container images
@@ -52,7 +52,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Verify referenced container images
+      - name: Verify built container images
         env:
           COMMIT_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
         shell: bash
@@ -84,19 +84,22 @@ jobs:
 
           test "$(grep -c 'repository: ghcr.io/mbuechner/ddb-api-v3-service' "$chart_dir/values.yaml")" -eq 1
           test "$(grep -c 'repository: ghcr.io/mbuechner/ddb-api-v3-gateway' "$chart_dir/values.yaml")" -eq 1
-          test "$(grep -c 'tag: "latest"' "$chart_dir/values.yaml")" -eq 2
 
           sed -i "s|repository: ghcr.io/mbuechner/ddb-api-v3-service|repository: ghcr.io/$owner/ddb-api-v3-service|" "$chart_dir/values.yaml"
           sed -i "s|repository: ghcr.io/mbuechner/ddb-api-v3-gateway|repository: ghcr.io/$owner/ddb-api-v3-gateway|" "$chart_dir/values.yaml"
-          sed -i "s|tag: \"latest\"|tag: \"$image_tag\"|g" "$chart_dir/values.yaml"
-
+          # Preserve latest: published charts must continue receiving registry
+          # updates instead of silently pinning application tags to this commit.
           helm repo add groundhog2k https://groundhog2k.github.io/helm-charts/
-          # Resolve the version pinned in Chart.lock from the repository named
-          # in Chart.yaml. Dependency archives are not stored in this repo.
+          # Resolve the version pinned in Chart.lock from its upstream repository.
+          # Only generated dependency archives are packaged; no chart fork is maintained.
           helm dependency build "$chart_dir"
           helm dependency list "$chart_dir"
-          helm lint "$chart_dir" --strict
-          helm lint "$chart_dir" --strict --values "$chart_dir/values-production.yaml"
+          # helm lint has no API-capabilities flag. Lint its portable fallback,
+          # then compile the actual defaults with both custom APIs below.
+          portable="global.openshift.imageStreams.enabled=false,apiService.vpa.enabled=false,gateway.vpa.enabled=false,redis.vpa.enabled=false"
+          helm lint "$chart_dir" --strict --set "$portable"
+          helm lint "$chart_dir" --strict --values "$chart_dir/values-production.yaml" --set "$portable"
+          "$RUNNER_TEMP/acl-smoke/bin/python" .github/scripts/check-chart-resources.py "$chart_dir"
           "$RUNNER_TEMP/acl-smoke/bin/python" .github/scripts/check-redis-acl.py "$chart_dir"
 
           # Stable SemVer: major.minor.(run * 1000 + attempt), no --devel needed.
@@ -130,19 +133,13 @@ jobs:
           esac
           helm package "$chart_dir" --destination _site \
             --version "$package_version" --app-version "$image_tag"
-          helm lint "_site/ddb-api-v3-$package_version.tgz" --strict --set redis.haMode.enabled=false
+          helm lint "_site/ddb-api-v3-$package_version.tgz" --strict --set "$portable,redis.haMode.enabled=false"
           helm lint "_site/ddb-api-v3-$package_version.tgz" --strict \
-            --values "$chart_dir/values-production.yaml" --set redis.haMode.enabled=true
-          # Compile all recommendation targets, including both Redis controller kinds.
-          for redis_mode in \
-            "redis.haMode.enabled=false,redis.useDeploymentWhenNonHA=false" \
-            "redis.haMode.enabled=false,redis.useDeploymentWhenNonHA=true" \
-            "redis.haMode.enabled=true"; do
-            helm template vpa-smoke "_site/ddb-api-v3-$package_version.tgz" \
-              --api-versions autoscaling.k8s.io/v1/VerticalPodAutoscaler \
-              --set "apiService.vpa.enabled=true,gateway.vpa.enabled=true,redis.vpa.enabled=true,$redis_mode" \
-              --show-only templates/vpa.yaml > /dev/null
-          done
+            --values "$chart_dir/values-production.yaml" --set "$portable,redis.haMode.enabled=true"
+          # Verify actual coverage, explicit mode overlays and failure cases
+          # against the packaged chart as well as the source directory above.
+          "$RUNNER_TEMP/acl-smoke/bin/python" .github/scripts/check-chart-resources.py \
+            "_site/ddb-api-v3-$package_version.tgz" --values-dir "$chart_dir"
           helm repo index _site --url "$PAGES_BASE_URL"
 
           printf '%s\n' \

@@ -7,6 +7,12 @@ Anwendungen standardmäßig im Profil `prod`, je einen API-, Gateway- und Redis-
 Die kleine Standardinstallation benötigt keinen Sentinel und keine drei Worker-Nodes.
 S3-Speicher und Identity Provider bleiben externe Dienste.
 
+Die Standardinstallation benötigt OpenShifts ImageStream-API sowie einen
+installierten VPA-Controller mit `VerticalPodAutoscaler`-CRD. Der Chart erzeugt
+VPAs für alle Workload-Pods und überwacht Registry-Tags über ImageStreams.
+Für reines Kubernetes die [Opt-outs](../charts/ddb-api-v3/README.md#imagestreams-und-automatische-updates)
+setzen; ohne VPA-Controller auch alle drei `vpa.enabled`-Werte deaktivieren.
+
 ## Speicher und Secrets
 
 Vor der Installation einen Namespace, den S3-Bucket und das Servicekonto anlegen.
@@ -64,7 +70,8 @@ kubectl rollout restart deployment/ddb-api-v3-api-service -n ddb-api-v3
 
 Die internen Redis-/Sentinel-Zugangsdaten erzeugt und verwaltet Helm.
 Diese Secrets sind Teil des Release-Zustands. Kein gemeinsames S3-/Redis-Passwort
-verwenden. Für private Images ein Registry-Pull-Secret über `images.pullSecrets`
+verwenden. Für private Images passende Registry-Secrets für Image-Import und
+Pod-Pulls im Namespace bereitstellen; Pod-Pull-Secrets über `images.pullSecrets`
 referenzieren.
 
 ## Values und Installation
@@ -112,18 +119,88 @@ Für einen lokalen Chart die fixierte Redis-Abhängigkeit auflösen:
 ```bash
 helm repo add groundhog2k https://groundhog2k.github.io/helm-charts/
 helm dependency build charts/ddb-api-v3
-helm lint charts/ddb-api-v3 --values values-site.yaml
+helm lint charts/ddb-api-v3 --values values-site.yaml \
+  --set global.openshift.imageStreams.enabled=false \
+  --set apiService.vpa.enabled=false,gateway.vpa.enabled=false,redis.vpa.enabled=false
 helm template ddb-api-v3 charts/ddb-api-v3 --namespace ddb-api-v3 \
+  --api-versions image.openshift.io/v1/ImageStream \
+  --api-versions autoscaling.k8s.io/v1/VerticalPodAutoscaler \
   --values values-site.yaml
 helm install ddb-api-v3 ./charts/ddb-api-v3 \
   --namespace ddb-api-v3 --values values-site.yaml --wait --timeout 10m
 ```
 
-`Chart.lock` fixiert die Abhängigkeit; Archive werden beim Build geladen und
-nicht versioniert. Alle Images werden aus Registries bezogen. Beim Betrieb
-gezielt Versionen auswählen; [Veröffentlichung](operations.md#container-und-releases).
+`Chart.lock` fixiert die unveränderte Groundhog2k-Redis-Abhängigkeit.
+Die Templates kommen aus dem externen Chart-Repository; es wird kein eigener
+Redis-Chart-Fork gepflegt. Abhängigkeitsarchive werden beim Build geladen und
+nicht versioniert. Auch die Container bleiben unveränderte Registry-Images.
+`helm lint` prüft hier den portablen Fallback, weil es keine API-Capabilities
+entgegennehmen kann. `helm template` kompiliert anschließend die tatsächlichen
+Standardressourcen mit beiden APIs. [Veröffentlichung](operations.md#container-und-releases).
 Seltene Anwendungsoptionen lassen sich über `apiService.extraEnv` und
 `gateway.extraEnv` überschreiben, beispielsweise native JVM-Optionen.
+
+## ImageStreams und Rollouts
+
+`global.openshift.imageStreams.enabled: true` ist Standard. API, Gateway und Redis
+erhalten je einen ImageStream; für einen aktivierten Redis-Exporter kommt ein
+weiterer hinzu. Init- und Sentinel-Container teilen den Redis-Stream. Die Quellen
+bleiben die konfigurierten Registry-Repositories und Tags: standardmäßig `latest`
+für die Anwendungen und `8-alpine` für Redis.
+
+Die ImageStreams für API und Gateway erhalten Release-bezogene Namen. Redis bleibt
+ein unveränderter externer Unterchart und verwendet explizite Streamnamen aus
+`redis.imageStreams.name` und `redis.imageStreams.exporterName`, standardmäßig
+`ddb-api-v3-redis` und `ddb-api-v3-redis-exporter`. Für mehrere Releases im selben
+Namespace diese Namen eindeutig wählen und die `from.name`-Referenzen in
+`redis.customAnnotations.image.openshift.io/triggers` gemeinsam anpassen.
+
+Die Triggerannotation ist bewusst eine feste JSON-Liste in Values. Sie muss genau
+die aktiven Container abdecken: Init und Server im Standalone-Modus, zusätzlich
+Sentinel bei HA und Exporter bei Metriken. Die [mitgelieferten Overlays](../charts/ddb-api-v3/README.md#imagestreams-und-automatische-updates)
+enthalten die passenden Listen. Für HA plus Exporter beispielsweise:
+
+```bash
+helm upgrade --install ddb-api-v3 ./charts/ddb-api-v3 -n ddb-api-v3 \
+  -f charts/ddb-api-v3/values-production.yaml \
+  -f charts/ddb-api-v3/values-production-metrics.yaml -f values-site.yaml
+```
+
+Für Standalone plus Exporter stattdessen `values-metrics.yaml` verwenden.
+Ein nacktes `--set redis.haMode.enabled=true` oder `--set redis.metrics.enabled=true`
+ohne passende Triggerliste wird bei aktiven ImageStreams abgewiesen. So bleiben
+die Redis-Chart-Quellen, seine Helper und seine Rendering-Values unverändert.
+Bei Redis-StatefulSets muss `redis.updateStrategyType` für automatische Updates
+auf `RollingUpdate` bleiben. `OnDelete` wird bei aktiven ImageStreams abgewiesen,
+da es bestehende Pods trotz geändertem Template nicht erneuert.
+Die Verwaltung umfasst die integrierten Redis-Container. Eigene
+`redis.extraContainers`/`extraInitContainers` werden bei aktiver Verwaltung
+abgewiesen; mit deaktivierten ImageStreams bleiben diese Erweiterungen nutzbar,
+ihre Image-Aktualisierung muss dann separat eingerichtet werden.
+
+Mit `global.openshift.imageStreams.scheduled: true` prüft OpenShift die Quell-Tags
+im Importintervall des Clusters auf neue Digests. Controller-Annotationen übertragen
+einen geänderten ImageStream-Digest in die passenden Pod-Template-Felder und lösen
+den jeweiligen Deployment- oder StatefulSet-Rollout aus. Dies umfasst auch die
+Redis-Init-, Sentinel- und Exporter-Images. Ein Registry-Push startet daher keinen
+sofortigen Rollout; zuerst muss der geplante Import den neuen Digest erkennen.
+
+ImageStreams speichern Image-Metadaten, keine Container-Binaries im Chart.
+`scheduled: false` deaktiviert die regelmäßige Prüfung. Für bewusst fixierte
+Anwendungsstände `images.apiService.tag` und `images.gateway.tag` auf passende
+unveränderliche Quell-Tags setzen. Mit `enabled: false` werden stattdessen direkte
+Registry-Referenzen verwendet. Dabei auch die explizite Redis-Annotation mit
+`redis.customAnnotations.image.openshift.io/triggers: "[]"` leeren, damit keine
+Image-Change-Trigger auf zuvor verwendete Streams zurückbleiben.
+
+Import und Rollout getrennt prüfen:
+
+```bash
+oc get imagestreams -n ddb-api-v3
+oc get deployments,statefulsets -n ddb-api-v3
+oc rollout status deployment/ddb-api-v3-api-service -n ddb-api-v3
+oc rollout status deployment/ddb-api-v3-gateway -n ddb-api-v3
+```
 
 ## Skalierung und Rollouts
 
@@ -186,7 +263,7 @@ wirksam; `extraEnv.JAVA_TOOL_OPTIONS` kann die Vorgabe ersetzen.
 
 CPU-Requests bewusst klein halten und unter repräsentativer Last messen.
 Mehr CPU oder weitere Replikate nur bei nachgewiesenem Bedarf vorsehen;
-optionale VPA-Empfehlungen werden manuell geprüft und übernommen.
+die standardmäßigen VPA-Empfehlungen werden manuell geprüft und übernommen.
 
 RDF-Arbeit, Warteschlange und S3-Pool gemeinsam mit CPU/RAM und realen
 Dokumentgrößen abstimmen. Mehr RAM erhöht `concurrency.maxRequests` nicht von
@@ -196,28 +273,21 @@ Ein voller Pool ergibt derzeit die native Gateway-Antwort `500`. Mehr API-Pods
 erhöhen auch die Gesamtzahl möglicher S3-Verbindungen. Keep-Alive-Verbindungen
 haben eine begrenzte Lebensdauer für die Verteilung auf neue Replikate.
 
-Optional liefern Vertical Pod Autoscaler (VPA) Ressourcenempfehlungen. Dafür
-benötigt der Cluster einen VPA-Controller und die `VerticalPodAutoscaler`-CRD.
+API, Gateway und Redis erhalten standardmäßig jeweils einen Vertical Pod
+Autoscaler (VPA), der sämtliche Replikate des Workload-Controllers erfasst.
+Dafür benötigt der Cluster einen VPA-Controller und die `VerticalPodAutoscaler`-CRD.
 Unter OpenShift den VPA-Operator durch die Cluster-Administration bereitstellen
-lassen. API, Gateway und Redis
-lassen sich unabhängig aktivieren:
-
-```yaml
-apiService:
-  vpa: {enabled: true}
-gateway:
-  vpa: {enabled: true}
-redis:
-  vpa: {enabled: true}
-```
+lassen. Die drei `vpa.enabled`-Schalter bleiben als explizite Opt-outs verfügbar.
 
 Der feste Modus `Off` sammelt nur Empfehlungen für CPU-/RAM-Requests
 (`RequestsOnly`); er ändert weder Ressourcen noch Pods. Redis-Empfehlungen
-decken bei HA auch den Sentinel-Container ab. Nach repräsentativer Last mit
+decken auch Sentinel und den optionalen Exporter ab; Init-Container behalten
+ihre separat konfigurierten `initResources`. Nach repräsentativer Last mit
 `oc get vpa -n <namespace> -o yaml` unter `status.recommendation` nachsehen.
 Empfehlungen manuell in `resources.requests` übernehmen und passende Limits
 setzen. CPU-Request-Änderungen mit einem aktiven CPU-HPA abstimmen, da dessen
-Auslastungsziel relativ zum Request gilt. VPAs sind standardmäßig deaktiviert.
+Auslastungsziel relativ zum Request gilt. Die automatische Image-Aktualisierung
+ändert diesen VPA-Modus nicht.
 [VPA-API](https://github.com/kubernetes/autoscaler/blob/master/vertical-pod-autoscaler/docs/api.md).
 
 Bei einer Mindest-Replikazahl von eins ersetzen Rollouts den alten Pod ohne zusätzlichen
@@ -255,8 +325,9 @@ Beide Varianten verwenden persistenten Speicher und dieselben ACLs und Probes.
 Bei aktiviertem HA läuft Redis immer als StatefulSet; der Schalter hat dann
 keine Wirkung.
 
-`redis.haMode.enabled: true` aktiviert einen Primary, zwei Replicas und je Pod
-einen Sentinel. Das Produktionsprofil setzt außerdem harte Anti-Affinität und
+Das passende Produktionsoverlay setzt `redis.haMode.enabled: true` und die
+Sentinel-Triggerliste: ein Primary, zwei Replicas und je Pod ein Sentinel.
+Das Produktionsprofil setzt außerdem harte Anti-Affinität und
 benötigt drei passende Worker-Nodes. Das Quorum ist zwei. Die Gateways wechseln
 automatisch von der direkten Redis-Adresse zu Sentinel-Discovery.
 HA verbessert die Verfügbarkeit, nicht den Schreibdurchsatz.

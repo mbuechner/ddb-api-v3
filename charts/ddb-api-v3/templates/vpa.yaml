@@ -15,6 +15,7 @@ metadata:
     {{- include "ddb-api-v3.labels" $ | nindent 4 }}
     app.kubernetes.io/component: {{ $component }}
 spec:
+  # Target the controller so current and future replicas are covered by the same VPA.
   targetRef:
     apiVersion: apps/v1
     kind: {{ ternary "StatefulSet" "Deployment" $stateful }}
@@ -23,6 +24,7 @@ spec:
     updateMode: "Off"
   resourcePolicy:
     containerPolicies:
+      {{/* Redis sidecars share its workload; the wildcard also covers Sentinel/exporter containers. */}}
       - containerName: {{ ternary "*" $component (eq $role "redis") | quote }}
         controlledResources: [cpu, memory]
         controlledValues: RequestsOnly

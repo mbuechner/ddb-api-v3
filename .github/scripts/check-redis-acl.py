@@ -23,9 +23,15 @@ def run(arguments, allow_error=False, timeout=120, **kwargs):
 
 
 def render(chart, values, ha, deployment=False):
-    rendered = run(["helm", "template", "acl-smoke", str(chart),
-                    "--set", f"redis.haMode.enabled={str(ha).lower()}",
-                    "--set", f"redis.useDeploymentWhenNonHA={str(deployment).lower()}"])
+    command = ["helm", "template", "acl-smoke", str(chart),
+               "--api-versions", "autoscaling.k8s.io/v1/VerticalPodAutoscaler",
+               "--api-versions", "image.openshift.io/v1/ImageStream"]
+    if ha:
+        # HA adds a Sentinel container and its explicit image-trigger path.
+        command.extend(["--values", str(chart / "values-production.yaml")])
+    if deployment:
+        command.extend(["--set", "redis.useDeploymentWhenNonHA=true"])
+    rendered = run(command)
     resources = [item for item in yaml.safe_load_all(rendered) if item]
     for item in resources:
         if item["kind"] == "PodDisruptionBudget" and len(

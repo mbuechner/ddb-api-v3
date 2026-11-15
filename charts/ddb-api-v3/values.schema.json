@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
-  "required": ["appProfile", "images", "logging", "auth", "s3", "ingress", "apiService", "gateway", "redis"],
+  "required": ["appProfile", "global", "images", "logging", "auth", "s3", "ingress", "apiService", "gateway", "redis"],
   "if": {
     "properties": {
       "auth": {
@@ -24,6 +24,31 @@
     }
   },
   "properties": {
+    "global": {
+      "type": "object",
+      "title": "OpenShift",
+      "required": ["openshift"],
+      "properties": {
+        "openshift": {
+          "type": "object",
+          "required": ["imageStreams"],
+          "additionalProperties": false,
+          "properties": {
+            "imageStreams": {
+              "type": "object",
+              "title": "Automatische Image-Updates",
+              "description": "OpenShift ImageStreams verfolgen die konfigurierten Registry-Tags und aktualisieren die Pod-Templates bei neuen Image-Digests. API, Gateway und alle Redis-Container werden erfasst.",
+              "required": ["enabled", "scheduled"],
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {"type": "boolean", "default": true, "description": "ImageStreams und Image-Change-Trigger aktivieren; erfordert die OpenShift ImageStream-API. Fuer Kubernetes ohne OpenShift deaktivieren."},
+                "scheduled": {"type": "boolean", "default": true, "description": "Registry-Tags im Importintervall des Clusters erneut pruefen; neue Digests loesen automatisch Rollouts aus."}
+              }
+            }
+          }
+        }
+      }
+    },
     "appProfile": {
       "title": "Anwendungsprofil",
       "description": "APP_PROFILE: prod uses shared Redis quotas and verified JWTs; dev uses local quotas and optionally a development token Secret.",
@@ -73,7 +98,7 @@
     "images": {
       "type": "object",
       "title": "Container-Images",
-      "description": "API und Gateway werden aus der Registry geladen. Die ver\u00f6ffentlichten Charts verwenden zum Commit passende Image-Tags.",
+      "description": "ImageStreams verfolgen standardmaessig die latest-Tags von API und Gateway. Container laden die aufgeloesten Digests aus der Registry; eigene feste Tags sind weiterhin moeglich.",
       "required": ["apiService", "gateway", "pullPolicy"],
       "properties": {
         "apiService": { "$ref": "#/definitions/image" },
@@ -193,9 +218,27 @@
       "type": "object",
       "title": "Redis: gemeinsame Anfragequoten",
       "description": "Speichert die Gateway-Quoten, keine RDF-Datens\u00e4tze. Standard: eine persistente Instanz. HA erg\u00e4nzt Replikation und Sentinel-Failover.",
-      "required": ["image", "auth", "serviceAccount", "extraSecretRedisConfigs", "extraSecretSentinelConfigs", "haMode", "podDisruptionBudget", "storage", "useDeploymentWhenNonHA", "vpa"],
+      "required": ["image", "imageStreams", "customAnnotations", "auth", "serviceAccount", "extraSecretRedisConfigs", "extraSecretSentinelConfigs", "haMode", "podDisruptionBudget", "storage", "useDeploymentWhenNonHA", "vpa"],
       "properties": {
+        "imageStreams": {
+          "type": "object",
+          "title": "Redis ImageStreams",
+          "description": "Im Namespace eindeutige Namen. Die expliziten ImageStreamTag-Verweise unter redis.customAnnotations bei Namensaenderungen mit anpassen.",
+          "required": ["name", "exporterName"],
+          "additionalProperties": false,
+          "properties": {
+            "name": {"$ref": "#/definitions/kubernetesName", "maxLength": 63},
+            "exporterName": {"$ref": "#/definitions/kubernetesName", "maxLength": 63}
+          }
+        },
+        "customAnnotations": {
+          "type": "object",
+          "title": "Redis Controller-Annotationen",
+          "description": "Image-Trigger sind explizite JSON-Values fuer das unveraenderte Upstream-Chart. Fuer HA und Metrics vorbereitete Values-Dateien verwenden; benoetigte Containerpfade werden geprueft.",
+          "additionalProperties": {"type": "string"}
+        },
         "useDeploymentWhenNonHA": { "type": "boolean", "title": "Standalone als Deployment", "description": "Nur ohne HA wirksam: false (Standard) erstellt ein StatefulSet mit stabilen Pod-/PVC-Namen. true erstellt ein Deployment mit genau einem Pod, eigenem PVC und Recreate-Rollouts (kurze Unterbrechung). HA verwendet immer ein StatefulSet. Diese Wahl spart keine Pods und aktiviert keine Hochverf\u00fcgbarkeit." },
+        "updateStrategyType": { "type": "string", "enum": ["RollingUpdate", "OnDelete"], "default": "RollingUpdate", "description": "Redis-StatefulSets benoetigen bei aktiven ImageStreams RollingUpdate, damit neue Digests auch vorhandene Pods erneuern. OnDelete ist nur ohne verwaltete ImageStreams zulaessig." },
         "image": {
           "type": "object",
           "required": ["registry", "repository", "tag", "pullPolicy"],
@@ -387,11 +430,11 @@
     "vpa": {
       "type": "object",
       "title": "VPA: Ressourcenempfehlungen",
-      "description": "Ben\u00f6tigt einen installierten VPA-Controller und die CRD VerticalPodAutoscaler. updateMode ist Off: Empfehlungen f\u00fcr CPU-/RAM-Requests werden berechnet, laufende Ressourcen bleiben unver\u00e4ndert. F\u00fcr Redis werden auch Sentinel und weitere Container ber\u00fccksichtigt.",
+      "description": "Standardm\u00e4\u00dfig f\u00fcr API, Gateway und Redis aktiviert; ben\u00f6tigt einen installierten VPA-Controller und die CRD VerticalPodAutoscaler. updateMode ist Off: Empfehlungen f\u00fcr CPU-/RAM-Requests werden berechnet, laufende Ressourcen bleiben unver\u00e4ndert. Der Redis-Controller umfasst auch Sentinel und weitere laufende Container.",
       "additionalProperties": false,
       "required": ["enabled"],
       "properties": {
-        "enabled": { "type": "boolean", "description": "VPA-Empfehlungen f\u00fcr diesen Workload aktivieren. Standard false funktioniert auch in Clustern ohne VPA-Controller." }
+        "enabled": { "type": "boolean", "default": true, "description": "Standard true erzeugt einen VPA f\u00fcr alle Pods dieses Workloads. Ohne installierte VPA-CRD muss der Wert explizit false sein." }
       }
     },
     "resourceQuantities": {

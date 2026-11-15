@@ -147,14 +147,27 @@ Die Workflows [container-images.yaml](../.github/workflows/container-images.yaml
 und [helm-pages.yaml](../.github/workflows/helm-pages.yaml) veröffentlichen getrennte
 GHCR-Images und den Chart. Pull Requests werden gebaut, aber nicht veröffentlicht.
 Pushes auf `main` erhalten unter anderem `latest` und `sha-<Commit>`; Git-Tags
-`v1.2.3` erzeugen zusätzlich Versionstags. Veröffentlichte Chart-Pakete referenzieren
-die beiden Images desselben Commits, nachdem deren Manifeste geprüft wurden.
+`v1.2.3` erzeugen zusätzlich Versionstags. Vor der Chart-Veröffentlichung prüft CI
+die gebauten Commit-Images. Die veröffentlichten Values behalten dagegen `latest`
+für API und Gateway bei, damit die ImageStreams neue Registry-Stände weiter verfolgen.
 
 Die Pakete sind `ghcr.io/mbuechner/ddb-api-v3-service` und
-`ghcr.io/mbuechner/ddb-api-v3-gateway`. Produktionsversionen bewusst auswählen.
-Private Registries benötigen ein Pull-Secret. Images sind nicht im Chart enthalten.
+`ghcr.io/mbuechner/ddb-api-v3-gateway`. Für bewusst feste Stände die konfigurierten
+Quell-Tags auswählen; standardmäßig werden aktuelle Images automatisch übernommen.
+OpenShift importiert dazu ImageStream-Metadaten nach seinem geplanten Importintervall.
+Ein neuer Digest löst über Image-Change-Trigger den jeweiligen Workload-Rollout aus;
+ein Push aktualisiert laufende Pods deshalb nicht sofort. Das betrifft API, Gateway
+und Redis einschließlich aktivierter Sentinel-/Exporter- und Init-Container.
+Die lokalen Stream-Tags heißen jeweils `latest`; die externen Quell-Tags bleiben
+über die Image-Values konfigurierbar, für Redis standardmäßig `8-alpine`.
+Redis verwendet explizite, pro Namespace eindeutige Streamnamen und Triggerlisten
+in Values. HA-/Exporter-Wechsel mit den passenden [Chart-Overlays](deployment.md#imagestreams-und-rollouts)
+vornehmen, damit keine Container-Pfade fehlen oder auf inaktive Container zeigen.
+Private Registries benötigen passende Secrets für Image-Import und Pod-Pulls.
+Container-Binaries sind nicht im Chart enthalten.
 Die Chart-Patchversion berechnet CI als `Laufnummer * 1000 + Versuch`; Major/Minor
-stammen aus `Chart.yaml`. Das Pages-Repository enthält den zuletzt veröffentlichten Stand.
+stammen aus `Chart.yaml`. `appVersion` dokumentiert den Chart-Quellcommit und pinnt
+die Registry-Tags nicht. Das Pages-Repository enthält den zuletzt veröffentlichten Stand.
 
 `mvn clean verify` prüft beide Module samt OpenAPI. Docker-basierte Integrationstests
 benötigen Docker; fehlende Infrastruktur kann zu ausgewiesenen Test-Skips führen.

@@ -1,0 +1,105 @@
+{{- if .Values.global.openshift.imageStreams.enabled }}
+{{- if not (.Capabilities.APIVersions.Has "image.openshift.io/v1/ImageStream") }}
+{{- fail "global.openshift.imageStreams.enabled requires the OpenShift ImageStream API" }}
+{{- end }}
+{{/* Updating a StatefulSet template is insufficient when its Pods use OnDelete. */}}
+{{- if and (or .Values.redis.haMode.enabled (not .Values.redis.useDeploymentWhenNonHA)) (ne .Values.redis.updateStrategyType "RollingUpdate") }}
+{{- fail "automatic Redis ImageStream rollouts require redis.updateStrategyType=RollingUpdate" }}
+{{- end }}
+{{/* Upstream extras can contain templated arbitrary images; only its built-in containers are managed here. */}}
+{{- if or .Values.redis.extraContainers .Values.redis.extraInitContainers }}
+{{- fail "managed Redis ImageStreams support built-in containers only; redis.extraContainers/extraInitContainers require disabling global.openshift.imageStreams.enabled and managing their images separately" }}
+{{- end }}
+{{/* A trigger targeting an absent container aborts OpenShift's entire image update. */}}
+{{- $redisTriggerHint := "redis.customAnnotations[image.openshift.io/triggers]: use the matching default/production/metrics/production-metrics values overlay and keep ImageStream names aligned with redis.imageStreams" }}
+{{- $redisAnnotations := .Values.redis.customAnnotations | default dict }}
+{{- $redisTriggerJSON := index $redisAnnotations "image.openshift.io/triggers" }}
+{{- if not (kindIs "string" $redisTriggerJSON) }}
+{{- fail (printf "%s; the annotation must be a JSON array encoded as a string" $redisTriggerHint) }}
+{{- end }}
+{{- $redisTriggers := fromJsonArray $redisTriggerJSON }}
+{{- $expectedRedisTriggers := include "ddb-api-v3.redisImageTriggers" . | fromJsonArray }}
+{{- $expectedByPath := dict }}
+{{- range $trigger := $expectedRedisTriggers }}
+{{- $_ := set $expectedByPath $trigger.fieldPath $trigger.from.name }}
+{{- end }}
+{{- $seenPaths := dict }}
+{{- range $trigger := $redisTriggers }}
+{{- if not (kindIs "map" $trigger) }}
+{{- fail (printf "%s; the annotation must be a valid JSON array of trigger objects" $redisTriggerHint) }}
+{{- end }}
+{{- $fieldPath := get $trigger "fieldPath" }}
+{{- if not (kindIs "string" $fieldPath) }}
+{{- fail (printf "%s; every trigger needs a string fieldPath" $redisTriggerHint) }}
+{{- end }}
+{{- if not (hasKey $expectedByPath $fieldPath) }}
+{{- fail (printf "%s; unknown or disabled container fieldPath %q" $redisTriggerHint $fieldPath) }}
+{{- end }}
+{{- if hasKey $seenPaths $fieldPath }}
+{{- fail (printf "%s; duplicate trigger for %q" $redisTriggerHint $fieldPath) }}
+{{- end }}
+{{- $source := get $trigger "from" }}
+{{- if not (kindIs "map" $source) }}
+{{- fail (printf "%s; trigger for %q needs an ImageStreamTag source" $redisTriggerHint $fieldPath) }}
+{{- end }}
+{{- if or (ne (get $source "kind" | toString) "ImageStreamTag") (ne (get $source "name" | toString) (get $expectedByPath $fieldPath)) }}
+{{- fail (printf "%s; trigger for %q must reference ImageStreamTag %q" $redisTriggerHint $fieldPath (get $expectedByPath $fieldPath)) }}
+{{- end }}
+{{- if and (hasKey $source "namespace") (ne (get $source "namespace" | toString) $.Release.Namespace) }}
+{{- fail (printf "%s; trigger for %q must use this release's namespace" $redisTriggerHint $fieldPath) }}
+{{- end }}
+{{- if hasKey $trigger "paused" }}
+{{- if not (kindIs "bool" (get $trigger "paused")) }}
+{{- fail (printf "%s; paused must be a boolean for %q" $redisTriggerHint $fieldPath) }}
+{{- end }}
+{{- if get $trigger "paused" }}
+{{- fail (printf "%s; automatic image updates require paused=false for %q" $redisTriggerHint $fieldPath) }}
+{{- end }}
+{{- end }}
+{{- $_ := set $seenPaths $fieldPath true }}
+{{- end }}
+{{- range $fieldPath, $_ := $expectedByPath }}
+{{- if not (hasKey $seenPaths $fieldPath) }}
+{{- fail (printf "%s; missing image-change trigger for %q" $redisTriggerHint $fieldPath) }}
+{{- end }}
+{{- end }}
+{{- $redis := .Values.redis.image }}
+{{- $sources := dict
+      "api-service" (printf "%s:%s" .Values.images.apiService.repository .Values.images.apiService.tag)
+      "gateway" (printf "%s:%s" .Values.images.gateway.repository .Values.images.gateway.tag)
+      "redis" (printf "%s/%s:%s" $redis.registry $redis.repository $redis.tag) }}
+{{- if .Values.redis.metrics.enabled }}
+{{- $exporter := .Values.redis.metrics.exporter.image }}
+{{- $_ := set $sources "redis-exporter" (printf "%s/%s:%s" ($exporter.registry | toString) ($exporter.repository | toString) ($exporter.tag | toString)) }}
+{{- end }}
+{{- $streamNames := dict }}
+{{- range $component, $source := $sources }}
+{{- $streamName := include "ddb-api-v3.imageStreamName" (dict "root" $ "component" $component) }}
+{{- if hasKey $streamNames $streamName }}
+{{- fail (printf "ImageStream name %q is used by multiple components; choose distinct redis.imageStreams names" $streamName) }}
+{{- end }}
+{{- $_ := set $streamNames $streamName true }}
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: {{ $streamName }}
+  labels:
+    {{- include "ddb-api-v3.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  lookupPolicy:
+    local: true
+  tags:
+    - name: latest
+      from:
+        kind: DockerImage
+        name: {{ $source | quote }}
+      importPolicy:
+        scheduled: {{ $.Values.global.openshift.imageStreams.scheduled }}
+        importMode: PreserveOriginal
+      # Resolve to the upstream digest; an integrated registry is not required.
+      referencePolicy:
+        type: Source
+{{- end }}
+{{- end }}

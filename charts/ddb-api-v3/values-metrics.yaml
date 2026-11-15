@@ -1,0 +1,12 @@
+# Standalone Redis with Prometheus metrics. For HA, use values-production-metrics.yaml.
+redis:
+  haMode:
+    enabled: false
+  metrics:
+    enabled: true
+  # Exporter has its own image; Redis init/server continue to track the Redis stream.
+  customAnnotations:
+    image.openshift.io/triggers: >-
+      [{"from":{"kind":"ImageStreamTag","name":"ddb-api-v3-redis:latest"},"fieldPath":"spec.template.spec.initContainers[?(@.name==\"redis-init\")].image","paused":false},
+      {"from":{"kind":"ImageStreamTag","name":"ddb-api-v3-redis:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"redis-server\")].image","paused":false},
+      {"from":{"kind":"ImageStreamTag","name":"ddb-api-v3-redis-exporter:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"redis-exporter\")].image","paused":false}]

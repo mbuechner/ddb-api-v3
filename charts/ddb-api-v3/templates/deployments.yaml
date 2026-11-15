@@ -8,6 +8,10 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ $name }}
+  {{- if $.Values.global.openshift.imageStreams.enabled }}
+  annotations:
+    image.openshift.io/triggers: {{ printf "[%s]" (include "ddb-api-v3.imageTrigger" (dict "root" $ "component" $component "containerType" "containers" "container" $component)) | quote }}
+  {{- end }}
   labels:
     {{- include "ddb-api-v3.labels" $ | nindent 4 }}
     app.kubernetes.io/component: {{ $component }}

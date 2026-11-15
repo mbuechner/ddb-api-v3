@@ -4,7 +4,8 @@ API + Gateway + Redis, standardmäßig je ein Pod. S3 und Identity Provider exte
 Konfiguration: Values-YAML und Secrets; keine zusätzliche Oberfläche.
 `appProfile` setzt `APP_PROFILE`: standardmäßig `prod`, optional `dev`.
 
-Voraussetzungen: Helm 3, Kubernetes ≥1.26/OpenShift, ein passender Worker-Node,
+Voraussetzungen für die Standardinstallation: Helm 3, OpenShift mit ImageStream-API,
+VPA-Controller und `VerticalPodAutoscaler`-CRD, ein passender Worker-Node,
 dynamische PVs und ein S3-Bucket. Secret `ddb-api-v3-s3` im Release-Namespace
 vorab anlegen: `S3_ACCESS_KEY`, `S3_SECRET_KEY`.
 [YAML und Rechte](../../docs/deployment.md#speicher-und-secrets).
@@ -15,8 +16,8 @@ API-Logging, `GATEWAY_*` für Routing, Rate-Limits, Redis und Gateway-Logging.
 Vorhandene Secret-Datenschlüssel bleiben unverändert: Beispielsweise wird
 `S3_ACCESS_KEY` als `DDB_API_S3_ACCESS_KEY` und `REDIS_PASSWORD` als
 `GATEWAY_REDIS_PASSWORD` injiziert. Native `SPRING_DATA_REDIS_SENTINEL_*`-Namen
-bleiben für Boots Sentinel-Erkennung erhalten. Die Values-Struktur bleibt gleich;
-anwendungsspezifische `extraEnv`-Einträge auf die neuen Präfixe umstellen.
+bleiben für Boots Sentinel-Erkennung erhalten. Anwendungsspezifische
+`extraEnv`-Einträge auf die neuen Präfixe umstellen.
 
 ## Installieren
 
@@ -48,7 +49,8 @@ helm install ddb-api-v3 ddb-api-v3/ddb-api-v3 \
   --values values-site.yaml --wait --timeout 10m
 ```
 
-Adressen ersetzen, Versionen pinnen, bei privaten Images `images.pullSecrets` setzen.
+Adressen ersetzen; bei privaten Images Registry-Secrets für Image-Import und
+Pod-Pulls im Namespace bereitstellen und `images.pullSecrets` setzen.
 Issuer + Audience gemeinsam; ohne beide nur Lesebetrieb. `records:write` ist ein
 privilegiertes Importrecht. [Auth](../../docs/security.md).
 
@@ -57,6 +59,70 @@ Uploadlimit: `apiService.maxDocumentSize`; Quoten: `gateway.rateLimit`.
 stehen im [Schema](values.schema.json), das auch die Hilfetexte im nativen
 OpenShift-Formular liefert. YAML bleibt verfügbar; seltene Optionen unter `extraEnv`.
 Für einen Dev-Token aus einem Secret: [Deployment-Konfiguration](../../docs/deployment.md#values-und-installation).
+
+## ImageStreams und automatische Updates
+
+Standardmäßig bindet OpenShift alle Container über ImageStreams ein: API, Gateway
+und Redis sowie den Redis-Exporter, wenn er aktiviert ist. Redis-Init- und
+Sentinel-Container verwenden denselben Redis-Stream. Geplante Imports beobachten
+die konfigurierten Registry-Tags; ein neuer importierter Digest aktualisiert die
+Pod-Templates über Image-Change-Trigger und löst den jeweiligen Rollout aus.
+
+API und Gateway verfolgen standardmäßig `latest`, Redis `8-alpine`. Die Quellen
+bleiben über `images.apiService`, `images.gateway`, `redis.image` und
+`redis.metrics.exporter.image` konfigurierbar. Importiert werden Registry-Metadaten;
+Container-Binaries bleiben in der Registry und sind nicht Bestandteil des Charts.
+Updates erfolgen nach dem im Cluster eingestellten Importintervall, nicht sofort
+beim Push. `global.openshift.imageStreams.scheduled: false` schaltet die periodische
+Prüfung ab. Für bewusst feste Anwendungsstände einen unveränderlichen Quell-Tag wählen.
+
+Die API-/Gateway-Streamnamen folgen dem Release-Namen. Der unveränderte Redis-
+Unterchart erhält dagegen explizite Values: `redis.imageStreams.name` ist
+standardmäßig `ddb-api-v3-redis`, `exporterName` ist `ddb-api-v3-redis-exporter`.
+Diese Namen müssen pro Namespace eindeutig sein. Bei einer Änderung auch die
+`from.name`-Einträge in `redis.customAnnotations.image.openshift.io/triggers`
+auf die neuen Namen mit Suffix `:latest` umstellen.
+
+Redis-HA und Exporter fügen Container hinzu. Die mitgelieferten Overlays halten
+die feste Triggerliste passend zu den tatsächlich vorhandenen Container-Pfaden:
+
+| Redis-Modus | Zusätzlich zu den Basis-Values laden |
+| --- | --- |
+| Standalone | Kein Overlay erforderlich |
+| HA mit Sentinel | `values-production.yaml` |
+| Standalone mit Exporter | `values-metrics.yaml` |
+| HA mit Sentinel und Exporter | `values-production.yaml`, danach `values-production-metrics.yaml` |
+
+Nur `redis.haMode.enabled` oder `redis.metrics.enabled` umzuschalten reicht bei
+aktiven ImageStreams nicht: Eine unpassende Triggerliste wird beim Rendern
+abgewiesen. Es werden weder Redis-Chart-Quellen verändert noch Helper überschrieben.
+Redis-StatefulSets benötigen dafür `redis.updateStrategyType: RollingUpdate`;
+`OnDelete` würde bestehende Pods auf dem alten Image belassen und wird abgewiesen.
+Verwaltet werden die integrierten Init-, Server-, Sentinel- und Exporter-Container.
+Eigene `redis.extraContainers`/`extraInitContainers` erfordern deaktivierte
+ImageStream-Verwaltung und eine eigene Image-Anbindung.
+
+Reines Kubernetes ab 1.26 kann die direkte Registry-Anbindung verwenden. Fehlt auch
+ein VPA-Controller, diese Opt-outs gemeinsam setzen:
+
+```yaml
+global:
+  openshift:
+    imageStreams:
+      enabled: false
+apiService:
+  vpa: {enabled: false}
+gateway:
+  vpa: {enabled: false}
+redis:
+  vpa: {enabled: false}
+  customAnnotations:
+    image.openshift.io/triggers: "[]"
+```
+
+Damit entfallen ImageStreams und automatische Image-Change-Rollouts; die Pods
+verwenden weiterhin die konfigurierten Registry-Images. Die leere Redis-Triggerliste
+deaktiviert auch die expliziten Image-Trigger des unveränderten Untercharts.
 
 ## Kapazität
 
@@ -78,9 +144,10 @@ helm install ddb-api-v3 ./charts/ddb-api-v3 -n ddb-api-v3 --create-namespace \
 ```
 
 HPA optional über `apiService.autoscaling.enabled` und `gateway.autoscaling.enabled`;
-vertikal über `resources`. Optionale VPA-Empfehlungen für API, Gateway und Redis:
-jeweils `vpa.enabled: true`, bei installiertem VPA-Controller/CRD. Modus `Off`
-liefert nur CPU-/RAM-Empfehlungen und verändert keine Pods oder Limits.
+vertikal über `resources`. VPAs sind für API, Gateway und Redis standardmäßig aktiv
+und erfassen alle Replikate des jeweiligen Controllers. Redis berücksichtigt auch
+Sentinel und den optionalen Exporter. Modus `Off` liefert nur CPU-/RAM-Empfehlungen
+(`RequestsOnly`) und verändert keine Pods oder Limits.
 CPU erst nach Messung unter echter Last erhöhen.
 [Details und Grenzen](../../docs/deployment.md#skalierung-und-rollouts).
 

@@ -5,6 +5,14 @@
 # each request must be <= its limit. Quantities such as whole CPU cores are strings.
 appProfile: prod
 
+# OpenShift imports track upstream tags; controller triggers roll out changed image digests.
+global:
+  openshift:
+    imageStreams:
+      enabled: true
+      # Periodically import the newest digest behind each configured upstream tag.
+      scheduled: true
+
 images:
   apiService:
     repository: ghcr.io/mbuechner/ddb-api-v3-service
@@ -12,8 +20,8 @@ images:
   gateway:
     repository: ghcr.io/mbuechner/ddb-api-v3-gateway
     tag: "latest"
-  # Pods always resolve the configured tag through the registry. Images are
-  # never embedded in this Helm chart.
+  # ImageStreams resolve tracked tags to digests; image-change triggers roll out new pods.
+  # Images are never embedded in this Helm chart.
   pullPolicy: Always
   pullSecrets: []
 
@@ -83,9 +91,10 @@ apiService:
     minReplicas: 1
     maxReplicas: 10
     targetCPUUtilizationPercentage: 70
-  # Requires a VPA controller; recommendations only, no automatic changes.
+  # Every workload gets a VPA by default; requires the VPA controller and CRD.
+  # Recommendations only: requests and running pods are not changed automatically.
   vpa:
-    enabled: false
+    enabled: true
   extraEnv: {}
 
 gateway:
@@ -116,16 +125,29 @@ gateway:
     minReplicas: 1
     maxReplicas: 10
     targetCPUUtilizationPercentage: 70
+  # Same recommendation-only VPA policy as the API; covers every gateway replica.
   vpa:
-    enabled: false
+    enabled: true
   extraEnv: {}
 
 redis:
+  # The upstream Redis chart does not template annotations. Keep these literal names
+  # aligned with the trigger JSON below; use unique names for each release in a namespace.
+  imageStreams:
+    name: ddb-api-v3-redis
+    exporterName: ddb-api-v3-redis-exporter
+  # The init container copies Redis binaries, so it must track the server image too.
+  # HA/metrics add containers: select the matching values overlay to update all paths.
+  customAnnotations:
+    image.openshift.io/triggers: >-
+      [{"from":{"kind":"ImageStreamTag","name":"ddb-api-v3-redis:latest"},"fieldPath":"spec.template.spec.initContainers[?(@.name==\"redis-init\")].image","paused":false},
+      {"from":{"kind":"ImageStreamTag","name":"ddb-api-v3-redis:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"redis-server\")].image","paused":false}]
   # false: StatefulSet with stable pod/PVC names. true: standalone Deployment
   # with one pod, Recreate rollouts and its own PVC. HA always uses a StatefulSet.
   useDeploymentWhenNonHA: false
-  # Groundhog2k deploys the unmodified Docker Official Redis image. The
-  # dependency archive contains only Helm templates, never this image.
+  # ImageStream triggers update the template; RollingUpdate actually replaces the Pods.
+  updateStrategyType: RollingUpdate
+  # Track the Docker Official Redis 8 Alpine channel through an ImageStream.
   image:
     registry: docker.io
     repository: library/redis
@@ -159,12 +181,14 @@ redis:
     limits:
       cpu: 100m
       memory: 128Mi
+  # One VPA targets the Redis controller, including Sentinel/exporter sidecars when enabled.
   vpa:
-    enabled: false
+    enabled: true
   metrics:
     enabled: false
     exporter:
       image:
+        tag: latest
         pullPolicy: Always
   initResources:
     requests:

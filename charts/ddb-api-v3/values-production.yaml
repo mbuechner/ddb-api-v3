@@ -36,6 +36,12 @@ s3:
 redis:
   haMode:
     enabled: true
+  # Sentinel uses the same Redis image. Its fieldPath exists only in HA mode.
+  customAnnotations:
+    image.openshift.io/triggers: >-
+      [{"from":{"kind":"ImageStreamTag","name":"ddb-api-v3-redis:latest"},"fieldPath":"spec.template.spec.initContainers[?(@.name==\"redis-init\")].image","paused":false},
+      {"from":{"kind":"ImageStreamTag","name":"ddb-api-v3-redis:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"redis-server\")].image","paused":false},
+      {"from":{"kind":"ImageStreamTag","name":"ddb-api-v3-redis:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"redis-sentinel\")].image","paused":false}]
   resources:
     requests:
       cpu: 50m
