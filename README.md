@@ -24,13 +24,16 @@ docker compose up --build
 Swagger: <http://localhost:8081/swagger-ui.html>. Das Storage-Volume ist persistent;
 `docker compose down -v` löscht lokale Daten.
 
-Alternativ Java 25 + Maven, Prozesse in getrennten Terminals:
+Alternativ Java 25 + Maven; S3 vorher starten, dann beide Anwendungen gemeinsam:
 
 ```bash
 docker compose up -d seaweedfs
-mvn -pl api-service spring-boot:run
-mvn -pl api-gateway spring-boot:run
+mvn spring-boot:run
 ```
+
+Der Maven-Aufruf im Projektverzeichnis startet API und Gateway parallel;
+`Strg+C` beendet beide. Einzelstarts bleiben über `mvn -pl api-service spring-boot:run`
+beziehungsweise `mvn -pl api-gateway spring-boot:run` möglich.
 
 API: `:8080`, Gateway: `:8081`, lokales S3: `:8333`.
 

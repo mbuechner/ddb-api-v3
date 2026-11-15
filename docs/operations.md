@@ -6,6 +6,17 @@ Die Kurzbefehle stehen im [Projekt-README](../README.md). Die Java-Anwendungen
 benötigen Java 25 und Maven; für den vollständigen Compose-Start genügt Docker
 mit Compose. Der lokale Speichercontainer ist eine Entwicklungsumgebung.
 
+Im Projektverzeichnis startet `mvn spring-boot:run` API und Gateway gemeinsam;
+S3 muss bereits erreichbar sein. `Strg+C` beendet beide Anwendungen.
+Für Einzelstarts weiterhin `mvn -pl api-service spring-boot:run` beziehungsweise
+`mvn -pl api-gateway spring-boot:run` verwenden, auch direkt im Modulverzeichnis
+ist `mvn spring-boot:run` möglich.
+
+`.mvn/maven.config` setzt zwei Build-Threads, damit die beiden blockierenden
+Startziele parallel laufen. Das gilt auch für normale Builds; bei Bedarf mit
+`mvn -T 1 verify` seriell bauen. Das Root-POM überspringt den Boot-Start nur für
+das Aggregatorprojekt, das selbst keine Anwendung enthält.
+
 | Einstellung | `dev` | `prod` |
 | --- | --- | --- |
 | RDF-Speicher | S3-kompatibler Objektspeicher | S3-kompatibler Objektspeicher |

@@ -37,4 +37,20 @@
         <module>api-service</module>
         <module>api-gateway</module>
     </modules>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>4.1.2</version>
+                <inherited>false</inherited>
+                <configuration>
+                    <!-- The aggregator has no application; the two modules own their run processes.
+                         .mvn/maven.config lets both blocking run goals execute concurrently. -->
+                    <skip>true</skip>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>
