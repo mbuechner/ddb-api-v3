@@ -112,12 +112,19 @@ public final class RdfCodec {
         }
     }
 
-    /** Dataset formats retain the graph name; graph formats expose its complete triple content. */
+    /**
+     * Validates the single named storage graph, then writes the negotiated representation.
+     * Dataset formats retain the graph name; RDF/XML exposes its complete triple content.
+     * Terms not expressible in the requested format still produce 406, not a lossy conversion.
+     */
     public byte[] fromJelly(byte[] jelly, Lang outputLanguage) {
         if (!isOutputLanguage(outputLanguage)) {
             throw notAcceptable();
         }
-        DatasetGraph dataset = DatasetGraphFactory.createGeneral();
+        // Validation-only sink for Jelly: decode every frame, but skip GraphMem and its triple indexes.
+        // The response already is Jelly: validate decoded events, then return the original bytes unchanged.
+        DatasetGraph dataset = JellyLanguage.JELLY.equals(outputLanguage)
+                ? null : DatasetGraphFactory.createGeneral();
         try {
             try {
                 if (jelly.length == 0) {
@@ -140,7 +147,9 @@ public final class RdfCodec {
                         "The RDF object cannot be represented in the requested serialization", exception);
             }
         } finally {
-            dataset.close();
+            if (dataset != null) {
+                dataset.close();
+            }
         }
     }
 
@@ -188,7 +197,10 @@ public final class RdfCodec {
         if (prefix.startsWith("@")) {
             throw new RiotException("A namespace prefix must not start with @");
         }
-        dataset.prefixes().add(prefix, iri);
+        // A validation-only sink still checks the prefix, but need not retain namespace mappings.
+        if (dataset != null) {
+            dataset.prefixes().add(prefix, iri);
+        }
     }
 
     // RIOT owns Jelly 1.2 framing and encoding; every quad uses the canonical graph name.
@@ -202,6 +214,10 @@ public final class RdfCodec {
         return output.toByteArray();
     }
 
+    /**
+     * A null destination is a validation-only sink. Decoder/framing, prefix and single-graph checks
+     * run in both modes; only graph allocation and triple retention are conditional.
+     */
     private static void decodeGraphs(byte[] jelly, DatasetGraph dataset) throws IOException {
         final class StoredGraphHandler implements RdfHandler.QuadHandler<Node> {
             private Graph currentGraph;
@@ -219,16 +235,21 @@ public final class RdfCodec {
                         throw new RiotException("Stored Jelly must contain exactly one named graph");
                     }
                     graphName = graph;
-                    currentGraph = GraphMemFactory.createDefaultGraph();
-                    dataset.addGraph(graph, currentGraph);
+                    if (dataset != null) {
+                        currentGraph = GraphMemFactory.createDefaultGraph();
+                        dataset.addGraph(graph, currentGraph);
+                    }
                 } else if (!graphName.equals(graph)) {
                     throw new RiotException("Stored Jelly must contain exactly one named graph");
                 }
-                currentGraph.add(Triple.create(subject, predicate, object));
+                if (currentGraph != null) {
+                    currentGraph.add(Triple.create(subject, predicate, object));
+                }
             }
         }
         var handler = new StoredGraphHandler();
         var decoder = JenaConverterFactory.getInstance().quadsDecoder(handler, JellyOptions.DEFAULT_SUPPORTED_OPTIONS);
+        // Consume all frames even for Jelly passthrough: corruption may hide after a valid first frame.
         IoUtils.readStream(new ByteArrayInputStream(jelly), RdfStreamFrame.getFactory(), decoder::ingestFrame);
         if (handler.graphName == null) {
             throw new RiotException("The stored Jelly graph is empty");

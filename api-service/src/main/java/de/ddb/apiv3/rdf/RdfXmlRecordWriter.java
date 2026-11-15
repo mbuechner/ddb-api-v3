@@ -52,6 +52,8 @@ final class RdfXmlRecordWriter extends RDFXML_Basic {
             "li", "aboutEach", "aboutEachPrefix", "bagID");
 
     private final Map<Resource, String> types = new HashMap<>();
+    // One writer per conversion: repeated @de literals pay language validation once, without global state.
+    private final Set<String> validatedLanguages = new HashSet<>();
 
     // Jena's RIOT plain writer uses this deprecated constructor too.
     // Keep the exemption local: typed, flat nodes need the subclass hooks.
@@ -126,6 +128,7 @@ final class RdfXmlRecordWriter extends RDFXML_Basic {
     @Override
     protected void writeLiteral(Literal literal, PrintWriter output) {
         String lexicalForm = literal.getLexicalForm();
+        // Escaping cannot make every RDF lexical form legal XML 1.0; reject rather than drop characters.
         checkXmlCharacters(lexicalForm);
         if (Util.isSimpleString(literal)) {
             output.print(">");
@@ -133,9 +136,22 @@ final class RdfXmlRecordWriter extends RDFXML_Basic {
             output.print(XmlEscape.escapeXml10AttributeMinimal(lexicalForm));
             return;
         }
-        if (!literal.getLanguage().isEmpty()) {
-            LangTags.requireValid(literal.getLanguage());
+        String language = literal.getLanguage();
+        if (!language.isEmpty() && !validatedLanguages.contains(language)) {
+            LangTags.requireValid(language);
+            validatedLanguages.add(language);
         }
+        if (Util.isLangString(literal)) {
+            // Jena's ordinary langString branch needs only xml:lang + escaped text. Write that directly
+            // to skip general entity substitution; attribute escaping also keeps CR as &#xd;.
+            // Use the datatype predicate: a nonempty language alone would include directional literals.
+            output.print(" xml:lang=");
+            output.print(attributeQuoted(language));
+            output.print(">");
+            output.print(XmlEscape.escapeXml10AttributeMinimal(lexicalForm));
+            return;
+        }
+        // Directional language literals need Jena's ITS attributes; retain its typed/XMLLiteral rules too.
         super.writeLiteral(literal, output);
     }
 

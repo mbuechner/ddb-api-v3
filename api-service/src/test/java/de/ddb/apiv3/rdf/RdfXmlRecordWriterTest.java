@@ -198,14 +198,18 @@ class RdfXmlRecordWriterTest {
             "CDATA terminator ]]> stays text",
             "Unicode \u00FC \uD83D\uDE00 and XML-valid controls \u007F\u0085\u009F"
     })
-    void preservesPlainStringEscapingAndWhitespace(String lexicalForm) {
-        Graph source = GraphMemFactory.createDefaultGraph();
-        source.add(Triple.create(NodeFactory.createURI(EX + "record"), NodeFactory.createURI(EX + "label"),
-                NodeFactory.createLiteralString(lexicalForm)));
-        try {
-            assertRoundTrip(source, RdfXmlRecordWriter.write(source));
-        } finally {
-            source.close();
+    void preservesStringEscapingAndWhitespaceWithAndWithoutLanguage(String lexicalForm) {
+        for (String language : List.of("", "de")) {
+            Graph source = GraphMemFactory.createDefaultGraph();
+            var literal = language.isEmpty() ? NodeFactory.createLiteralString(lexicalForm)
+                    : NodeFactory.createLiteralLang(lexicalForm, language);
+            source.add(Triple.create(NodeFactory.createURI(EX + "record"), NodeFactory.createURI(EX + "label"),
+                    literal));
+            try {
+                assertRoundTrip(source, RdfXmlRecordWriter.write(source));
+            } finally {
+                source.close();
+            }
         }
     }
 

@@ -30,7 +30,10 @@ import org.apache.jena.riot.RiotException;
 import org.apache.jena.riot.system.jsonld.JenaToTitanium;
 import org.apache.jena.sparql.core.DatasetGraph;
 
-/** Jena expands RDF once; Titanium compacts it without re-expanding or reparsing JSON. */
+/**
+ * Jena owns RDF expansion; namespace compaction has a guarded fast path and a Titanium fallback.
+ * No vocabulary-specific assumptions or converted records are retained between requests.
+ */
 final class JsonLdRecordWriter {
 
     private JsonLdRecordWriter() {
@@ -56,6 +59,7 @@ final class JsonLdRecordWriter {
         try {
             var options = new JsonLdOptions();
             options.setRdfStar(true);
+            // Keep RDF -> JSON-LD in Jena: list recognition and quoted-term semantics still matter.
             var expanded = JenaToTitanium.convert(dataset, options);
             JsonValue compacted;
             try {
@@ -80,7 +84,13 @@ final class JsonLdRecordWriter {
     }
 
     private static JsonValue compact(JsonValue expanded, JsonObject context, JsonLdOptions options) throws JsonLdError {
+        // Titanium validates/resolves namespace hints even when the specialized path will win.
         var active = new ActiveContext(ProcessingRuntime.of(options)).newContext().create(context, null);
+        var ordinaryGraph = NamespaceJsonLdCompactor.compactIfSupported(expanded, active);
+        if (ordinaryGraph != null) {
+            return ordinaryGraph;
+        }
+        // Unsupported fast-path shape means general compaction, never omitted RDF content.
         return Compaction.with(active).compactArrays(true).compact(expanded);
     }
 }

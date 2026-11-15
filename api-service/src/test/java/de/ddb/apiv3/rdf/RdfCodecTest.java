@@ -202,7 +202,7 @@ class RdfCodecTest {
                     NodeFactory.createURI("https://example.org/p"), NodeFactory.createLiteralString("value"),
                     NodeFactory.createURI(GRAPH));
         });
-        assertThatThrownBy(() -> codec.fromJelly(untrusted, Lang.JSONLD)).isInstanceOf(StorageException.class);
+        assertInvalidStoredJelly(untrusted);
     }
 
     @Test
@@ -247,7 +247,7 @@ class RdfCodecTest {
     @ParameterizedTest
     @ValueSource(strings = {"", "not Jelly", "\u001f\u008bcompressed bytes"})
     void storedCorruptionIsAStorageFailure(String corrupt) {
-        assertThatThrownBy(() -> codec.fromJelly(bytes(corrupt), Lang.JSONLD)).isInstanceOf(StorageException.class);
+        assertInvalidStoredJelly(bytes(corrupt));
     }
 
     @Test
@@ -260,7 +260,7 @@ class RdfCodecTest {
                     NodeFactory.createURI("https://example.org/p"), NodeFactory.createLiteralString("value"),
                     NodeFactory.createURI("https://example.org/another"));
         });
-        assertThatThrownBy(() -> codec.fromJelly(untrusted, Lang.JSONLD)).isInstanceOf(StorageException.class);
+        assertInvalidStoredJelly(untrusted);
     }
 
     @ParameterizedTest
@@ -269,7 +269,7 @@ class RdfCodecTest {
         byte[] untrusted = storedJelly(encoder -> encoder.handleQuad(NodeFactory.createURI("https://example.org/s"),
                 NodeFactory.createURI("https://example.org/p"), NodeFactory.createLiteralString("value"),
                 blankNode ? NodeFactory.createBlankNode("graph") : null));
-        assertThatThrownBy(() -> codec.fromJelly(untrusted, Lang.JSONLD)).isInstanceOf(StorageException.class);
+        assertInvalidStoredJelly(untrusted);
     }
 
     @ParameterizedTest
@@ -285,7 +285,7 @@ class RdfCodecTest {
             case "truncated" -> Arrays.copyOf(valid, valid.length - 1);
             default -> throw new IllegalArgumentException(corruption);
         };
-        assertThatThrownBy(() -> codec.fromJelly(damaged, Lang.JSONLD)).isInstanceOf(StorageException.class);
+        assertInvalidStoredJelly(damaged);
     }
 
     @Test
@@ -399,6 +399,15 @@ class RdfCodecTest {
             assertThatThrownBy(() -> codec.outputMediaType(MediaType.parseMediaTypes(unsupported)))
                     .isInstanceOfSatisfying(ResponseStatusException.class,
                             exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.NOT_ACCEPTABLE));
+        }
+    }
+
+    private void assertInvalidStoredJelly(byte[] jelly) {
+        // Both materializing conversions and Jelly passthrough reject corrupt storage identically.
+        for (Lang language : List.of(Lang.JSONLD, JellyLanguage.JELLY)) {
+            assertThatThrownBy(() -> codec.fromJelly(jelly, language))
+                    .as("Stored Jelly validation for %s", language)
+                    .isInstanceOf(StorageException.class);
         }
     }
 

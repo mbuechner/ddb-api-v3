@@ -19,7 +19,13 @@ package de.ddb.apiv3.rdf;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.apicatalog.jsonld.JsonLdError;
+import com.apicatalog.jsonld.JsonLdOptions;
+import com.apicatalog.jsonld.compaction.Compaction;
+import com.apicatalog.jsonld.context.ActiveContext;
+import com.apicatalog.jsonld.processor.ProcessingRuntime;
 import jakarta.json.Json;
+import jakarta.json.JsonObject;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
@@ -29,6 +35,7 @@ import org.apache.jena.graph.NodeFactory;
 import org.apache.jena.graph.Triple;
 import org.apache.jena.riot.Lang;
 import org.apache.jena.riot.RDFParser;
+import org.apache.jena.riot.system.jsonld.JenaToTitanium;
 import org.apache.jena.sparql.core.DatasetGraph;
 import org.apache.jena.sparql.core.DatasetGraphFactory;
 import org.junit.jupiter.api.Test;
@@ -39,6 +46,113 @@ import org.junit.jupiter.params.provider.MethodSource;
 class JsonLdRecordWriterTest {
 
     private static final String GRAPH = "https://example.org/records/EXAMPLE";
+
+    @Test
+    void compactsMultipleValuesTypesAndReferencesLikeTitanium() throws JsonLdError {
+        var source = multipleValuesGraph();
+        try {
+            var context = namespaceContext(source);
+            var options = new JsonLdOptions();
+            options.setRdfStar(true);
+            var expanded = JenaToTitanium.convert(source, options);
+            var active = new ActiveContext(ProcessingRuntime.of(options)).newContext().create(context, null);
+            var accelerated = NamespaceJsonLdCompactor.compactIfSupported(expanded, active);
+            assertThat(accelerated).isNotNull()
+                    .isEqualTo(Compaction.with(active).compactArrays(true).compact(expanded));
+            byte[] output = JsonLdRecordWriter.write(source);
+            assertGraphRoundTrip(output, source);
+            try (var reader = Json.createReader(new ByteArrayInputStream(output))) {
+                var graph = reader.readObject().getJsonArray("@graph");
+                var record = graph.getValuesAs(JsonObject.class).stream()
+                        .filter(node -> "ex:record".equals(node.getString("@id"))).findFirst().orElseThrow();
+                assertThat(record.getJsonArray("@type").getValuesAs(jakarta.json.JsonString::getString))
+                        .containsExactly("ex:AType", "ex:ZType");
+                assertThat(record.getJsonArray("ex:label")).hasSize(3);
+                assertThat(record.getJsonArray("ex:link")).hasSize(2);
+                assertThat(record.getString("ex:single")).isEqualTo("value");
+            }
+        } finally {
+            source.close();
+        }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("namespaceCompactionContexts")
+    void namespaceTermSelectionMatchesTitaniumForTypedLanguageAndReferenceValues(
+            String scenario, Map<String, String> hints) throws JsonLdError {
+        var source = multipleValuesGraph();
+        try {
+            var context = Json.createObjectBuilder();
+            hints.forEach(context::add);
+            var options = new JsonLdOptions();
+            options.setRdfStar(true);
+            var expanded = JenaToTitanium.convert(source, options);
+            var active = new ActiveContext(ProcessingRuntime.of(options)).newContext()
+                    .create(context.build(), null);
+            var accelerated = NamespaceJsonLdCompactor.compactIfSupported(expanded, active);
+            assertThat(accelerated).as(scenario).isNotNull()
+                    .isEqualTo(Compaction.with(active).compactArrays(true).compact(expanded));
+        } finally {
+            source.close();
+        }
+    }
+
+    static Stream<Arguments> namespaceCompactionContexts() {
+        return Stream.of(
+                Arguments.of("default vocabulary alongside prefixes", Map.of(
+                        "@vocab", "https://example.org/vocab/",
+                        "ex", "https://example.org/vocab/",
+                        "xsd", "http://www.w3.org/2001/XMLSchema#")),
+                Arguments.of("overlapping prefix namespaces", Map.of(
+                        "root", "https://example.org/",
+                        "ex", "https://example.org/vocab/",
+                        "xsd", "http://www.w3.org/2001/XMLSchema#")),
+                Arguments.of("exact property aliases without namespace delimiters", Map.of(
+                        "ex", "https://example.org/vocab/",
+                        "xsd", "http://www.w3.org/2001/XMLSchema#",
+                        "label", "https://example.org/vocab/label",
+                        "count", "https://example.org/vocab/count",
+                        "link", "https://example.org/vocab/link")),
+                Arguments.of("competing prefixes with identical namespaces", Map.of(
+                        "ex", "https://example.org/vocab/",
+                        "aa", "https://example.org/vocab/",
+                        "duplicate", "https://example.org/vocab/",
+                        "xsd", "http://www.w3.org/2001/XMLSchema#")));
+    }
+
+    @Test
+    void rdfListsUseGeneralCompactionAndKeepTheirOrder() throws JsonLdError {
+        var source = RDFParser.create().fromString("""
+                @prefix ex: <https://example.org/vocab/> .
+                <https://example.org/records/EXAMPLE> { ex:record ex:items ( "first" "second" ) . }
+                """).lang(Lang.TRIG).toDatasetGraph();
+        try {
+            var options = new JsonLdOptions();
+            options.setRdfStar(true);
+            var expanded = JenaToTitanium.convert(source, options);
+            var active = new ActiveContext(ProcessingRuntime.of(options)).newContext()
+                    .create(namespaceContext(source), null);
+            assertThat(NamespaceJsonLdCompactor.compactIfSupported(expanded, active)).isNull();
+            byte[] output = JsonLdRecordWriter.write(source);
+            assertThat(new String(output, StandardCharsets.UTF_8)).contains("\"@list\":[\"first\",\"second\"]");
+            assertGraphRoundTrip(output, source);
+        } finally {
+            source.close();
+        }
+    }
+
+    @Test
+    void objectValuedRdfStarIdentifiersAreLeftToGeneralCompaction() throws JsonLdError {
+        var options = new JsonLdOptions();
+        options.setRdfStar(true);
+        var active = new ActiveContext(ProcessingRuntime.of(options)).newContext()
+                .create(Json.createObjectBuilder().add("ex", "https://example.org/vocab/").build(), null);
+        var quoted = Json.createObjectBuilder().add("@id", Json.createObjectBuilder()
+                .add("@id", "https://example.org/subject"));
+        var expanded = Json.createArrayBuilder().add(Json.createObjectBuilder()
+                .add("@id", GRAPH).add("@graph", Json.createArrayBuilder().add(quoted))).build();
+        assertThat(NamespaceJsonLdCompactor.compactIfSupported(expanded, active)).isNull();
+    }
 
     @Test
     void emitsAnInlineContextAndNamedGraphWithoutLosingRdfTerms() {
@@ -240,5 +354,23 @@ class JsonLdRecordWriterTest {
         } finally {
             restored.close();
         }
+    }
+
+    private static JsonObject namespaceContext(DatasetGraph source) {
+        var builder = Json.createObjectBuilder();
+        source.prefixes().forEach((prefix, iri) -> builder.add(prefix.isEmpty() ? "@vocab" : prefix, iri));
+        return builder.build();
+    }
+
+    private static DatasetGraph multipleValuesGraph() {
+        return RDFParser.create().fromString("""
+                @prefix ex: <https://example.org/vocab/> .
+                @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+                <https://example.org/records/EXAMPLE> {
+                    ex:record a ex:ZType, ex:AType ; ex:label "one", "two", "drei"@de ;
+                        ex:count "0042"^^xsd:integer ; ex:link ex:item, _:shared ; ex:single "value" .
+                    _:shared ex:link ex:record .
+                }
+                """).lang(Lang.TRIG).toDatasetGraph();
     }
 }
