@@ -112,15 +112,23 @@ nicht ausgeführt.
 ## Betrieb und Konfiguration
 
 ```dotenv
-LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs
-DDB_ACCESS_LOG_ENABLED=true
-LOGGING_LEVEL_DE_DDB_APIV3_ACCESS=INFO
-CLIENT_ID_HEADER_NAME=X-Client-Id
-SERVER_FORWARD_HEADERS_STRATEGY=none
+DDB_API_LOG_FORMAT=ecs
+DDB_API_ACCESS_LOG_ENABLED=true
+DDB_API_ACCESS_LOG_LEVEL=INFO
+DDB_API_CLIENT_ID_HEADER_NAME=X-Client-Id
+DDB_API_FORWARD_HEADERS_STRATEGY=none
+
+GATEWAY_LOG_FORMAT=ecs
+GATEWAY_ACCESS_LOG_ENABLED=true
+GATEWAY_ACCESS_LOG_LEVEL=INFO
+GATEWAY_CLIENT_ID_HEADER_NAME=X-Client-Id
+GATEWAY_FORWARD_HEADERS_STRATEGY=none
 ```
 
-Die Einstellungen gelten für beide Anwendungen und werden von Compose
-weitergereicht. Der Helm-Chart aktiviert ECS und Access-Logs standardmäßig;
+Die Einstellungen sind je Anwendung getrennt und werden von Compose
+weitergereicht. Für dieselbe protokollierte Header-ID an beiden Hops die beiden
+`*_CLIENT_ID_HEADER_NAME`-Werte aufeinander abstimmen.
+Der Helm-Chart aktiviert ECS und Access-Logs standardmäßig;
 `logging.accessEnabled: false` schaltet Access-Events gezielt ab und macht
 vollständige Nutzungsstatistiken für diesen Zeitraum unmöglich. Das Access-Level
 ist separat auf `INFO` gesetzt, damit ein allgemeines `WARN` die Statistik nicht
@@ -145,7 +153,8 @@ Header sind begrenzt; die JSON-Kodierung übernimmt Spring Boot. Das folgt den
 
 `source.ip` ist bewusst die physische Gegenstelle. Hinter einem Ingress ist das
 oft dessen IP; der API-Service sieht typischerweise das Gateway. Standardmäßig
-gilt ausdrücklich `SERVER_FORWARD_HEADERS_STRATEGY=none`, auch im Cluster.
+gelten `DDB_API_FORWARD_HEADERS_STRATEGY=none` und
+`GATEWAY_FORWARD_HEADERS_STRATEGY=none`, auch im Cluster.
 Beliebige `Forwarded`-/`X-Forwarded-For`-Werte verändern deshalb `client.ip` nicht.
 
 Nur wenn ausschließlich ein vertrauenswürdiger Ingress das Gateway erreicht
@@ -155,7 +164,7 @@ native Auswertung eingeschaltet werden:
 ```yaml
 gateway:
   extraEnv:
-    SERVER_FORWARD_HEADERS_STRATEGY: native
+    GATEWAY_FORWARD_HEADERS_STRATEGY: native
 ```
 
 Dann bleibt `source.ip` die Ingress-IP und `client.ip` enthält die vom Server

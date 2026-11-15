@@ -41,7 +41,7 @@ s3:
   maxConnections: 8
   # Production buckets are provisioned by the storage operator.
   createBucket: false
-  # Operator-managed credential Secret; secretKeys maps its keys to the API's S3_* ENV.
+  # Operator-managed credential Secret; secretKeys maps its keys to the API's DDB_API_S3_* ENV.
   existingSecret: ddb-api-v3-s3
   secretKeys:
     accessKey: S3_ACCESS_KEY

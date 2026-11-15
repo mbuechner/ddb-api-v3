@@ -75,7 +75,7 @@ class GatewayConnectionPoolIntegrationTest {
             try (var gateway = new SpringApplicationBuilder(DdbApiGatewayApplication.class, Customization.class)
                     .web(WebApplicationType.REACTIVE)
                     .run("--APP_PROFILE=dev", "--GATEWAY_PORT=0",
-                            "--API_SERVICE_URI=http://127.0.0.1:" + backend.getAddress().getPort(),
+                            "--GATEWAY_API_SERVICE_URI=http://127.0.0.1:" + backend.getAddress().getPort(),
                             "--GATEWAY_HTTP_MAX_CONNECTIONS=1",
                             "--spring.cloud.gateway.server.webflux.httpclient.pool.name=bounded-pool-test",
                             "--spring.cloud.gateway.server.webflux.httpclient.pool.acquire-timeout=10000",

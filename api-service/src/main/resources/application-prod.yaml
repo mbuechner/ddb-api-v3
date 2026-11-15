@@ -2,6 +2,6 @@ ddb:
   storage:
     s3:
       # Production must explicitly name its S3 endpoint and bucket.
-      endpoint: ${S3_ENDPOINT}
-      bucket: ${S3_BUCKET}
-      create-bucket: ${S3_CREATE_BUCKET:false}
+      endpoint: ${DDB_API_S3_ENDPOINT}
+      bucket: ${DDB_API_S3_BUCKET}
+      create-bucket: ${DDB_API_S3_CREATE_BUCKET:false}

@@ -9,6 +9,15 @@ dynamische PVs und ein S3-Bucket. Secret `ddb-api-v3-s3` im Release-Namespace
 vorab anlegen: `S3_ACCESS_KEY`, `S3_SECRET_KEY`.
 [YAML und Rechte](../../docs/deployment.md#speicher-und-secrets).
 
+Die Anwendungen erhalten getrennte ENV-Namen: `DDB_API_*` für API, S3 und
+API-Logging, `GATEWAY_*` für Routing, Rate-Limits, Redis und Gateway-Logging.
+`APP_PROFILE`, `DDB_DEV_WRITE_TOKEN` und `OAUTH2_*` sind gemeinsam.
+Vorhandene Secret-Datenschlüssel bleiben unverändert: Beispielsweise wird
+`S3_ACCESS_KEY` als `DDB_API_S3_ACCESS_KEY` und `REDIS_PASSWORD` als
+`GATEWAY_REDIS_PASSWORD` injiziert. Native `SPRING_DATA_REDIS_SENTINEL_*`-Namen
+bleiben für Boots Sentinel-Erkennung erhalten. Die Values-Struktur bleibt gleich;
+anwendungsspezifische `extraEnv`-Einträge auf die neuen Präfixe umstellen.
+
 ## Installieren
 
 `values-site.yaml`:

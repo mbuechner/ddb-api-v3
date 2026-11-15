@@ -91,12 +91,12 @@ class LocalGatewayWithoutRedisIntegrationTest {
                 .run(
                         "--APP_PROFILE=dev",
                         "--GATEWAY_PORT=0",
-                        "--API_SERVICE_URI=http://127.0.0.1:" + backend.getAddress().getPort(),
-                        "--REDIS_HOST=redis-is-not-running.invalid",
-                        "--RATE_LIMIT_REPLENISH_RATE=1",
-                        "--RATE_LIMIT_BURST_CAPACITY=2",
-                        "--RATE_LIMIT_REQUESTED_TOKENS=1",
-                        "--RATE_LIMIT_REFILL_PERIOD=1h",
+                        "--GATEWAY_API_SERVICE_URI=http://127.0.0.1:" + backend.getAddress().getPort(),
+                        "--GATEWAY_REDIS_HOST=redis-is-not-running.invalid",
+                        "--GATEWAY_RATE_LIMIT_REPLENISH_RATE=1",
+                        "--GATEWAY_RATE_LIMIT_BURST_CAPACITY=2",
+                        "--GATEWAY_RATE_LIMIT_REQUESTED_TOKENS=1",
+                        "--GATEWAY_RATE_LIMIT_REFILL_PERIOD=1h",
                         "--management.endpoints.web.exposure.include=health",
                         "--spring.main.banner-mode=off");
     }

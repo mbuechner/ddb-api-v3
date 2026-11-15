@@ -89,9 +89,9 @@
       "additionalProperties": false,
       "required": ["endpoint", "region", "bucket", "pathStyleAccess", "connectionTimeout", "readTimeout", "maxConnections", "createBucket", "existingSecret", "secretKeys"],
       "properties": {
-        "endpoint": { "type": "string", "pattern": "^https?://[^/]+/?$", "description": "S3_ENDPOINT: service-account AWS_ENDPOINT_URL, without bucket path or credentials." },
-        "region": { "type": "string", "minLength": 1, "description": "S3_REGION: region used for signing requests." },
-        "bucket": { "type": "string", "minLength": 3, "maxLength": 63, "description": "S3_BUCKET: bucket provisioned by the storage operator." },
+        "endpoint": { "type": "string", "pattern": "^https?://[^/]+/?$", "description": "DDB_API_S3_ENDPOINT: service-account AWS_ENDPOINT_URL, without bucket path or credentials." },
+        "region": { "type": "string", "minLength": 1, "description": "DDB_API_S3_REGION: region used for signing requests." },
+        "bucket": { "type": "string", "minLength": 3, "maxLength": 63, "description": "DDB_API_S3_BUCKET: bucket provisioned by the storage operator." },
         "pathStyleAccess": { "type": "boolean", "description": "true adressiert den Bucket als Endpoint/Bucket; false als Bucket-Subdomain. Nach Vorgabe des S3-Anbieters w\u00e4hlen." },
         "connectionTimeout": { "type": "string", "minLength": 1, "description": "Zeitlimit f\u00fcr den Verbindungsaufbau zum S3-Dienst, z. B. 2s." },
         "readTimeout": { "type": "string", "minLength": 1, "description": "Socket-Lesezeitlimit f\u00fcr S3-Anfragen, z. B. 10s." },
@@ -103,8 +103,8 @@
           "additionalProperties": false,
           "required": ["accessKey", "secretKey"],
           "properties": {
-            "accessKey": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$", "description": "Secret key injected as S3_ACCESS_KEY; use AWS_ACCESS_KEY_ID for an existing AWS-named Secret." },
-            "secretKey": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$", "description": "Secret key injected as S3_SECRET_KEY; use AWS_SECRET_ACCESS_KEY for an existing AWS-named Secret." }
+            "accessKey": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$", "description": "Secret key injected as DDB_API_S3_ACCESS_KEY; use AWS_ACCESS_KEY_ID for an existing AWS-named Secret." },
+            "secretKey": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$", "description": "Secret key injected as DDB_API_S3_SECRET_KEY; use AWS_SECRET_ACCESS_KEY for an existing AWS-named Secret." }
           }
         }
       }
@@ -171,10 +171,10 @@
           "additionalProperties": false,
           "required": ["capacity", "refillTokens", "refillPeriod", "requestedTokens"],
           "properties": {
-            "capacity": {"type": "integer", "minimum": 1, "description": "RATE_LIMIT_BURST_CAPACITY: maximum tokens per client bucket."},
-            "refillTokens": {"type": "integer", "minimum": 1, "description": "RATE_LIMIT_REPLENISH_RATE: tokens added each refill period."},
-            "refillPeriod": {"type": "string", "minLength": 1, "description": "RATE_LIMIT_REFILL_PERIOD: refill duration, for example 1s."},
-            "requestedTokens": {"type": "integer", "minimum": 1, "description": "RATE_LIMIT_REQUESTED_TOKENS: token cost of one request."}
+            "capacity": {"type": "integer", "minimum": 1, "description": "GATEWAY_RATE_LIMIT_BURST_CAPACITY: maximum tokens per client bucket."},
+            "refillTokens": {"type": "integer", "minimum": 1, "description": "GATEWAY_RATE_LIMIT_REPLENISH_RATE: tokens added each refill period."},
+            "refillPeriod": {"type": "string", "minLength": 1, "description": "GATEWAY_RATE_LIMIT_REFILL_PERIOD: refill duration, for example 1s."},
+            "requestedTokens": {"type": "integer", "minimum": 1, "description": "GATEWAY_RATE_LIMIT_REQUESTED_TOKENS: token cost of one request."}
           }
         },
         "service": {
@@ -320,7 +320,7 @@
       "required": ["replicaCount", "autoscaling", "vpa", "resources", "forwardHeadersStrategy"],
       "properties": {
         "replicaCount": {"type": "integer", "minimum": 1, "description": "Feste Anzahl der Pods, solange Autoscaling ausgeschaltet ist. Ein Pod ist sparsam, bietet bei Ausfall oder Rollout aber keine Verf\u00fcgbarkeit."},
-        "forwardHeadersStrategy": {"type": "string", "enum": ["none", "native", "framework"], "description": "SERVER_FORWARD_HEADERS_STRATEGY for this pod. Enable only behind a trusted proxy that sanitizes forwarded headers."},
+        "forwardHeadersStrategy": {"type": "string", "enum": ["none", "native", "framework"], "description": "DDB_API_FORWARD_HEADERS_STRATEGY or GATEWAY_FORWARD_HEADERS_STRATEGY for this pod. Enable only behind a trusted proxy that sanitizes forwarded headers."},
         "extraEnv": {
           "type": "object",
           "description": "Additional native Spring environment overrides for this workload, for example JAVA_TOOL_OPTIONS. Keep credentials in Secrets.",

@@ -52,8 +52,9 @@ jeweils mit Buchstabe oder Ziffer am Anfang und Ende; maximal 253 Zeichen.
 Das gilt auch für Dev-Token-, TLS- und Registry-Secrets. Die ausgewählten
 Schlüssel im Secret, etwa `AWS_ACCESS_KEY_ID`, dürfen Großbuchstaben enthalten.
 
-Die API erhält weiterhin `S3_ACCESS_KEY` und `S3_SECRET_KEY`; nur die Namen im
-Secret ändern sich. Zugangsdaten gehören nicht in die Helm-Values.
+Die API erhält die Werte als `DDB_API_S3_ACCESS_KEY` und `DDB_API_S3_SECRET_KEY`.
+`secretKeys` ändert die Zuordnung im Secret; die Container-ENV-Namen bleiben fest.
+Zugangsdaten gehören nicht in die Helm-Values.
 Nach einer Rotation Secret aktualisieren und die API-Pods
 neu starten; laufende Prozesse lesen Secret-ENV nicht automatisch neu:
 
@@ -91,7 +92,7 @@ sonst lehnt die Schema-Validierung die Konfiguration ab.
 `apiService.maxDocumentSize` begrenzt den entpackten Upload, `gateway.rateLimit`
 konfiguriert Kapazität, Nachfüllmenge, Intervall und Kosten einer Anfrage.
 `apiService.forwardHeadersStrategy` und `gateway.forwardHeadersStrategy` setzen
-jeweils `SERVER_FORWARD_HEADERS_STRATEGY`; hinter vertrauenswürdigen Proxies
+`DDB_API_FORWARD_HEADERS_STRATEGY` beziehungsweise `GATEWAY_FORWARD_HEADERS_STRATEGY`; hinter vertrauenswürdigen Proxies
 bewusst wählen. [Alle ENV-Zuordnungen](../charts/ddb-api-v3/values.schema.json).
 Das Schema liefert auch die Feldbeschreibungen für das native OpenShift-Formular;
 dieselben Werte lassen sich weiterhin direkt in der YAML-Ansicht bearbeiten.

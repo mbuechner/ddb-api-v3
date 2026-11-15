@@ -11,22 +11,22 @@ spring:
       # A stable standalone/managed endpoint is sufficient outside Kubernetes.
       # Deployments that set Spring Boot's native SPRING_DATA_REDIS_SENTINEL_*
       # variables replace this address with Sentinel discovery automatically.
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
-      username: ${REDIS_USERNAME:}
-      password: ${REDIS_PASSWORD}
+      host: ${GATEWAY_REDIS_HOST:localhost}
+      port: ${GATEWAY_REDIS_PORT:6379}
+      username: ${GATEWAY_REDIS_USERNAME:}
+      password: ${GATEWAY_REDIS_PASSWORD}
       ssl:
-        enabled: ${REDIS_TLS_ENABLED:true}
-      connect-timeout: ${REDIS_CONNECT_TIMEOUT:500ms}
-      timeout: ${REDIS_COMMAND_TIMEOUT:500ms}
+        enabled: ${GATEWAY_REDIS_TLS_ENABLED:true}
+      connect-timeout: ${GATEWAY_REDIS_CONNECT_TIMEOUT:500ms}
+      timeout: ${GATEWAY_REDIS_COMMAND_TIMEOUT:500ms}
       client-name: ddb-api-v3-gateway
 
 ddb:
   gateway:
     client-id:
       # Verified tokens identify registered clients; public reads still get an anonymous quota.
-      allow-header: ${CLIENT_ID_HEADER_ENABLED:false}
-      allow-remote-address: ${ANONYMOUS_RATE_LIMIT_BY_REMOTE_ADDRESS:true}
+      allow-header: ${GATEWAY_CLIENT_ID_HEADER_ENABLED:false}
+      allow-remote-address: ${GATEWAY_ANONYMOUS_RATE_LIMIT_BY_REMOTE_ADDRESS:true}
 
 management:
   endpoint:

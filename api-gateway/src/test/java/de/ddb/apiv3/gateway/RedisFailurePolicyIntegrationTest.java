@@ -44,12 +44,12 @@ class RedisFailurePolicyIntegrationTest {
                         .run(
                                 "--APP_PROFILE=prod",
                                 "--GATEWAY_PORT=0",
-                                "--REDIS_HOST=127.0.0.1",
-                                "--REDIS_PORT=" + unavailablePort,
-                                "--REDIS_PASSWORD=",
-                                "--REDIS_TLS_ENABLED=false",
-                                "--REDIS_CONNECT_TIMEOUT=100ms",
-                                "--REDIS_COMMAND_TIMEOUT=100ms",
+                                "--GATEWAY_REDIS_HOST=127.0.0.1",
+                                "--GATEWAY_REDIS_PORT=" + unavailablePort,
+                                "--GATEWAY_REDIS_PASSWORD=",
+                                "--GATEWAY_REDIS_TLS_ENABLED=false",
+                                "--GATEWAY_REDIS_CONNECT_TIMEOUT=100ms",
+                                "--GATEWAY_REDIS_COMMAND_TIMEOUT=100ms",
                                 "--management.endpoints.enabled-by-default=false",
                                 "--spring.main.banner-mode=off",
                                 "--logging.level.root=OFF"))

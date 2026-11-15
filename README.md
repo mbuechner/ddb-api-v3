@@ -36,11 +36,17 @@ Der Maven-Aufruf im Projektverzeichnis startet API und Gateway parallel;
 beziehungsweise `mvn -pl api-gateway spring-boot:run` möglich.
 
 API: `:8080`, Gateway: `:8081`, lokales S3: `:8333`.
+Freie, unterschiedliche Werte für `DDB_API_PORT` und `GATEWAY_PORT` wählen.
+Compose veröffentlicht das Gateway auf demselben `GATEWAY_PORT`, auf dem es lauscht.
 
 ## Konfiguration
 
 [.env.example](.env.example) ist die Variablenreferenz. Prozess-ENV gewinnt;
 Änderungen brauchen Neustarts. `.env` nicht einchecken.
+
+`DDB_API_*` konfiguriert die API einschließlich S3, `GATEWAY_*` das Gateway
+einschließlich Redis und Rate-Limits. Profil (`APP_PROFILE`), Dev-Token und
+OAuth-Vertrauen stehen in einer gemeinsamen Gruppe für beide Anwendungen.
 
 | Profil | RDF-Speicher | Gateway-Limits |
 | --- | --- | --- |

@@ -8,15 +8,16 @@ metadata:
   labels:
     {{- include "ddb-api-v3.labels" . | nindent 4 }}
 data:
+  # Shared profile and write-token trust settings.
   APP_PROFILE: {{ .Values.appProfile | quote }}
   OAUTH2_ISSUER_URI: {{ .Values.auth.issuerUri | quote }}
   OAUTH2_AUDIENCE: {{ .Values.auth.audience | quote }}
   OAUTH2_JWK_SET_URI: {{ .Values.auth.jwkSetUri | quote }}
-  LOGGING_STRUCTURED_FORMAT_CONSOLE: ecs
-  DDB_ACCESS_LOG_ENABLED: {{ .Values.logging.accessEnabled | quote }}
-  LOGGING_LEVEL_DE_DDB_APIV3_ACCESS: INFO
-  GATEWAY_HTTP_MAX_CONNECTIONS: {{ .Values.gateway.maxConnections | quote }}
-  API_SERVICE_URI: {{ printf "http://%s:8080" (include "ddb-api-v3.apiServiceName" .) | quote }}
+  # API representation, workload and S3 settings.
+  DDB_API_LOG_FORMAT: ecs
+  DDB_API_ACCESS_LOG_ENABLED: {{ .Values.logging.accessEnabled | quote }}
+  DDB_API_ACCESS_LOG_LEVEL: INFO
+  DDB_API_CLIENT_ID_HEADER_NAME: X-Client-Id
   DDB_API_BASE_URL: {{ .Values.apiService.baseUrl | quote }}
   DDB_API_UPLOAD_MAX_FILE_SIZE: {{ .Values.apiService.maxDocumentSize | quote }}
   DDB_API_MAX_CONCURRENT_REQUESTS: {{ .Values.apiService.concurrency.maxRequests | quote }}
@@ -24,30 +25,36 @@ data:
   DDB_API_QUEUE_TIMEOUT: {{ .Values.apiService.concurrency.queueTimeout | quote }}
   DDB_API_COMPRESSION_ENABLED: "true"
   DDB_API_COMPRESSION_MIN_RESPONSE_SIZE: 1KB
-  S3_ENDPOINT: {{ required "s3.endpoint is required" .Values.s3.endpoint | quote }}
-  S3_REGION: {{ .Values.s3.region | quote }}
-  S3_BUCKET: {{ required "s3.bucket is required" .Values.s3.bucket | quote }}
-  S3_PATH_STYLE_ACCESS: {{ .Values.s3.pathStyleAccess | quote }}
-  S3_CONNECTION_TIMEOUT: {{ .Values.s3.connectionTimeout | quote }}
-  S3_READ_TIMEOUT: {{ .Values.s3.readTimeout | quote }}
-  S3_MAX_CONNECTIONS: {{ .Values.s3.maxConnections | quote }}
-  S3_CREATE_BUCKET: {{ .Values.s3.createBucket | quote }}
+  DDB_API_S3_ENDPOINT: {{ required "s3.endpoint is required" .Values.s3.endpoint | quote }}
+  DDB_API_S3_REGION: {{ .Values.s3.region | quote }}
+  DDB_API_S3_BUCKET: {{ required "s3.bucket is required" .Values.s3.bucket | quote }}
+  DDB_API_S3_PATH_STYLE_ACCESS: {{ .Values.s3.pathStyleAccess | quote }}
+  DDB_API_S3_CONNECTION_TIMEOUT: {{ .Values.s3.connectionTimeout | quote }}
+  DDB_API_S3_READ_TIMEOUT: {{ .Values.s3.readTimeout | quote }}
+  DDB_API_S3_MAX_CONNECTIONS: {{ .Values.s3.maxConnections | quote }}
+  DDB_API_S3_CREATE_BUCKET: {{ .Values.s3.createBucket | quote }}
+  # Gateway routing, quotas and Redis state backend.
+  GATEWAY_LOG_FORMAT: ecs
+  GATEWAY_ACCESS_LOG_ENABLED: {{ .Values.logging.accessEnabled | quote }}
+  GATEWAY_ACCESS_LOG_LEVEL: INFO
+  GATEWAY_HTTP_MAX_CONNECTIONS: {{ .Values.gateway.maxConnections | quote }}
+  GATEWAY_API_SERVICE_URI: {{ printf "http://%s:8080" (include "ddb-api-v3.apiServiceName" .) | quote }}
   # Standalone uses the Redis service; HA discovers the primary through Sentinel.
-  REDIS_HOST: {{ include "ddb-api-v3.redisName" . | quote }}
-  REDIS_PORT: "6379"
-  REDIS_USERNAME: {{ required "redis.auth.username is required" .Values.redis.auth.username | quote }}
+  GATEWAY_REDIS_HOST: {{ include "ddb-api-v3.redisName" . | quote }}
+  GATEWAY_REDIS_PORT: "6379"
+  GATEWAY_REDIS_USERNAME: {{ required "redis.auth.username is required" .Values.redis.auth.username | quote }}
   {{- if .Values.redis.haMode.enabled }}
   SPRING_DATA_REDIS_SENTINEL_MASTER: {{ .Values.redis.haMode.masterGroupName | quote }}
   SPRING_DATA_REDIS_SENTINEL_NODES: {{ printf "%s:26379" (include "ddb-api-v3.redisName" .) | quote }}
   SPRING_DATA_REDIS_SENTINEL_USERNAME: {{ .Values.redis.auth.username | quote }}
   {{- end }}
-  REDIS_TLS_ENABLED: "false"
-  REDIS_CONNECT_TIMEOUT: 500ms
-  REDIS_COMMAND_TIMEOUT: 500ms
-  RATE_LIMIT_BURST_CAPACITY: {{ .Values.gateway.rateLimit.capacity | quote }}
-  RATE_LIMIT_REPLENISH_RATE: {{ .Values.gateway.rateLimit.refillTokens | quote }}
-  RATE_LIMIT_REFILL_PERIOD: {{ .Values.gateway.rateLimit.refillPeriod | quote }}
-  RATE_LIMIT_REQUESTED_TOKENS: {{ .Values.gateway.rateLimit.requestedTokens | quote }}
-  CLIENT_ID_HEADER_ENABLED: "false"
-  CLIENT_ID_HEADER_NAME: X-Client-Id
-  ANONYMOUS_RATE_LIMIT_BY_REMOTE_ADDRESS: "true"
+  GATEWAY_REDIS_TLS_ENABLED: "false"
+  GATEWAY_REDIS_CONNECT_TIMEOUT: 500ms
+  GATEWAY_REDIS_COMMAND_TIMEOUT: 500ms
+  GATEWAY_RATE_LIMIT_BURST_CAPACITY: {{ .Values.gateway.rateLimit.capacity | quote }}
+  GATEWAY_RATE_LIMIT_REPLENISH_RATE: {{ .Values.gateway.rateLimit.refillTokens | quote }}
+  GATEWAY_RATE_LIMIT_REFILL_PERIOD: {{ .Values.gateway.rateLimit.refillPeriod | quote }}
+  GATEWAY_RATE_LIMIT_REQUESTED_TOKENS: {{ .Values.gateway.rateLimit.requestedTokens | quote }}
+  GATEWAY_CLIENT_ID_HEADER_ENABLED: "false"
+  GATEWAY_CLIENT_ID_HEADER_NAME: X-Client-Id
+  GATEWAY_ANONYMOUS_RATE_LIMIT_BY_REMOTE_ADDRESS: "true"

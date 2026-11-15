@@ -29,8 +29,32 @@ private `.env` aus dem Repository beziehungsweise dem übergeordneten
 Modulverzeichnis. Gesetzte Prozessvariablen haben Vorrang. Änderungen an ENV,
 Secrets oder Profilen werden erst beim Neustart der betreffenden Prozesse wirksam.
 
+Die ENV-Dateien trennen gemeinsame Werte von `DDB_API_*` (API, RDF und S3)
+und `GATEWAY_*` (Routing, Quoten und Redis). Logging und Forwarding sind je
+Anwendung getrennt einstellbar. Profil, Dev-Token und OAuth-Vertrauen bleiben
+gemeinsam, damit beide Komponenten dieselben Schreibzugriffe prüfen.
+
+Vorhandene Shell- und Deployment-Konfigurationen auf die neuen Namen umstellen:
+
+| Bisher | Jetzt |
+| --- | --- |
+| `SERVER_PORT` | `DDB_API_PORT` |
+| `S3_*` | `DDB_API_S3_*` |
+| `API_SERVICE_URI` | `GATEWAY_API_SERVICE_URI` |
+| `REDIS_*`, `RATE_LIMIT_*` | `GATEWAY_REDIS_*`, `GATEWAY_RATE_LIMIT_*` |
+| Geteilte Logging-/Forwarding-Variablen | Jeweils `DDB_API_*` oder `GATEWAY_*`; siehe `.env.example` |
+
+Native Spring-Boot-Sentinel-Variablen behalten ihre `SPRING_DATA_REDIS_SENTINEL_*`-
+Namen. Im Helm-Chart bleiben auch die Datenschlüssel vorhandener Secrets erhalten;
+die Templates ordnen sie den neuen Container-ENV-Namen zu.
+
 Standardports sind 8080 für die direkt gestartete API, 8081 für das Gateway
-und 8333 für den lokalen S3-Endpunkt. Compose veröffentlicht nur Gateway und
+und 8333 für den lokalen S3-Endpunkt. Der Anwender wählt freie, unterschiedliche
+Werte für `DDB_API_PORT` und `GATEWAY_PORT`. Der Gateway-Port ist innerhalb und
+außerhalb des Compose-Containers identisch. Beim direkten Java-/Maven-Start
+muss `GATEWAY_API_SERVICE_URI` zum gewählten `DDB_API_PORT` passen; ohne festen
+Override folgt das lokale Backend-Ziel automatisch dem API-Port.
+Compose veröffentlicht nur Gateway und
 lokalen Speicher auf Loopback; die API bleibt im Compose-Netz. Das Volume
 `seaweedfs-data` erhält die Daten über Containerwechsel hinweg. `docker compose
 down -v` entfernt es und damit lokale Daten; für normale Neustarts kein `-v` verwenden.
@@ -41,24 +65,24 @@ Die öffentlichen S3-Beispielzugänge aus `.env.example` nur lokal einsetzen.
 Endpunkt, Bucket und Region konfigurieren; Standardregion ist `eu-central-1`.
 Der Bucket muss in Produktion vorab existieren. Das Konto benötigt Objekt-Lese-
 und Schreibrechte sowie Zugriff für `HeadBucket`; Bucket-Anlegerechte sind bei
-`S3_CREATE_BUCKET=false` nicht erforderlich. Bedingte PUTs mit `If-Match` und
+`DDB_API_S3_CREATE_BUCKET=false` nicht erforderlich. Bedingte PUTs mit `If-Match` und
 `If-None-Match` müssen vom Speicher atomar unterstützt werden.
 
 Die Bezeichnungen aus Kontounterlagen werden folgendermaßen zugeordnet:
 
 | Anbieter | API-Konfiguration |
 | --- | --- |
-| `AWS_ENDPOINT_URL` | `S3_ENDPOINT` |
-| `AWS_ACCESS_KEY_ID` | `S3_ACCESS_KEY` |
-| `AWS_SECRET_ACCESS_KEY` | `S3_SECRET_KEY` |
+| `AWS_ENDPOINT_URL` | `DDB_API_S3_ENDPOINT` |
+| `AWS_ACCESS_KEY_ID` | `DDB_API_S3_ACCESS_KEY` |
+| `AWS_SECRET_ACCESS_KEY` | `DDB_API_S3_SECRET_KEY` |
 
 ```dotenv
-S3_ENDPOINT=https://s3.storage.example.org
-S3_BUCKET=ddb-records
-S3_REGION=eu-central-1
-S3_ACCESS_KEY=<Access-Key-des-Servicekontos>
-S3_SECRET_KEY=<Secret-Key-des-Servicekontos>
-S3_CREATE_BUCKET=false
+DDB_API_S3_ENDPOINT=https://s3.storage.example.org
+DDB_API_S3_BUCKET=ddb-records
+DDB_API_S3_REGION=eu-central-1
+DDB_API_S3_ACCESS_KEY=<Access-Key-des-Servicekontos>
+DDB_API_S3_SECRET_KEY=<Secret-Key-des-Servicekontos>
+DDB_API_S3_CREATE_BUCKET=false
 ```
 
 Der Endpunkt ist ein HTTP(S)-Origin ohne Bucket-Pfad, Query oder Zugangsdaten.

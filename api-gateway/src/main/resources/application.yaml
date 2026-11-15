@@ -2,7 +2,7 @@ server:
   port: ${GATEWAY_PORT:8081}
   shutdown: graceful
   # Only explicitly trusted deployments should let forwarded headers establish client/origin data.
-  forward-headers-strategy: ${SERVER_FORWARD_HEADERS_STRATEGY:none}
+  forward-headers-strategy: ${GATEWAY_FORWARD_HEADERS_STRATEGY:none}
 
 spring:
   main:
@@ -45,7 +45,7 @@ spring:
             enabled: true
           routes:
             - id: records
-              uri: ${API_SERVICE_URI:http://127.0.0.1:8080}
+              uri: ${GATEWAY_API_SERVICE_URI:http://127.0.0.1:${DDB_API_PORT:8080}}
               predicates:
                 - Path=/3/**
               filters:
@@ -55,31 +55,31 @@ spring:
                   args:
                     rate-limiter: "#{@bucket4jRateLimiter}"
                     key-resolver: "#{@clientIdKeyResolver}"
-                    bucket4j-rate-limiter.capacity: ${RATE_LIMIT_BURST_CAPACITY:20}
-                    bucket4j-rate-limiter.refillTokens: ${RATE_LIMIT_REPLENISH_RATE:10}
-                    bucket4j-rate-limiter.refillPeriod: ${RATE_LIMIT_REFILL_PERIOD:1s}
-                    bucket4j-rate-limiter.requestedTokens: ${RATE_LIMIT_REQUESTED_TOKENS:1}
+                    bucket4j-rate-limiter.capacity: ${GATEWAY_RATE_LIMIT_BURST_CAPACITY:20}
+                    bucket4j-rate-limiter.refillTokens: ${GATEWAY_RATE_LIMIT_REPLENISH_RATE:10}
+                    bucket4j-rate-limiter.refillPeriod: ${GATEWAY_RATE_LIMIT_REFILL_PERIOD:1s}
+                    bucket4j-rate-limiter.requestedTokens: ${GATEWAY_RATE_LIMIT_REQUESTED_TOKENS:1}
                     bucket4j-rate-limiter.headerName: X-RateLimit-Remaining
                 # Bucket4j emits the balance; these filters add the fixed bucket settings.
                 - name: SetResponseHeader
                   args:
                     name: X-RateLimit-Replenish-Rate
-                    value: "${RATE_LIMIT_REPLENISH_RATE:10}"
+                    value: "${GATEWAY_RATE_LIMIT_REPLENISH_RATE:10}"
                 - name: SetResponseHeader
                   args:
                     name: X-RateLimit-Burst-Capacity
-                    value: "${RATE_LIMIT_BURST_CAPACITY:20}"
+                    value: "${GATEWAY_RATE_LIMIT_BURST_CAPACITY:20}"
                 - name: SetResponseHeader
                   args:
                     name: X-RateLimit-Requested-Tokens
-                    value: "${RATE_LIMIT_REQUESTED_TOKENS:1}"
+                    value: "${GATEWAY_RATE_LIMIT_REQUESTED_TOKENS:1}"
             # Versionless RDF resource URLs only redirect; the /3 target keeps its auth/rate policy.
             - id: resource-redirects
-              uri: ${API_SERVICE_URI:http://127.0.0.1:8080}
+              uri: ${GATEWAY_API_SERVICE_URI:http://127.0.0.1:${DDB_API_PORT:8080}}
               predicates:
                 - Path=/{resource:(?!(?:actuator|openapi|webjars|swagger-ui|error|contexts)$)[a-z][a-z0-9-]*}/**
             - id: documentation
-              uri: ${API_SERVICE_URI:http://127.0.0.1:8080}
+              uri: ${GATEWAY_API_SERVICE_URI:http://127.0.0.1:${DDB_API_PORT:8080}}
               predicates:
                 - Path=/,/openapi/**,/swagger-ui.html,/webjars/**
           # Global framework CORS handling also answers OPTIONS requests that do not
@@ -111,22 +111,22 @@ ddb:
     dev-write-token: ${DDB_DEV_WRITE_TOKEN:}
   logging:
     access:
-      enabled: ${DDB_ACCESS_LOG_ENABLED:true}
+      enabled: ${GATEWAY_ACCESS_LOG_ENABLED:true}
   gateway:
     client-id:
-      allow-header: ${CLIENT_ID_HEADER_ENABLED:true}
-      header-name: ${CLIENT_ID_HEADER_NAME:X-Client-Id}
+      allow-header: ${GATEWAY_CLIENT_ID_HEADER_ENABLED:true}
+      header-name: ${GATEWAY_CLIENT_ID_HEADER_NAME:X-Client-Id}
       # Anonymous traffic is isolated from authenticated client buckets. Only the socket peer
       # is used; forwarded headers require a separately configured trusted-proxy strategy.
-      allow-remote-address: ${ANONYMOUS_RATE_LIMIT_BY_REMOTE_ADDRESS:true}
+      allow-remote-address: ${GATEWAY_ANONYMOUS_RATE_LIMIT_BY_REMOTE_ADDRESS:true}
 
 # One JSON object per event; Boot handles encoding, timestamps and service metadata.
 logging:
   level:
-    de.ddb.apiv3.access: ${LOGGING_LEVEL_DE_DDB_APIV3_ACCESS:INFO}
+    de.ddb.apiv3.access: ${GATEWAY_ACCESS_LOG_LEVEL:INFO}
   structured:
     format:
-      console: ${LOGGING_STRUCTURED_FORMAT_CONSOLE:ecs}
+      console: ${GATEWAY_LOG_FORMAT:ecs}
 
 management:
   endpoints:

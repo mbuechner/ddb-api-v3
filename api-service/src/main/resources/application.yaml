@@ -1,7 +1,7 @@
 server:
-  port: ${SERVER_PORT:8080}
+  port: ${DDB_API_PORT:8080}
   # Enable native forwarding only behind a proxy that sanitizes incoming forwarding headers.
-  forward-headers-strategy: ${SERVER_FORWARD_HEADERS_STRATEGY:none}
+  forward-headers-strategy: ${DDB_API_FORWARD_HEADERS_STRATEGY:none}
   shutdown: graceful
   compression:
     # Jetty handles negotiation, gzip request decompression, response compression and
@@ -60,11 +60,11 @@ management:
 
 logging:
   level:
-    de.ddb.apiv3.access: ${LOGGING_LEVEL_DE_DDB_APIV3_ACCESS:INFO}
+    de.ddb.apiv3.access: ${DDB_API_ACCESS_LOG_LEVEL:INFO}
   structured:
     format:
       # Spring Boot escapes and writes one ECS JSON object per console event.
-      console: ${LOGGING_STRUCTURED_FORMAT_CONSOLE:ecs}
+      console: ${DDB_API_LOG_FORMAT:ecs}
 
 ddb:
   security:
@@ -72,8 +72,8 @@ ddb:
     dev-write-token: ${DDB_DEV_WRITE_TOKEN:}
   logging:
     access:
-      enabled: ${DDB_ACCESS_LOG_ENABLED:true}
-      client-id-header-name: ${CLIENT_ID_HEADER_NAME:X-Client-Id}
+      enabled: ${DDB_API_ACCESS_LOG_ENABLED:true}
+      client-id-header-name: ${DDB_API_CLIENT_ID_HEADER_NAME:X-Client-Id}
   api:
     # Canonical production origin; dev defaults to request-based auto mode.
     base-url: ${DDB_API_BASE_URL:https://api.deutsche-digitale-bibliothek.de}
@@ -86,13 +86,13 @@ ddb:
       queue-timeout: ${DDB_API_QUEUE_TIMEOUT:1s}
   storage:
     s3:
-      endpoint: ${S3_ENDPOINT:http://127.0.0.1:8333}
-      region: ${S3_REGION:eu-central-1}
-      bucket: ${S3_BUCKET:ddb-records}
-      access-key: ${S3_ACCESS_KEY:}
-      secret-key: ${S3_SECRET_KEY:}
-      path-style-access: ${S3_PATH_STYLE_ACCESS:true}
-      connection-timeout: ${S3_CONNECTION_TIMEOUT:2s}
-      read-timeout: ${S3_READ_TIMEOUT:10s}
-      max-connections: ${S3_MAX_CONNECTIONS:50}
-      create-bucket: ${S3_CREATE_BUCKET:false}
+      endpoint: ${DDB_API_S3_ENDPOINT:http://127.0.0.1:8333}
+      region: ${DDB_API_S3_REGION:eu-central-1}
+      bucket: ${DDB_API_S3_BUCKET:ddb-records}
+      access-key: ${DDB_API_S3_ACCESS_KEY:}
+      secret-key: ${DDB_API_S3_SECRET_KEY:}
+      path-style-access: ${DDB_API_S3_PATH_STYLE_ACCESS:true}
+      connection-timeout: ${DDB_API_S3_CONNECTION_TIMEOUT:2s}
+      read-timeout: ${DDB_API_S3_READ_TIMEOUT:10s}
+      max-connections: ${DDB_API_S3_MAX_CONNECTIONS:50}
+      create-bucket: ${DDB_API_S3_CREATE_BUCKET:false}

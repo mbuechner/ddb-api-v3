@@ -143,16 +143,16 @@ class DistributedRateLimitingIntegrationTest {
         Map<String, Object> properties = new LinkedHashMap<>();
         properties.put("APP_PROFILE", "prod");
         properties.put("GATEWAY_PORT", "0");
-        properties.put("API_SERVICE_URI", "http://127.0.0.1:" + backend.getAddress().getPort());
-        properties.put("REDIS_HOST", REDIS.getHost());
-        properties.put("REDIS_PORT", REDIS.getMappedPort(6379));
-        properties.put("REDIS_PASSWORD", "");
-        properties.put("REDIS_TLS_ENABLED", "false");
+        properties.put("GATEWAY_API_SERVICE_URI", "http://127.0.0.1:" + backend.getAddress().getPort());
+        properties.put("GATEWAY_REDIS_HOST", REDIS.getHost());
+        properties.put("GATEWAY_REDIS_PORT", REDIS.getMappedPort(6379));
+        properties.put("GATEWAY_REDIS_PASSWORD", "");
+        properties.put("GATEWAY_REDIS_TLS_ENABLED", "false");
         // One complete request per minute: the first call consumes all 60 accumulated tokens.
-        properties.put("RATE_LIMIT_REPLENISH_RATE", "1");
-        properties.put("RATE_LIMIT_BURST_CAPACITY", "60");
-        properties.put("RATE_LIMIT_REQUESTED_TOKENS", "60");
-        properties.put("CLIENT_ID_HEADER_ENABLED", "true");
+        properties.put("GATEWAY_RATE_LIMIT_REPLENISH_RATE", "1");
+        properties.put("GATEWAY_RATE_LIMIT_BURST_CAPACITY", "60");
+        properties.put("GATEWAY_RATE_LIMIT_REQUESTED_TOKENS", "60");
+        properties.put("GATEWAY_CLIENT_ID_HEADER_ENABLED", "true");
         properties.put("management.endpoints.enabled-by-default", "false");
         properties.put("spring.main.banner-mode", "off");
         return new SpringApplicationBuilder(DdbApiGatewayApplication.class)

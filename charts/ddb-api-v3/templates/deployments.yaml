@@ -63,9 +63,9 @@ spec:
             - configMapRef:
                 name: {{ include "ddb-api-v3.configMapName" $ }}
           env:
-            - name: SERVER_PORT
+            - name: {{ ternary "DDB_API_PORT" "GATEWAY_PORT" $api }}
               value: {{ ternary "8080" "8081" $api | quote }}
-            - name: SERVER_FORWARD_HEADERS_STRATEGY
+            - name: {{ ternary "DDB_API_FORWARD_HEADERS_STRATEGY" "GATEWAY_FORWARD_HEADERS_STRATEGY" $api }}
               value: {{ $settings.forwardHeadersStrategy | quote }}
             {{- if $.Values.auth.devWriteTokenSecret }}
             - name: DDB_DEV_WRITE_TOKEN
@@ -75,18 +75,18 @@ spec:
                   key: DDB_DEV_WRITE_TOKEN
             {{- end }}
             {{- if $api }}
-            - name: S3_ACCESS_KEY
+            - name: DDB_API_S3_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ include "ddb-api-v3.s3SecretName" $ }}
                   key: {{ $.Values.s3.secretKeys.accessKey | quote }}
-            - name: S3_SECRET_KEY
+            - name: DDB_API_S3_SECRET_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ include "ddb-api-v3.s3SecretName" $ }}
                   key: {{ $.Values.s3.secretKeys.secretKey | quote }}
             {{- else }}
-            - name: REDIS_PASSWORD
+            - name: GATEWAY_REDIS_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ include "ddb-api-v3.redisSecretName" $ }}

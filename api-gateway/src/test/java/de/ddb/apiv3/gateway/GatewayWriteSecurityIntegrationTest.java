@@ -265,9 +265,9 @@ class GatewayWriteSecurityIntegrationTest {
         assertStartupFails("must encode 32 random bytes", "--ddb.security.dev-write-token=too-short");
         assertStartupFails("must use canonical Base64URL", "--ddb.security.dev-write-token=" + "A".repeat(42) + "B");
         assertStartupFails("allowed only in dev without prod", "--spring.profiles.active=prod",
-                "--ddb.security.dev-write-token=" + DEV_TOKEN, "--REDIS_PASSWORD=public-test-password");
+                "--ddb.security.dev-write-token=" + DEV_TOKEN, "--GATEWAY_REDIS_PASSWORD=public-test-password");
         assertStartupFails("allowed only in dev without prod", "--spring.profiles.active=dev,prod",
-                "--ddb.security.dev-write-token=" + DEV_TOKEN, "--REDIS_PASSWORD=public-test-password");
+                "--ddb.security.dev-write-token=" + DEV_TOKEN, "--GATEWAY_REDIS_PASSWORD=public-test-password");
     }
 
     @Test
@@ -298,9 +298,9 @@ class GatewayWriteSecurityIntegrationTest {
 
     private static ConfigurableApplicationContext start(String... options) {
         var args = new ArrayList<>(List.of("--APP_PROFILE=dev", "--GATEWAY_PORT=0",
-                "--API_SERVICE_URI=http://127.0.0.1:" + backend.getAddress().getPort(),
-                "--CLIENT_ID_HEADER_ENABLED=false", "--ANONYMOUS_RATE_LIMIT_BY_REMOTE_ADDRESS=true",
-                "--RATE_LIMIT_BURST_CAPACITY=1000", "--RATE_LIMIT_REPLENISH_RATE=1000",
+                "--GATEWAY_API_SERVICE_URI=http://127.0.0.1:" + backend.getAddress().getPort(),
+                "--GATEWAY_CLIENT_ID_HEADER_ENABLED=false", "--GATEWAY_ANONYMOUS_RATE_LIMIT_BY_REMOTE_ADDRESS=true",
+                "--GATEWAY_RATE_LIMIT_BURST_CAPACITY=1000", "--GATEWAY_RATE_LIMIT_REPLENISH_RATE=1000",
                 "--ddb.security.dev-write-token=", "--management.endpoints.web.exposure.include=health"));
         // Specific test options replace defaults instead of duplicating command-line properties.
         for (String option : options) {
