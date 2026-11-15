@@ -1,6 +1,7 @@
 target/
 .idea/
 .vscode/
+tools/
 *.iml
 *.log
 *.mv.db
