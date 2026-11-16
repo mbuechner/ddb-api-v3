@@ -3,14 +3,23 @@
 ## Datensätze und Formate
 
 Die DDB-ID besteht aus genau 32 Zeichen aus `A-Z` und `2-7`. Die drei Methoden
-arbeiten unter `/3/records/{recordId}`. GET/HEAD sind öffentlich; POST/PUT brauchen
+arbeiten unter `/3/records/{recordId}` und `/3/items/{itemId}`. GET/HEAD sind öffentlich; POST/PUT brauchen
 Schreibrechte. Eingabe ist ausschließlich `application/rdf+xml` im Request-Body.
 Ein Upload muss mindestens ein Triple enthalten. Ungültiges RDF/XML und leere
 RDF-Datensätze ergeben `422`, andere Eingabeformate `415`.
 
-Alle Triples bilden einen Named Graph mit der IRI `{öffentlicher Origin}/records/{recordId}`.
-RDF/XML kann diesen Graphnamen nicht selbst transportieren; die API ergänzt ihn.
-Anwendungsspezifische SHACL-Validierung ist noch nicht implementiert.
+Alle Triples bilden einen Named Graph mit der versionlosen IRI
+`{öffentlicher Origin}/records/{recordId}` beziehungsweise
+`{öffentlicher Origin}/items/{itemId}`. RDF/XML kann den Graphnamen nicht selbst
+transportieren; die API ergänzt ihn. Records und Items derselben ID sind
+unabhängige Dokumente und überschreiben sich nicht.
+
+Jeder Endpunkt besitzt eigene SHACL-Shapes (`shacl/records.ttl` und
+`shacl/items.ttl` im Classpath). Sie werden einmal beim Start geladen und bei
+jedem POST/PUT vor dem S3-Schreiben auf den bereits geparsten Graphen angewendet.
+GET prüft SHACL nicht erneut. Die mitgelieferten Shapes prüfen zunächst nur den
+nichtleeren Graphen; fachliche Pflichtfelder sind mangels festgelegter Regeln
+noch nicht vorgegeben. Shape-Verletzungen ergeben `422`.
 
 | Accept | Ausgabe |
 | --- | --- |
@@ -27,9 +36,9 @@ Datensatz ungeeignete Ausgaben ergeben `406`.
 ## Ressourcen-IRIs und Basis-URL
 
 IRIs in den Daten enthalten keine API-Version. `/records/ID` und `/items/ID`
-bezeichnen Ressourcen; `/3/records/ID` ist der HTTP-Endpunkt. Versionlose öffentliche
+bezeichnen Ressourcen; `/3/records/ID` und `/3/items/ID` sind die HTTP-Endpunkte. Versionlose öffentliche
 Ressourcenpfade werden mit `308` zum versionierten Pfad weitergeleitet. Für
-POST/PUT unter `/records/ID` gilt zuerst dieselbe Authentifizierung wie für den
+POST/PUT unter `/records/ID` oder `/items/ID` gilt zuerst dieselbe Authentifizierung wie für den
 versionierten Endpunkt. Andere schreibende Pfade bleiben gesperrt.
 
 Redirects erhalten Methode und Querystring auf demselben Origin und legen keine
@@ -65,9 +74,9 @@ Das HTTP-Gateway erhält den öffentlichen Host und Port für den Auto-Modus.
 
 Auf `http://localhost:8080` entstehen daraus `/records/…` und `/items/…` unter
 diesem Origin. Ohne `xml:base="/"` die Referenzen mit `/records/…` bzw. `/items/…`
-beginnen; sonst werden sie relativ zum Record-Pfad aufgelöst. Mit `xml:base="/"`
+beginnen; sonst werden sie relativ zum aktuellen Ressourcenpfad aufgelöst. Mit `xml:base="/"`
 bedeutet `rdf:about=""` die Origin-Wurzel und `#fragment` ein Fragment dort,
-nicht den Record. Deshalb Ressourcenpfade ausdrücklich angeben.
+nicht den Record oder das Item. Deshalb Ressourcenpfade ausdrücklich angeben.
 
 Eine absolute XML-Basis bestimmt weiterhin die Auflösung relativer Referenzen.
 Bereits absolute Ressourcen- und Vokabular-IRIs werden nicht umgeschrieben.
@@ -86,17 +95,19 @@ curl -i -X POST \
 ```
 
 Neuanlage ergibt `201` mit `Location` und starkem `ETag`; eine bereits vorhandene
-ID ergibt `409`. Zum Ersetzen PUT mit `If-Match: "aktueller-Validator"` senden.
-Der starke Validator steht bei GET und nach erfolgreichem PUT in `X-Record-ETag`.
+ID am selben Endpunkt ergibt `409`. Ein Record und ein Item derselben ID dürfen
+nebeneinander existieren. Zum Ersetzen PUT mit `If-Match: "aktueller-Validator"` senden.
+Der starke Validator steht bei GET und nach erfolgreichem PUT in `X-Record-ETag`
+für Records und `X-Item-ETag` für Items.
 PUT ergibt `204` ohne Body und ohne `ETag`. Eine fehlende Bedingung ergibt `428`,
 eine veraltete, schwache, ungültige oder nicht passende Bedingung `412`.
-Auch ein unbekannter Record erfüllt die Ersetzungsbedingung nicht.
+Auch ein unbekanntes Dokument erfüllt die Ersetzungsbedingung nicht.
 
 Eine Liste starker ETags ist möglich; schwache Tags passen nicht. `If-Match: *`
-verlangt nur, dass der Record existiert. Bei `If-None-Match` wird dagegen schwach
-verglichen; ein Treffer oder `*` für einen vorhandenen Record ergibt `304`.
+verlangt nur, dass das Dokument am angesprochenen Endpunkt existiert. Bei `If-None-Match` wird dagegen schwach
+verglichen; ein Treffer oder `*` für ein vorhandenes Dokument ergibt `304`.
 GET liefert einen schwachen `ETag` für den RDF-Datensatz. Für Schreibbedingungen
-stets den starken `X-Record-ETag` verwenden. Fehlerhafte DDB-IDs ergeben beim
+stets den starken `X-Record-ETag` beziehungsweise `X-Item-ETag` verwenden. Fehlerhafte DDB-IDs ergeben beim
 Lesen `404`, bei authentifizierten Schreibzugriffen `400`.
 
 Gzip wird für Requests und passende Responses unterstützt. Das Größenlimit gilt

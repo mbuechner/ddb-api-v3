@@ -80,6 +80,7 @@ nicht ausgeführt oder nicht erreicht; sie sind nicht als Nullzeit zu interpreti
 | API: `performance.s3_read_ms`, `performance.s3_write_ms` | Vollständiger S3-SDK-Aufruf einschließlich Body und Poolwartezeit; automatische SDK-Retries sind derzeit deaktiviert |
 | API: `performance.jelly_decode_ms`, `performance.rdf_serialize_ms` | Jelly prüfen/dekodieren und gewünschtes Ausgabeformat erzeugen |
 | API bei Uploads: `performance.upload_read_ms`, `performance.rdf_parse_ms`, `performance.jelly_encode_ms` | Body einlesen, RDF/XML validieren/parsen und Jelly für S3 erzeugen |
+| API bei Uploads: `performance.shacl_validate_ms` | Die Shapes des jeweiligen Endpunkts auf dem bereits geparsten Graphen prüfen; nur POST/PUT |
 
 **Verschachtelte Zeiten nicht addieren:** Rate-Limit ist Teil von
 `gateway_before_backend_ms`, S3 und RDF sind Teil von `application_ms`, die API

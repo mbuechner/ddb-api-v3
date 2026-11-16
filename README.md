@@ -4,13 +4,15 @@ RDF/XML rein → JSON-LD (Default), RDF/XML oder Jelly RDF raus.
 Persistenz: unkomprimiertes Jelly über S3. API und Gateway sind stateless;
 kein RDF-/Antwortcache, keine Demo-Daten.
 
-| Methode | `/3/records/{recordId}` |
-| --- | --- |
-| `GET`, `HEAD` | Öffentlich lesen |
-| `POST` | Anlegen; Bearer-Token |
-| `PUT` | Ersetzen; Bearer-Token + `If-Match` |
+| Methode | `/3/records/{recordId}` | `/3/items/{itemId}` |
+| --- | --- | --- |
+| `GET`, `HEAD` | Öffentlich lesen | Öffentlich lesen |
+| `POST` | Anlegen; `records:write` | Anlegen; `items:write` |
+| `PUT` | Ersetzen; `records:write` + `If-Match` | Ersetzen; `items:write` + `If-Match` |
 
-IDs: 32 Zeichen, `[A-Z2-7]{32}`. Vertrag: [OpenAPI](api-service/src/main/openapi/openapi.yaml).
+IDs: 32 Zeichen, `[A-Z2-7]{32}`. Records und Items derselben ID sind getrennte
+RDF-Dokumente. Beide Endpunkte nutzen gemeinsame Schreib-/Lese- und RDF-Logik und eigene
+[SHACL-Shapes](docs/architecture.md#endpunkte-und-shacl-erweitern). Vertrag: [OpenAPI](api-service/src/main/openapi/openapi.yaml).
 
 ## Start
 
@@ -54,7 +56,7 @@ OAuth-Vertrauen stehen in einer gemeinsamen Gruppe für beide Anwendungen.
 | `prod` | S3 | Gemeinsames Redis |
 
 - **Writes:** Ohne Auth-Konfiguration gesperrt. Lokal `DDB_DEV_WRITE_TOKEN`
-  erzeugen; produktiv OAuth2/OIDC + `records:write`. Dev-Token in `prod`: Startfehler.
+  erzeugen; produktiv OAuth2/OIDC + den jeweiligen Schreib-Scope. Dev-Token in `prod`: Startfehler.
   [Token-Erzeugung und Swagger](docs/security.md).
 - **S3:** Produktiv vorhandener Bucket, Objekt-Lese-/Schreibrechte + `HeadBucket`.
   Region: `eu-central-1`. Secrets extern verwalten.

@@ -51,8 +51,9 @@ helm install ddb-api-v3 ddb-api-v3/ddb-api-v3 \
 
 Adressen ersetzen; bei privaten Images Registry-Secrets für Image-Import und
 Pod-Pulls im Namespace bereitstellen und `images.pullSecrets` setzen.
-Issuer + Audience gemeinsam; ohne beide nur Lesebetrieb. `records:write` ist ein
-privilegiertes Importrecht. [Auth](../../docs/security.md).
+Issuer + Audience gemeinsam; ohne beide nur Lesebetrieb. `records:write` und
+`items:write` sind privilegierte Importrechte für den jeweiligen Ressourcentyp.
+[Auth](../../docs/security.md).
 
 Uploadlimit: `apiService.maxDocumentSize`; Quoten: `gateway.rateLimit`.
 `forwardHeadersStrategy` ist je Anwendung konfigurierbar. Alle ENV-Zuordnungen

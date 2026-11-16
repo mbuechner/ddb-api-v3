@@ -9,8 +9,9 @@ HTTP-Client → Gateway → API-Service → S3-kompatibler Objektspeicher
 ```
 
 Das Gateway übernimmt Routing, CORS und Quoten. Gateway und API prüfen
-Schreibrechte unabhängig. Die API validiert RDF/XML und speichert seine Triples
-als unkomprimiertes Jelly RDF. Beim Lesen liefert sie JSON-LD, RDF/XML oder Jelly.
+Schreibrechte unabhängig. Die API parst RDF/XML, prüft seinen Graphen gegen
+endpunktspezifische SHACL-Shapes und speichert die Triples als unkomprimiertes
+Jelly RDF. Beim Lesen liefert sie JSON-LD, RDF/XML oder Jelly.
 Es gibt kein internes fachliches Metadatenmodell und keinen RDF-/Antwortcache.
 
 Beide Anwendungen sind bezüglich der RDF-Daten stateless. API-Instanzen teilen
@@ -20,26 +21,55 @@ Zwischenspeichern öffentlicher JWT-Prüfschlüssel sind keine RDF-Antwortcaches
 
 ## Packages
 
-Unter `de.ddb.apiv3` folgen Endpunkt-Packages den API-Ressourcen:
+Unter `de.ddb.apiv3.api` sind die HTTP-Endpunkte gebündelt. Die darunterliegenden
+Ressourcen-Packages folgen den URL-Kollektionen; gemeinsame Verarbeitung liegt
+außerhalb von `api` unter `de.ddb.apiv3`:
 
 | Package | Verantwortung |
 | --- | --- |
-| `records` | HTTP-Methoden, Upload-Grenzen und bedingte Schreibzugriffe |
-| `items`, `datasets`, `catalog` | Vorbereitete Packages; noch keine fachlichen Endpunkte |
-| `rdf` | Jena-Validierung, Jelly sowie Ausgabeadapter für JSON-LD und RDF/XML |
+| `api.records`, `api.items` | Je ein dünner Controller, feste Dokumentidentität und eigener SHACL-Validator |
+| `api` | Versionlose Ressourcenpfade zum versionierten HTTP-Endpunkt weiterleiten |
+| `api.documentation` | Bereitstellung des Vertrags und Swagger-Einstieg |
+| `documents` | Gemeinsames Anlegen, Ersetzen und Lesen: Größenlimit, ETags, Graph-IRI und Speicherzugriff |
+| `rdf` | Einmaliges RDF-Parsing, Jelly sowie Ausgabeadapter für JSON-LD und RDF/XML |
+| `rdf.validation` | Gemeinsamer SHACL-Adapter; Shapes einmal laden, jeden Upload separat prüfen |
 | `storage.s3` | Gemeinsamer Objektspeicher und dessen Verbindungskonfiguration |
 | `storage`, `error` | Sichere Übersetzung von Speicherfehlern in HTTP-Antworten |
 | `config` | Basis-URL, Sicherheitsregeln, Parallelitätsgrenzen und Access-Logs |
-| `documentation` | Bereitstellung des Vertrags und Swagger-Einstieg |
 
-Das Endpunkt-Package legt Objektname und Graph-IRI fest. Künftige Items oder
-Organizations können denselben Speicheradapter mit eigenen Namen verwenden;
-es gibt keinen frei wählbaren Dokumentnamen in der Records-API.
+Jeder Controller hält einen einmal angelegten `RdfDocumentType`: URL-Kollektion,
+S3-Dokumentname, Revisionsheader und Validator sind darin explizit zugeordnet.
+`RdfDocumentService` übernimmt die gemeinsame Verarbeitung; die Controller behalten
+ihre sichtbaren POST-/PUT-/GET-Mappings. Es gibt weder eine dynamische
+Endpunkt-Registry noch frei wählbare S3-Dokumentnamen im HTTP-Vertrag.
+
+```text
+src/main/
+├── java/de/ddb/apiv3/
+│   ├── documents/      RdfDocumentType, RdfDocumentService
+│   ├── api/
+│   │   ├── records/       RecordsController, RecordShaclValidator
+│   │   ├── items/         ItemsController, ItemShaclValidator
+│   │   ├── documentation/ ApiDocumentationController
+│   │   └── ApiVersionRedirectController
+│   ├── rdf/            RdfCodec, Ausgabeadapter
+│   │   └── validation/ RdfValidator, ShaclRdfValidator
+│   └── storage/s3/     S3RdfDocumentStore, Verbindungskonfiguration
+└── resources/shacl/
+    ├── records.ttl
+    └── items.ttl
+```
+
+| Endpunkt | S3-Objekt | Named Graph | Starker Revisionsheader | Validator / Shapes |
+| --- | --- | --- | --- | --- |
+| `/3/records/{recordId}` | `{recordId}/record` | `{Origin}/records/{recordId}` | `X-Record-ETag` | `RecordShaclValidator` / `shacl/records.ttl` |
+| `/3/items/{itemId}` | `{itemId}/item` | `{Origin}/items/{itemId}` | `X-Item-ETag` | `ItemShaclValidator` / `shacl/items.ttl` |
 
 ## Speichervertrag
 
-Ein Record liegt als einzelnes Objekt `{recordId}/record` mit dem Content-Type
-`application/x-jelly-rdf` im Bucket. Jelly enthält den benannten Graphen und
+Ein Record liegt als einzelnes Objekt `{recordId}/record`, ein Item als
+`{itemId}/item` mit dem Content-Type `application/x-jelly-rdf` im Bucket.
+Jelly enthält den benannten Graphen und
 Namespace-Hinweise; es gibt keine zusätzliche gzip-Schicht und kein Manifest.
 Der originale RDF/XML-Bytestrom wird nicht aufbewahrt.
 Objekte verwenden Jelly 1.2 und enthalten mindestens ein Triple; leere
@@ -49,7 +79,7 @@ Neuanlagen verwenden einen bedingten PUT mit `If-None-Match: *`, Ersetzungen
 `If-Match`. Die Bedingung wird atomar durch den Speicher geprüft. Die API legt
 kein zweites Versions- oder Metadatenobjekt an. S3-Schreibzugriffe werden nicht
 automatisch wiederholt: Geht eine Erfolgsantwort verloren, ist der Schreibausgang
-unklar und die API liefert `503`. Vor einer Wiederholung den aktuellen Record
+unklar und die API liefert `503`. Vor einer Wiederholung das aktuelle Dokument
 und dessen Validator lesen.
 
 Ein nicht lesbares Jelly-Objekt ergibt derzeit `503`; es wird nicht stillschweigend
@@ -76,8 +106,29 @@ Der Adapter für flache, typisierte Knoten verwendet geschützte Hooks von
 
 Virtual Threads ersetzen keine Kapazitätsgrenzen: aktive RDF-Arbeit,
 Warteschlangen und Socket-Pools sind begrenzt. Größenlimit und RDF-Parsing
-liegen vor dem S3-Schreiben. Eine spätere SHACL-Prüfung ist durch
-`TODO: SHACL ergänzen.` markiert; aktuell wird RDF/XML-Syntax validiert.
+liegen vor dem S3-Schreiben. Ein Upload wird nur einmal in einen Jena-Graphen
+geparst. Derselbe Graph durchläuft seinen endpunktspezifischen SHACL-Validator
+und wird danach als Jelly kodiert. GET löst keine SHACL-Prüfung aus. Die
+kompilierten Shapes werden einmal je Validator beim Start geladen und wiederverwendet;
+Graphen und Validierungsergebnisse bleiben request-lokal.
+
+## Endpunkte und SHACL erweitern
+
+`RecordShaclValidator` und `ItemShaclValidator` binden jeweils eine eigene
+Classpath-Datei ein. `ShaclRdfValidator` enthält nur das gemeinsame Laden und
+Prüfen; `RdfValidator` ist die kleine Schnittstelle zum RDF-Codec. Fehlende oder
+ungültige Shape-Dateien verhindern den Start. Die Default-Shapes prüfen die
+bisherige Mindestanforderung eines nichtleeren Graphen; fachliche Pflichtfelder
+werden nicht erfunden.
+
+Für zusätzliche Regeln die jeweilige Datei unter
+`api-service/src/main/resources/shacl/` erweitern und positive sowie negative
+Uploadfälle für genau diesen Endpunkt testen. Änderungen werden nach Neustart
+wirksam. Für einen weiteren Ressourcentyp dasselbe Muster verwenden: expliziter
+Controller und eigener Validator unter `api/{ressource}`, eigene Shapes-Datei
+und feste `RdfDocumentType`-Zuordnung.
+Außerdem seine Schreib-Scopes in API und Gateway und seinen OpenAPI-Pfad ergänzen.
+Gemeinsame Schreib-/Lese-, ETag-, S3- und RDF-Implementierung bleiben unverändert.
 
 Details: [RDF-Konventionen](rdf-conventions.md), [Betrieb](operations.md),
 [Skalierung](deployment.md#skalierung-und-rollouts), [Sicherheit](security.md).
