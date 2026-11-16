@@ -1,0 +1,16 @@
+# RECORDS – SHACL Core: bewusst konservative Startregeln.
+# Diese Datei behauptet keine vollständige fachliche Konformitätsprüfung.
+# Die Klassendefinitionen gehören für RDFS-basierte Target-Auswahl ggf. in den Datengraphen.
+
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix bf: <http://id.loc.gov/ontologies/bibframe/> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix ddbv: <https://www.deutsche-digitale-bibliothek.de/ddb/validation/> .
+
+# Minimale Typprüfung: eine vorhandene Verknüpfung zum Item ist eine IRI.
+ddbv:RecordAdminLinkShape a sh:NodeShape ;
+  sh:targetClass bf:AdminMetadata ;
+  sh:property [ sh:path bf:adminMetadataFor ; sh:nodeKind sh:IRI ; sh:message "Ein referenziertes Item wird als IRI angegeben."@de ] .
+
+# Für Verarbeitung, Anreicherung und Qualität sind noch keine verbindlichen
+# Mindestangaben, Konfidenzgrenzen oder Modellversionen beschlossen.

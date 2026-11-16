@@ -1,0 +1,27 @@
+# DATASETS – Klassendefinitionen / DDB-Anwendungsprofil, Arbeitsentwurf 0.1
+# Fachliche Basis: Konzept für ein neues Datenmodell für das DDB-Objekt (06.11.2026).
+# Bereichszuordnung ist eine DDB-Profilentscheidung, keine Ontologie-Aussage des Standardherausgebers.
+# Dokumentation bevorzugt auf Deutsch; beliebige andere Sprach-Tags bleiben zulässig.
+# Noch offene Entscheidungen sind nicht durch scheinbar verbindliche Regeln ersetzt.
+
+@prefix dcat: <http://www.w3.org/ns/dcat#> .
+@prefix ddbv: <https://www.deutsche-digitale-bibliothek.de/ddb/validation/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+dcat:Dataset a rdfs:Class ;
+    rdfs:label "Datensatz"@de,
+        "Lieferdatenset"@de,
+        "Dataset"@en ;
+    rdfs:comment "Beschreibt eine Lieferung beziehungsweise Datensammlung und deren Metadaten, die für mehrere Objekt-Records gelten können."@de,
+        "Datensammlung beziehungsweise Lieferdatenset, unabhängig von einzelnen Kulturerbeobjekten verwaltet."@de ;
+    rdfs:subClassOf ddbv:DatasetResource .
+
+dcat:Distribution a rdfs:Class ;
+    rdfs:label "Distribution"@de ;
+    rdfs:comment "Technische oder herunterladbare Bereitstellungsform eines Datensets."@de ;
+    rdfs:subClassOf ddbv:DatasetResource .
+
+ddbv:DatasetResource a rdfs:Class ;
+    rdfs:label "Dataset-Ressource"@de ;
+    rdfs:comment "Technischer Profilbegriff für separat publizierte Datensammlungen und Distributionen."@de .
+

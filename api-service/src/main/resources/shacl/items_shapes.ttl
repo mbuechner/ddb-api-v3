@@ -1,0 +1,27 @@
+# ITEMS – SHACL Core: bewusst konservative Startregeln.
+# Diese Datei behauptet keine vollständige fachliche Konformitätsprüfung.
+# Die Klassendefinitionen gehören für RDFS-basierte Target-Auswahl ggf. in den Datengraphen.
+
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix ore: <http://www.openarchives.org/ore/terms/> .
+@prefix edm: <http://www.europeana.eu/schemas/edm/> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix dc: <http://purl.org/dc/elements/1.1/> .
+@prefix ddbv: <https://www.deutsche-digitale-bibliothek.de/ddb/validation/> .
+
+# Beziehungen des Proxy-Modells, wie im DDB-EDM-Konzept vorgesehen.
+ddbv:ItemProxyShape a sh:NodeShape ;
+  sh:targetClass ore:Proxy ;
+  sh:property [ sh:path ore:proxyFor ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:message "Ein Proxy referenziert genau ein Kulturerbeobjekt."@de ] ;
+  sh:property [ sh:path ore:proxyIn ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:message "Ein Proxy gehört genau zu einer Aggregation."@de ] .
+
+ddbv:ItemAggregationShape a sh:NodeShape ;
+  sh:targetClass ore:Aggregation ;
+  sh:property [ sh:path edm:aggregatedCHO ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] .
+
+ddbv:ItemTypeShape a sh:NodeShape ;
+  sh:targetClass ore:Proxy ;
+  sh:property [ sh:path edm:type ; sh:in ( "TEXT" "VIDEO" "SOUND" "IMAGE" "3D" ) ; sh:severity sh:Warning ; sh:message "Für edm:type sind die EDM-Medientypen vorgesehen."@de ] .
+
+# Freitexte dürfen sprachmarkiert sein, ohne dass @de zwingend verlangt wird.
+# Weitere Kardinalitäten und vollständige Regeln sind fachlich zu beschließen.

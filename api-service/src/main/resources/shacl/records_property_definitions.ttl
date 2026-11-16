@@ -1,0 +1,198 @@
+# RECORDS – Propertydefinitionen / DDB-Anwendungsprofil, Arbeitsentwurf 0.1
+# Bezeichnungen und Beschreibungen sind dokumentarisch, keine SHACL-Constraints.
+# Gemeinsame externe Vokabularbegriffe können in mehreren Profilen erscheinen, ohne unterschiedliche IRIs zu erhalten.
+# Konzeptgrundlage: DDB-Objekt-Datenmodell Version 0.1 (06.11.2026).
+# Mehrsprachige Werte sind zulässig, deutsche Sprachfassungen bevorzugt.
+
+@prefix bf: <http://id.loc.gov/ontologies/bibframe/> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix ddb: <https://www.deutsche-digitale-bibliothek.de/ddb/> .
+@prefix dqv: <http://www.w3.org/ns/dqv#> .
+@prefix oa: <http://www.w3.org/ns/oa#> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+bf:adminMetadata a rdf:Property ;
+    rdfs:label "Administrative Metadaten"@de,
+        "Administrative metadata"@en ;
+    rdfs:comment "Konzept: Verknüpfung einer Ressource mit dem zugehörigen administrativen Record; fachlich ist eine eindeutige Verweisrichtung festzulegen."@de,
+        "Verweis auf administrative Metadaten."@de .
+
+bf:adminMetadataFor a rdf:Property ;
+    rdfs:label "Administrative Metadaten für"@de,
+        "Administrative metadata for"@en ;
+    rdfs:comment "Konzept: Zuordnung administrativer Metadaten zu der beschriebenen Ressource. Die genaue Ziel-IRI ist im API-Vertrag festzulegen."@de,
+        "Referenz auf die Ressource, für die die administrativen Metadaten gelten."@de .
+
+dcterms:conformsTo a rdf:Property ;
+    rdfs:label "Entspricht Standard"@de,
+        "Conforms to"@en ;
+    rdfs:comment "Konzept: referenziert ein Profil, einen Standard oder ein zugrunde liegendes Metadatenformat."@de .
+
+dcterms:created a rdf:Property ;
+    rdfs:label "Erstellt"@de,
+        "Erstellungsdatum"@de,
+        "Date created"@en ;
+    rdfs:comment "Entstehungsdatum oder Entstehungszeitraum."@de,
+        "Konzept: Entstehungsdatum eines Records; möglich, sofern vom Record-Profil vorgesehen."@de .
+
+dcterms:description a rdf:Property ;
+    rdfs:label "Beschreibung"@de ;
+    rdfs:comment "Freitextbeschreibung mit optionaler Sprachkennzeichnung."@de .
+
+dcterms:identifier a rdf:Property ;
+    rdfs:label "Identifikator"@de,
+        "Kennung"@de,
+        "Identifier"@en ;
+    rdfs:comment "Konzept: Kennung eines Records, Quellrecords oder Lieferdatensets, einschließlich lieferseitiger Identifikatoren."@de .
+
+dcterms:isPartOf a rdf:Property ;
+    rdfs:label "Ist Teil von"@de,
+        "Is part of"@en ;
+    rdfs:comment "Hierarchische Beziehung zu einer übergeordneten Einheit."@de,
+        "Vorschlag: Verknüpfung eines einzelnen Quellrecords mit einer übergeordneten Lieferung, sofern die fachliche Teil-von-Beziehung tatsächlich zutrifft."@de .
+
+dcterms:issued a rdf:Property ;
+    rdfs:label "Veröffentlicht"@de,
+        "Date issued"@en ;
+    rdfs:comment "Veröffentlichungsdatum oder Veröffentlichungszeitraum."@de .
+
+dcterms:modified a rdf:Property ;
+    rdfs:label "Letzte Änderung"@de,
+        "Änderungsdatum"@de,
+        "Date modified"@en ;
+    rdfs:comment "Konzept: Zeitpunkt der letzten Änderung einer administrativen Ressource oder eines Datensets."@de,
+        "Zeitpunkt der letzten Änderung der Ressource oder des Datensatzes."@de .
+
+dcterms:rights a rdf:Property ;
+    rdfs:label "Rechteangabe"@de,
+        "Rights"@en ;
+    rdfs:comment "Konzept: Rechteinformationen zum Metadatensatz, getrennt von Rechten an digitalen Repräsentationen."@de,
+        "Rechteangabe zum Metadatensatz oder zur Aggregation."@de .
+
+dcterms:title a rdf:Property ;
+    rdfs:label "Titel"@de,
+        "Title"@en ;
+    rdfs:comment "Konzept: mehrsprachiger Titel oder Bezeichnung eines Datensets oder Metadatenrecords."@de .
+
+dqv:computedOn a rdf:Property ;
+    rdfs:label "Gemessen an"@de,
+        "Computed on"@en ;
+    rdfs:comment "Vorschlag: bezeichnet die Ressource, auf der eine Qualitätsmessung durchgeführt wurde."@de .
+
+dqv:hasQualityAnnotation a rdf:Property ;
+    rdfs:label "Hat Qualitätsannotation"@de,
+        "Has quality annotation"@en ;
+    rdfs:comment "Vorschlag: Verknüpfung einer Ressource mit einer qualitativen Datenqualitätsannotation."@de .
+
+dqv:hasQualityMeasurement a rdf:Property ;
+    rdfs:label "Hat Qualitätsmessung"@de,
+        "Has quality measurement"@en ;
+    rdfs:comment "Vorschlag: verknüpft eine Ressource mit einer zugehörigen Qualitätsmessung."@de .
+
+dqv:hasQualityMetadata a rdf:Property ;
+    rdfs:label "Hat Qualitätsmetadaten"@de,
+        "Has quality metadata"@en ;
+    rdfs:comment "Vorschlag: verweist auf einen benannten Graphen mit Qualitätsmetadaten."@de .
+
+dqv:inDimension a rdf:Property ;
+    rdfs:label "Qualitätsdimension"@de,
+        "In dimension"@en ;
+    rdfs:comment "Vorschlag: ordnet eine Qualitätsannotation oder Metrik einer Qualitätsdimension zu."@de .
+
+dqv:isMeasurementOf a rdf:Property ;
+    rdfs:label "Messung der Metrik"@de,
+        "Is measurement of"@en ;
+    rdfs:comment "Vorschlag: verknüpft eine Messung mit der verwendeten Qualitätsmetrik."@de .
+
+dqv:value a rdf:Property ;
+    rdfs:label "Messwert"@de,
+        "Value"@en ;
+    rdfs:comment "Vorschlag: Ergebniswert der Qualitätsmessung. Die Datentypvorgabe wird später im SHACL-Profil festgelegt."@de .
+
+oa:hasBody a rdf:Property ;
+    rdfs:label "Annotationsinhalt"@de,
+        "Has body"@en ;
+    rdfs:comment "Vorschlag: enthält oder referenziert die Qualitätsaussage einer Annotation."@de .
+
+oa:hasTarget a rdf:Property ;
+    rdfs:label "Annotationsziel"@de,
+        "Has target"@en ;
+    rdfs:comment "Vorschlag: bezeichnet die betroffene Ressource oder Aussage einer Annotation; bei einzelnen RDF-Aussagen ist eine gesonderte Modellierungsentscheidung erforderlich."@de .
+
+oa:motivatedBy a rdf:Property ;
+    rdfs:label "Annotationsmotivation"@de,
+        "Annotationszweck"@de,
+        "Motivated by"@en ;
+    rdfs:comment "Vorschlag: Motivation einer Qualitätsannotation, beispielsweise dqv:qualityAssessment."@de .
+
+prov:atLocation a rdf:Property ;
+    rdfs:label "Ort der Aktivität oder Entität"@de,
+        "At location"@en ;
+    rdfs:comment "Optionaler Vorschlag für räumliche Provenienz, nicht für die räumliche Beschreibung des Kulturerbeobjekts selbst."@de .
+
+prov:endedAtTime a rdf:Property ;
+    rdfs:label "Ende der Aktivität"@de,
+        "Ended at time"@en ;
+    rdfs:comment "Vorschlag: Zeitstempel für das Ende einer Verarbeitung."@de .
+
+prov:generatedAtTime a rdf:Property ;
+    rdfs:label "Erzeugungszeitpunkt"@de,
+        "Generated at time"@en ;
+    rdfs:comment "Vorschlag: Zeitpunkt der Erzeugung einer Ressource."@de .
+
+prov:startedAtTime a rdf:Property ;
+    rdfs:label "Beginn der Aktivität"@de,
+        "Started at time"@en ;
+    rdfs:comment "Vorschlag: Zeitstempel für den Beginn einer Verarbeitung."@de .
+
+prov:used a rdf:Property ;
+    rdfs:label "Verwendete Entität"@de,
+        "Used"@en ;
+    rdfs:comment "Vorschlag: Eingabedaten, ein Modell oder eine Konfiguration, die von einer Aktivität verwendet wurden."@de .
+
+prov:wasAssociatedWith a rdf:Property ;
+    rdfs:label "Ausgeführt mit"@de,
+        "Was associated with"@en ;
+    rdfs:comment "Vorschlag: verknüpft eine Verarbeitung mit einem verantwortlichen Akteur oder Softwareagenten."@de .
+
+prov:wasAttributedTo a rdf:Property ;
+    rdfs:label "Zugeschrieben an"@de,
+        "Was attributed to"@en ;
+    rdfs:comment "Vorschlag: Verantwortung für die Entstehung oder Bereitstellung einer Entität."@de .
+
+prov:wasDerivedFrom a rdf:Property ;
+    rdfs:label "Abgeleitet von"@de,
+        "Wurde abgeleitet von"@de,
+        "Was derived from"@en ;
+    rdfs:comment "Konzept: verweist von einem abgeleiteten Record oder Ergebnis auf eine zugrunde liegende Entität."@de,
+        "Verweis auf eine abgeleitete Herkunftsressource oder einen Quellrecord."@de .
+
+prov:wasGeneratedBy a rdf:Property ;
+    rdfs:label "Erzeugt durch"@de,
+        "Was generated by"@en ;
+    rdfs:comment "Vorschlag: verbindet ein Verarbeitungsergebnis mit der erzeugenden Aktivität."@de .
+
+prov:wasInformedBy a rdf:Property ;
+    rdfs:label "Verarbeitung informiert durch"@de ;
+    rdfs:comment "Beziehung zwischen Prozessen im Provenienzmodell."@de .
+
+prov:wasRevisionOf a rdf:Property ;
+    rdfs:label "Überarbeitete Version von"@de ;
+    rdfs:comment "Provenienzbeziehung zu einer vorherigen Fassung."@de .
+
+ddb:mappingVersion a rdf:Property ;
+    rdfs:label "Mapping-Version"@de,
+        "Mappingversion"@de,
+        "Mapping version"@en ;
+    rdfs:comment "DDB-spezifische Eigenschaft des Anwendungsprofils; fachliche Definition und Geltungsbereich sind projektseitig festzulegen."@de,
+        "Konzept: Version der für ein Datenset verwendeten Mappingdefinition; DDB-eigene Property."@de .
+
+ddb:recordType a rdf:Property ;
+    rdfs:label "Record-Typ"@de,
+        "Recordtyp"@de,
+        "Record type"@en ;
+    rdfs:comment "DDB-spezifische Eigenschaft des Anwendungsprofils; fachliche Definition und Geltungsbereich sind projektseitig festzulegen."@de,
+        "Konzept: administrative Klassifikation des DDB-Records; DDB-eigene Property."@de .
+

@@ -1,0 +1,24 @@
+# CATALOG – Klassendefinitionen / DDB-Anwendungsprofil, Arbeitsentwurf 0.1
+# Fachliche Basis: Konzept für ein neues Datenmodell für das DDB-Objekt (06.11.2026).
+# Bereichszuordnung ist eine DDB-Profilentscheidung, keine Ontologie-Aussage des Standardherausgebers.
+# Dokumentation bevorzugt auf Deutsch; beliebige andere Sprach-Tags bleiben zulässig.
+# Noch offene Entscheidungen sind nicht durch scheinbar verbindliche Regeln ersetzt.
+
+@prefix dcat: <http://www.w3.org/ns/dcat#> .
+@prefix ddbv: <https://www.deutsche-digitale-bibliothek.de/ddb/validation/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+dcat:Catalog a rdfs:Class ;
+    rdfs:label "Datenkatalog"@de ;
+    rdfs:comment "Katalog zur Beschreibung der in der DDB veröffentlichten Datensets."@de ;
+    rdfs:subClassOf ddbv:CatalogResource .
+
+dcat:DataService a rdfs:Class ;
+    rdfs:label "Datendienst"@de ;
+    rdfs:comment "Dienst für den Zugriff auf Daten über eine API oder andere Schnittstellen."@de ;
+    rdfs:subClassOf ddbv:CatalogResource .
+
+ddbv:CatalogResource a rdfs:Class ;
+    rdfs:label "Katalogressource"@de ;
+    rdfs:comment "Technischer Profilbegriff für den DDB-Katalog und den Zugang zu seinen Diensten."@de .
+

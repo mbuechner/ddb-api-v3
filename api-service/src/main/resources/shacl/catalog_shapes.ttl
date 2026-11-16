@@ -1,0 +1,12 @@
+# CATALOG – SHACL Core: bewusst konservative Startregeln.
+# Diese Datei behauptet keine vollständige fachliche Konformitätsprüfung.
+# Die Klassendefinitionen gehören für RDFS-basierte Target-Auswahl ggf. in den Datengraphen.
+
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix dcat: <http://www.w3.org/ns/dcat#> .
+@prefix ddbv: <https://www.deutsche-digitale-bibliothek.de/ddb/validation/> .
+
+# Ein Catalog kann Datasets referenzieren; Mindestzahl ist noch offen.
+ddbv:CatalogDatasetLinkShape a sh:NodeShape ;
+  sh:targetClass dcat:Catalog ;
+  sh:property [ sh:path dcat:dataset ; sh:nodeKind sh:IRIOrBlankNode ] .

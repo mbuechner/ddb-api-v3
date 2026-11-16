@@ -1,0 +1,86 @@
+# ITEMS – Klassendefinitionen / DDB-Anwendungsprofil, Arbeitsentwurf 0.1
+# Fachliche Basis: Konzept für ein neues Datenmodell für das DDB-Objekt (06.11.2026).
+# Bereichszuordnung ist eine DDB-Profilentscheidung, keine Ontologie-Aussage des Standardherausgebers.
+# Dokumentation bevorzugt auf Deutsch; beliebige andere Sprach-Tags bleiben zulässig.
+# Noch offene Entscheidungen sind nicht durch scheinbar verbindliche Regeln ersetzt.
+
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix ddbv: <https://www.deutsche-digitale-bibliothek.de/ddb/validation/> .
+@prefix edm: <http://www.europeana.eu/schemas/edm/> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix ore: <http://www.openarchives.org/ore/terms/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix svcs: <http://rdfs.org/sioc/services#> .
+
+dcterms:LinguisticSystem a rdfs:Class ;
+    rdfs:label "Sprachsystem"@de ;
+    rdfs:comment "Identifizierbare Sprachressource, beispielsweise für sprachbezogene Erschließung und Facettierung."@de ;
+    rdfs:subClassOf ddbv:ItemResource .
+
+svcs:Service a rdfs:Class ;
+    rdfs:label "Technischer Webdienst"@de,
+        "Service"@en ;
+    rdfs:comment "Technischer Dienst zur Bereitstellung einer digitalen Repräsentation, etwa IIIF oder oEmbed."@de ;
+    rdfs:subClassOf ddbv:ItemResource .
+
+edm:Agent a rdfs:Class ;
+    rdfs:label "Akteur"@de ;
+    rdfs:comment "Person, Institution oder andere handelnde Einheit, die bei Herstellung, Beschreibung, Nutzung oder Überlieferung eines Kulturerbeobjekts beteiligt ist."@de ;
+    rdfs:subClassOf ddbv:ItemResource .
+
+edm:Event a rdfs:Class ;
+    rdfs:label "Ereignis"@de ;
+    rdfs:comment "Ereignis im Lebenszyklus eines Kulturerbeobjekts; kann mit Beteiligten, Orten und Zeitspannen verknüpft werden."@de ;
+    rdfs:subClassOf ddbv:ItemResource .
+
+edm:PhysicalThing a rdfs:Class ;
+    rdfs:label "Physisches Ding"@de ;
+    rdfs:comment "Physische Einheit, insbesondere für reale Objektzusammenhänge und Bestände. Nicht als generische Klasse für rein logische Hierarchieknoten verwenden."@de ;
+    rdfs:subClassOf ddbv:ItemResource .
+
+edm:Place a rdfs:Class ;
+    rdfs:label "Ort"@de ;
+    rdfs:comment "Geografischer Ort, der mit einem Kulturerbeobjekt oder Ereignis verbunden ist."@de ;
+    rdfs:subClassOf ddbv:ItemResource .
+
+edm:ProvidedCHO a rdfs:Class ;
+    rdfs:label "Bereitgestelltes Kulturobjekt"@de ;
+    rdfs:comment "Das beschriebene Kulturerbeobjekt als identifizierbare Ressource. Fachliche Aussagen werden im DDB-Profil über zugehörige ore:Proxy-Ressourcen ausgedrückt."@de ;
+    rdfs:subClassOf ddbv:ItemResource .
+
+edm:TimeSpan a rdfs:Class ;
+    rdfs:label "Zeitspanne"@de ;
+    rdfs:comment "Zeitliche Ausdehnung oder Periode, die Ereignisse beziehungsweise zeitliche Aussagen beschreibt."@de ;
+    rdfs:subClassOf ddbv:ItemResource .
+
+edm:WebResource a rdfs:Class ;
+    rdfs:label "Webressource"@de ;
+    rdfs:comment "Digitale Repräsentation oder webbasierter Zugang zu einem Kulturerbeobjekt. Kann mit Mediendateien, Ansichten und technischen Diensten verknüpft werden."@de ;
+    rdfs:subClassOf ddbv:ItemResource .
+
+ore:Aggregation a rdfs:Class ;
+    rdfs:label "Aggregation"@de ;
+    rdfs:comment "Bündelt die Perspektive eines Datenbereitstellers oder der DDB auf ein Kulturerbeobjekt mit digitalen Repräsentationen und aggregationsbezogenen Angaben."@de ;
+    rdfs:subClassOf ddbv:ItemResource .
+
+ore:Proxy a rdfs:Class ;
+    rdfs:label "Proxy"@de ;
+    rdfs:comment "Beschreibung eines Kulturerbeobjekts aus der Perspektive einer Aggregation. Ermöglicht die getrennte Herkunftskennzeichnung gelieferter und ergänzter Aussagen ohne Wiederholung unveränderter Informationen."@de ;
+    rdfs:subClassOf ddbv:ItemResource .
+
+skos:Concept a rdfs:Class ;
+    rdfs:label "Konzept"@de ;
+    rdfs:comment "Begriff aus einem kontrollierten Vokabular zur Sacherschließung, Typisierung oder Klassifikation."@de ;
+    rdfs:subClassOf ddbv:ItemResource .
+
+foaf:Organization a rdfs:Class ;
+    rdfs:label "Organisation"@de ;
+    rdfs:comment "Organisation, etwa Datenpartner oder Aggregator. In diesem Anwendungsprofil zugleich Akteur; die Profilzuordnung ist nicht Teil der allgemeinen FOAF-Definition."@de ;
+    rdfs:subClassOf edm:Agent,
+        ddbv:ItemResource .
+
+ddbv:ItemResource a rdfs:Class ;
+    rdfs:label "DDB-Objektressource"@de ;
+    rdfs:comment "Lokaler technischer Oberbegriff für den Objektgraphen. Keine offizielle EDM-Klasse."@de .
+

@@ -1,0 +1,316 @@
+# ITEMS – Propertydefinitionen / DDB-Anwendungsprofil, Arbeitsentwurf 0.1
+# Bezeichnungen und Beschreibungen sind dokumentarisch, keine SHACL-Constraints.
+# Gemeinsame externe Vokabularbegriffe können in mehreren Profilen erscheinen, ohne unterschiedliche IRIs zu erhalten.
+# Konzeptgrundlage: DDB-Objekt-Datenmodell Version 0.1 (06.11.2026).
+# Mehrsprachige Werte sind zulässig, deutsche Sprachfassungen bevorzugt.
+
+@prefix crm: <http://www.cidoc-crm.org/cidoc-crm/> .
+@prefix dc: <http://purl.org/dc/elements/1.1/> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix ddb: <https://www.deutsche-digitale-bibliothek.de/ddb/> .
+@prefix edm: <http://www.europeana.eu/schemas/edm/> .
+@prefix gndo: <https://d-nb.info/standards/elementset/gnd#> .
+@prefix marcrel: <http://id.loc.gov/vocabulary/relators/> .
+@prefix ore: <http://www.openarchives.org/ore/terms/> .
+@prefix org: <http://www.w3.org/ns/org#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdau: <http://rdaregistry.info/Elements/u/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix svcs: <http://rdfs.org/sioc/services#> .
+@prefix wgs84_pos: <http://www.w3.org/2003/01/geo/wgs84_pos#> .
+
+marcrel:mfp a rdf:Property ;
+    rdfs:label "Herstellungsort"@de,
+        "Place of manufacture"@en .
+
+marcrel:prp a rdf:Property ;
+    rdfs:label "Produktionsort"@de,
+        "Place of production"@en .
+
+marcrel:pup a rdf:Property ;
+    rdfs:label "Veröffentlichungsort"@de,
+        "Place of publication"@en .
+
+marcrel:rps a rdf:Property ;
+    rdfs:label "Aufbewahrende Stelle"@de .
+
+dc:contributor a rdf:Property ;
+    rdfs:label "Mitwirkender"@de,
+        "Contributor"@en ;
+    rdfs:comment "Weitere am Kulturerbeobjekt oder einer Ressource beteiligte Akteure."@de .
+
+dc:creator a rdf:Property ;
+    rdfs:label "Urheber"@de ;
+    rdfs:comment "Urheber beziehungsweise schöpferisch verantwortliche Akteure."@de .
+
+dc:description a rdf:Property ;
+    rdfs:label "Beschreibung"@de,
+        "Description"@en ;
+    rdfs:comment "Textliche Beschreibung des Kulturerbeobjekts oder der digitalen Repräsentation."@de .
+
+dc:format a rdf:Property ;
+    rdfs:label "Format"@de .
+
+dc:identifier a rdf:Property ;
+    rdfs:label "Identifikator"@de .
+
+dc:language a rdf:Property ;
+    rdfs:label "Sprache"@de ;
+    rdfs:comment "Sprachbezeichnung des beschriebenen Objekts."@de .
+
+dc:publisher a rdf:Property ;
+    rdfs:label "Herausgeber"@de,
+        "Publisher"@en ;
+    rdfs:comment "Herausgeber beziehungsweise veröffentlichende Einheit."@de .
+
+dc:rights a rdf:Property ;
+    rdfs:label "Rechteangabe"@de .
+
+dc:subject a rdf:Property ;
+    rdfs:label "Thema"@de,
+        "Subject"@en ;
+    rdfs:comment "Thematischer Bezug zu Begriffen, Personen oder Organisationen."@de .
+
+dc:title a rdf:Property ;
+    rdfs:label "Titel"@de,
+        "Title"@en ;
+    rdfs:comment "Bevorzugter Titel oder Name des Kulturerbeobjekts, perspektivenbezogen am Proxy."@de .
+
+dc:type a rdf:Property ;
+    rdfs:label "Objekttyp"@de,
+        "Type"@en ;
+    rdfs:comment "Spezifische Art des Kulturerbeobjekts; textuell oder über eine Konzept-IRI."@de .
+
+dcterms:created a rdf:Property ;
+    rdfs:label "Erstellt"@de,
+        "Erstellungsdatum"@de,
+        "Date created"@en ;
+    rdfs:comment "Entstehungsdatum oder Entstehungszeitraum."@de,
+        "Konzept: Entstehungsdatum eines Records; möglich, sofern vom Record-Profil vorgesehen."@de .
+
+dcterms:extent a rdf:Property ;
+    rdfs:label "Umfang"@de,
+        "Extent"@en ;
+    rdfs:comment "Physische Maße, Umfang oder Dauer."@de .
+
+dcterms:isPartOf a rdf:Property ;
+    rdfs:label "Ist Teil von"@de,
+        "Is part of"@en ;
+    rdfs:comment "Hierarchische Beziehung zu einer übergeordneten Einheit."@de,
+        "Vorschlag: Verknüpfung eines einzelnen Quellrecords mit einer übergeordneten Lieferung, sofern die fachliche Teil-von-Beziehung tatsächlich zutrifft."@de .
+
+dcterms:issued a rdf:Property ;
+    rdfs:label "Veröffentlicht"@de,
+        "Date issued"@en ;
+    rdfs:comment "Veröffentlichungsdatum oder Veröffentlichungszeitraum."@de .
+
+dcterms:language a rdf:Property ;
+    rdfs:label "Sprache (Ressource)"@de,
+        "Language"@en ;
+    rdfs:comment "Verknüpfung auf ein identifizierbares Sprachsystem."@de .
+
+dcterms:medium a rdf:Property ;
+    rdfs:label "Material und Technik"@de,
+        "Medium"@en ;
+    rdfs:comment "Material oder Herstellungstechnik."@de .
+
+dcterms:modified a rdf:Property ;
+    rdfs:label "Letzte Änderung"@de,
+        "Änderungsdatum"@de,
+        "Date modified"@en ;
+    rdfs:comment "Konzept: Zeitpunkt der letzten Änderung einer administrativen Ressource oder eines Datensets."@de,
+        "Zeitpunkt der letzten Änderung der Ressource oder des Datensatzes."@de .
+
+dcterms:rights a rdf:Property ;
+    rdfs:label "Rechteangabe"@de,
+        "Rights"@en ;
+    rdfs:comment "Konzept: Rechteinformationen zum Metadatensatz, getrennt von Rechten an digitalen Repräsentationen."@de,
+        "Rechteangabe zum Metadatensatz oder zur Aggregation."@de .
+
+dcterms:spatial a rdf:Property ;
+    rdfs:label "Räumlicher Bezug"@de,
+        "Spatial coverage"@en ;
+    rdfs:comment "Räumlicher Bezug eines Kulturerbeobjekts."@de .
+
+rdau:P60072 a rdf:Property ;
+    rdfs:label "Herstellungsdatum (RDA)"@de,
+        "Date of manufacture"@en .
+
+svcs:has_service a rdf:Property ;
+    rdfs:label "Hat Dienst"@de,
+        "Has service"@en .
+
+crm:P11_had_participant a rdf:Property ;
+    rdfs:label "Hatte Beteiligten"@de .
+
+edm:aggregatedCHO a rdf:Property ;
+    rdfs:label "Aggregiertes Kulturobjekt"@de ;
+    rdfs:comment "Verknüpft eine Aggregation mit dem Kulturerbeobjekt."@de .
+
+edm:begin a rdf:Property ;
+    rdfs:label "Beginn"@de,
+        "Begin"@en ;
+    rdfs:comment "Beginn eines Zeitraums."@de .
+
+edm:currentLocation a rdf:Property ;
+    rdfs:label "Aktueller Standort"@de,
+        "Current location"@en ;
+    rdfs:comment "Aktueller geografischer Standort einer Ressource."@de .
+
+edm:dataProvider a rdf:Property ;
+    rdfs:label "Datenlieferant"@de ;
+    rdfs:comment "Datenliefernde Institution."@de .
+
+edm:end a rdf:Property ;
+    rdfs:label "Ende"@de,
+        "End"@en ;
+    rdfs:comment "Ende eines Zeitraums."@de .
+
+edm:happenedAt a rdf:Property ;
+    rdfs:label "Ereignisort"@de,
+        "Happened at"@en ;
+    rdfs:comment "Ort eines Ereignisses."@de .
+
+edm:hasMet a rdf:Property ;
+    rdfs:label "War in Beziehung mit"@de .
+
+edm:hasType a rdf:Property ;
+    rdfs:label "Hat Typ"@de .
+
+edm:hasView a rdf:Property ;
+    rdfs:label "Hat Ansicht"@de,
+        "Has view"@en ;
+    rdfs:comment "Verknüpft eine Aggregation mit einer digitalen Repräsentation."@de .
+
+edm:intermediateProvider a rdf:Property ;
+    rdfs:label "Zwischenaggregator"@de,
+        "Intermediate provider"@en ;
+    rdfs:comment "Zwischengeschalteter Aggregator in der Lieferkette."@de .
+
+edm:isNextInSequence a rdf:Property ;
+    rdfs:label "Folgt in der Sequenz"@de .
+
+edm:isShownAt a rdf:Property ;
+    rdfs:label "Anzeige beim Datenpartner"@de,
+        "Is shown at"@en ;
+    rdfs:comment "Webseite zur Darstellung des Objekts im Kontext der Informationen des Datenpartners."@de .
+
+edm:isShownBy a rdf:Property ;
+    rdfs:label "Direkter Digitalisatlink"@de,
+        "Is shown by"@en ;
+    rdfs:comment "Direkter Zugang zum digitalen Objekt."@de .
+
+edm:object a rdf:Property ;
+    rdfs:label "Vorschaubild"@de,
+        "Object"@en ;
+    rdfs:comment "Ausgewählte Repräsentation, beispielsweise ein Vorschaubild."@de .
+
+edm:occurredAt a rdf:Property ;
+    rdfs:label "Fand statt während"@de ;
+    rdfs:comment "Zeitraum, in dem ein Ereignis stattfand."@de .
+
+edm:pid a rdf:Property ;
+    rdfs:label "Persistenter Identifikator"@de,
+        "Persistent identifier"@en ;
+    rdfs:comment "Persistenter Identifikator der beschriebenen Ressource."@de .
+
+edm:preview a rdf:Property ;
+    rdfs:label "Vorschau"@de .
+
+edm:provider a rdf:Property ;
+    rdfs:label "Provider"@de ;
+    rdfs:comment "Direkt an die Aggregationsplattform liefernder Aggregator."@de .
+
+edm:rights a rdf:Property ;
+    rdfs:label "Rechteangabe zur digitalen Ressource"@de ;
+    rdfs:comment "Rechteangabe oder Lizenz einer digitalen Repräsentation."@de .
+
+edm:type a rdf:Property ;
+    rdfs:label "EDM-Medientyp"@de ;
+    rdfs:comment "Allgemeiner Medientyp, beispielsweise TEXT, IMAGE oder SOUND."@de .
+
+edm:wasPresentAt a rdf:Property ;
+    rdfs:label "War anwesend bei"@de .
+
+ore:lineage a rdf:Property ;
+    rdfs:label "Herkunftsbeziehung des Proxys"@de .
+
+ore:proxyFor a rdf:Property ;
+    rdfs:label "Proxy für"@de ;
+    rdfs:comment "Verknüpft einen Proxy mit dem durch ihn repräsentierten Kulturerbeobjekt."@de .
+
+ore:proxyIn a rdf:Property ;
+    rdfs:label "Proxy in Aggregation"@de ;
+    rdfs:comment "Ordnet einen Proxy der Perspektive beziehungsweise Aggregation zu."@de .
+
+rdf:type a rdf:Property ;
+    rdfs:label "RDF-Klassenzugehörigkeit"@de .
+
+rdf:value a rdf:Property ;
+    rdfs:label "Wert"@de .
+
+rdfs:label a rdf:Property ;
+    rdfs:label "Bezeichnung"@de,
+        "Label"@en .
+
+owl:sameAs a rdf:Property ;
+    rdfs:label "Identisch mit"@de ;
+    rdfs:comment "Verweis auf eine andere IRI derselben Ressource."@de .
+
+wgs84_pos:alt a rdf:Property ;
+    rdfs:label "Höhe"@de,
+        "Altitude"@en .
+
+wgs84_pos:lat a rdf:Property ;
+    rdfs:label "Breitengrad"@de,
+        "Latitude"@en .
+
+wgs84_pos:long a rdf:Property ;
+    rdfs:label "Längengrad"@de,
+        "Longitude"@en .
+
+skos:notation a rdf:Property ;
+    rdfs:label "Notation"@de .
+
+skos:prefLabel a rdf:Property ;
+    rdfs:label "Bevorzugte Bezeichnung"@de ;
+    rdfs:comment "Bevorzugte Bezeichnung einer Kontextressource in einer Sprache."@de .
+
+org:classification a rdf:Property ;
+    rdfs:label "Organisationsklassifikation"@de ;
+    rdfs:comment "Zuordnung einer Organisation zu einer Klassifikation, etwa der Kultursparte."@de .
+
+gndo:artist a rdf:Property ;
+    rdfs:label "Künstler"@de,
+        "Artist"@en .
+
+gndo:composer a rdf:Property ;
+    rdfs:label "Komponist"@de,
+        "Composer"@en .
+
+gndo:editor a rdf:Property ;
+    rdfs:label "Herausgeber"@de,
+        "Editor"@en .
+
+gndo:photographer a rdf:Property ;
+    rdfs:label "Fotograf"@de,
+        "Photographer"@en .
+
+ddb:aggregationEntity a rdf:Property ;
+    rdfs:label "Kennzeichnung als Aggregationseinheit"@de ;
+    rdfs:comment "DDB-spezifische Eigenschaft des Anwendungsprofils; fachliche Definition und Geltungsbereich sind projektseitig festzulegen."@de .
+
+ddb:hierarchyPosition a rdf:Property ;
+    rdfs:label "Hierarchieposition"@de ;
+    rdfs:comment "DDB-spezifische Eigenschaft des Anwendungsprofils; fachliche Definition und Geltungsbereich sind projektseitig festzulegen."@de .
+
+ddb:hierarchyType a rdf:Property ;
+    rdfs:label "Hierarchietyp"@de ;
+    rdfs:comment "DDB-spezifische Eigenschaft des Anwendungsprofils; fachliche Definition und Geltungsbereich sind projektseitig festzulegen."@de .
+
+ddb:licenseGroup a rdf:Property ;
+    rdfs:label "Lizenzgruppe"@de ;
+    rdfs:comment "DDB-spezifische Eigenschaft des Anwendungsprofils; fachliche Definition und Geltungsbereich sind projektseitig festzulegen."@de .
+

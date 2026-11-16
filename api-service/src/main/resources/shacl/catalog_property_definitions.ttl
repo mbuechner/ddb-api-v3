@@ -1,0 +1,69 @@
+# CATALOG – Propertydefinitionen / DDB-Anwendungsprofil, Arbeitsentwurf 0.1
+# Bezeichnungen und Beschreibungen sind dokumentarisch, keine SHACL-Constraints.
+# Gemeinsame externe Vokabularbegriffe können in mehreren Profilen erscheinen, ohne unterschiedliche IRIs zu erhalten.
+# Konzeptgrundlage: DDB-Objekt-Datenmodell Version 0.1 (06.11.2026).
+# Mehrsprachige Werte sind zulässig, deutsche Sprachfassungen bevorzugt.
+
+@prefix dcat: <http://www.w3.org/ns/dcat#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+dcterms:description a rdf:Property ;
+    rdfs:label "Beschreibung"@de ;
+    rdfs:comment "Freitextbeschreibung mit optionaler Sprachkennzeichnung."@de .
+
+dcterms:language a rdf:Property ;
+    rdfs:label "Sprache (Ressource)"@de,
+        "Language"@en ;
+    rdfs:comment "Verknüpfung auf ein identifizierbares Sprachsystem."@de .
+
+dcterms:modified a rdf:Property ;
+    rdfs:label "Letzte Änderung"@de,
+        "Änderungsdatum"@de,
+        "Date modified"@en ;
+    rdfs:comment "Konzept: Zeitpunkt der letzten Änderung einer administrativen Ressource oder eines Datensets."@de,
+        "Zeitpunkt der letzten Änderung der Ressource oder des Datensatzes."@de .
+
+dcterms:publisher a rdf:Property ;
+    rdfs:label "Herausgebende Stelle"@de ;
+    rdfs:comment "Akteur, der eine Ressource herausgibt."@de .
+
+dcterms:title a rdf:Property ;
+    rdfs:label "Titel"@de,
+        "Title"@en ;
+    rdfs:comment "Konzept: mehrsprachiger Titel oder Bezeichnung eines Datensets oder Metadatenrecords."@de .
+
+dcat:catalog a rdf:Property ;
+    rdfs:label "Unterkatalog"@de ;
+    rdfs:comment "Verknüpft einen Katalog mit einem weiteren Katalog."@de .
+
+dcat:dataset a rdf:Property ;
+    rdfs:label "Datenset"@de ;
+    rdfs:comment "Verknüpft einen Katalog mit einem enthaltenen Datenset."@de .
+
+dcat:endpointDescription a rdf:Property ;
+    rdfs:label "Endpunktbeschreibung"@de ;
+    rdfs:comment "Dokumentation oder maschinenlesbare Beschreibung eines Dienst-Endpunkts."@de .
+
+dcat:endpointURL a rdf:Property ;
+    rdfs:label "Dienst-Endpunkt"@de ;
+    rdfs:comment "Adresse eines DataService-Endpunkts."@de .
+
+dcat:record a rdf:Property ;
+    rdfs:label "Katalogeintrag"@de ;
+    rdfs:comment "Verknüpft einen Katalog mit einem Katalogeintrag."@de .
+
+dcat:servesDataset a rdf:Property ;
+    rdfs:label "Bedientes Datenset"@de ;
+    rdfs:comment "Verweist vom Datendienst auf ein über ihn bereitgestelltes Datenset."@de .
+
+dcat:service a rdf:Property ;
+    rdfs:label "Datendienst"@de ;
+    rdfs:comment "Verknüpft einen Katalog mit einem angebotenen Datendienst."@de .
+
+foaf:primaryTopic a rdf:Property ;
+    rdfs:label "Hauptthema"@de ;
+    rdfs:comment "Verweist vom beschreibenden Record auf die dargestellte Ressource."@de .
+

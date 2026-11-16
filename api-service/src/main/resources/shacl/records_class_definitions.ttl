@@ -1,0 +1,80 @@
+# RECORDS – Klassendefinitionen / DDB-Anwendungsprofil, Arbeitsentwurf 0.1
+# Fachliche Basis: Konzept für ein neues Datenmodell für das DDB-Objekt (06.11.2026).
+# Bereichszuordnung ist eine DDB-Profilentscheidung, keine Ontologie-Aussage des Standardherausgebers.
+# Dokumentation bevorzugt auf Deutsch; beliebige andere Sprach-Tags bleiben zulässig.
+# Noch offene Entscheidungen sind nicht durch scheinbar verbindliche Regeln ersetzt.
+
+@prefix bf: <http://id.loc.gov/ontologies/bibframe/> .
+@prefix dcat: <http://www.w3.org/ns/dcat#> .
+@prefix ddbv: <https://www.deutsche-digitale-bibliothek.de/ddb/validation/> .
+@prefix dqv: <http://www.w3.org/ns/dqv#> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+bf:AdminMetadata a rdfs:Class ;
+    rdfs:label "Administrative Metadaten"@de,
+        "Administrative metadata"@en ;
+    rdfs:comment "Administrative Informationen zum DDB-Objektdatensatz, etwa Erstellungszeit und Provenienz; perspektivisch als separat abrufbare Ressource."@de,
+        "Metadaten über einen DDB-Objektdatensatz, etwa Record-Typ, Kennung, Änderungsdatum, Rechte und Herkunft. Eigenständig abrufbar und mit Objektressourcen verknüpfbar."@de ;
+    rdfs:subClassOf ddbv:RecordResource .
+
+dcat:CatalogRecord a rdfs:Class ;
+    rdfs:label "Katalogeintrag"@de ;
+    rdfs:comment "Optionaler bibliografischer beziehungsweise katalogbezogener Record; nicht jeder technische Record ist ein Katalogeintrag."@de ;
+    rdfs:subClassOf ddbv:RecordResource .
+
+dqv:Metric a rdfs:Class ;
+    rdfs:label "Qualitätsmetrik"@de,
+        "Metric"@en ;
+    rdfs:comment "Vorschlag: definierte Metrik, anhand derer ein Qualitätswert bestimmt wird; kann unabhängig von Einzelmessungen referenziert werden."@de ;
+    rdfs:subClassOf ddbv:RecordResource .
+
+dqv:QualityAnnotation a rdfs:Class ;
+    rdfs:label "Qualitätsannotation"@de,
+        "Quality annotation"@en ;
+    rdfs:comment "Annotation einer Qualitätsbewertung zu einer Ressource oder einem Datensatz; die Zuordnung ist mit DQV und Web Annotation zu modellieren."@de,
+        "Vorschlag: qualitative Qualitätsaussage zu einer Ressource. Für standardisierte Annotationsbeziehungen kann das Web Annotation Data Model verwendet werden."@de ;
+    rdfs:subClassOf ddbv:RecordResource .
+
+dqv:QualityMeasurement a rdfs:Class ;
+    rdfs:label "Qualitätsmessung"@de,
+        "Quality measurement"@en ;
+    rdfs:comment "Vorschlag: gemessener Qualitätswert bezogen auf eine bestimmte Metrik und geprüfte Ressource."@de ;
+    rdfs:subClassOf ddbv:RecordResource .
+
+dqv:QualityMetadata a rdfs:Class ;
+    rdfs:label "Qualitätsmetadaten-Graph"@de,
+        "Quality metadata"@en ;
+    rdfs:comment "Vorschlag: als benannter Graph geführte Gruppe von Qualitätsmessungen, Annotationen und zugehöriger Provenienz. Keine verpflichtende zusätzliche Hülle je Record."@de ;
+    rdfs:subClassOf ddbv:RecordResource .
+
+prov:Activity a rdfs:Class ;
+    rdfs:label "Verarbeitungsaktivität"@de,
+        "Activity"@en ;
+    rdfs:comment "Vorschlag: Vorgang der Normalisierung, Übersetzung, semantischen Anreicherung oder automatisierten Verarbeitung, einschließlich des Prozesskontexts."@de ;
+    rdfs:subClassOf ddbv:RecordResource .
+
+prov:Agent a rdfs:Class ;
+    rdfs:label "Verantwortlicher Akteur"@de,
+        "Agent"@en ;
+    rdfs:comment "Vorschlag: verantwortliche Person, Organisation oder Softwareeinheit für die Entstehung von Daten oder Aktivitäten."@de ;
+    rdfs:subClassOf ddbv:RecordResource .
+
+prov:Entity a rdfs:Class ;
+    rdfs:label "Provenienz-Entität"@de,
+        "Entity"@en ;
+    rdfs:comment "Entität im Sinne des Provenienzmodells; kann einen zugrunde liegenden Quellrecord repräsentieren."@de,
+        "Identifizierbare Entität im Herkunfts- und Verarbeitungskontext, insbesondere ein ursprünglicher Quelldatensatz oder ein durch Verarbeitung entstandenes Ergebnis."@de ;
+    rdfs:subClassOf ddbv:RecordResource .
+
+prov:SoftwareAgent a rdfs:Class ;
+    rdfs:label "Softwareakteur"@de,
+        "Software agent"@en ;
+    rdfs:comment "Vorschlag: identifizierbare Software beziehungsweise automatisiertes System, das eine Verarbeitung durchführt."@de ;
+    rdfs:subClassOf prov:Agent,
+        ddbv:RecordResource .
+
+ddbv:RecordResource a rdfs:Class ;
+    rdfs:label "Record-Ressource"@de ;
+    rdfs:comment "Technischer Profilbegriff für getrennt veröffentlichte Metadaten über Daten, Provenienz und Verarbeitung."@de .
+
