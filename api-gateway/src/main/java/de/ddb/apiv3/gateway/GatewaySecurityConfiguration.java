@@ -94,6 +94,10 @@ public final class GatewaySecurityConfiguration {
                         .hasAuthority("SCOPE_records:write")
                         .pathMatchers(HttpMethod.PUT, "/3/records/*", "/records/*")
                         .hasAuthority("SCOPE_records:write")
+                        .pathMatchers(HttpMethod.POST, "/3/items/*", "/items/*")
+                        .hasAuthority("SCOPE_items:write")
+                        .pathMatchers(HttpMethod.PUT, "/3/items/*", "/items/*")
+                        .hasAuthority("SCOPE_items:write")
                         .anyExchange().denyAll());
         if (decoder != null) {
             http.oauth2ResourceServer(resource -> resource.authenticationEntryPoint(unauthorized)
@@ -120,7 +124,9 @@ public final class GatewaySecurityConfiguration {
                 "DDB_DEV_WRITE_TOKEN must use canonical Base64URL");
         final byte[] expected = token.getBytes(StandardCharsets.UTF_8);
         final var principal = new DefaultOAuth2AuthenticatedPrincipal("dev-writer",
-                Map.of("client_id", "dev-writer"), List.of(new SimpleGrantedAuthority("SCOPE_records:write")));
+                Map.of("client_id", "dev-writer"), List.of(
+                        new SimpleGrantedAuthority("SCOPE_records:write"),
+                        new SimpleGrantedAuthority("SCOPE_items:write")));
         return offered -> MessageDigest.isEqual(expected, offered.getBytes(StandardCharsets.UTF_8))
                 ? Mono.just(principal) : Mono.error(new BadOpaqueTokenException("Invalid bearer token"));
     }

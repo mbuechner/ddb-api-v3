@@ -55,7 +55,7 @@ import org.springframework.util.StringUtils;
 public final class WriteSecurityConfiguration {
 
     @Bean
-    static SecurityFilterChain recordSecurity(HttpSecurity http, OAuth2ResourceServerProperties properties,
+    static SecurityFilterChain rdfSecurity(HttpSecurity http, OAuth2ResourceServerProperties properties,
             Environment environment, @Value("${ddb.security.dev-write-token:}") String devToken)
             throws Exception {
         var jwt = properties.getJwt();
@@ -74,7 +74,9 @@ public final class WriteSecurityConfiguration {
                     "DDB_DEV_WRITE_TOKEN must be 32 random bytes as canonical unpadded Base64URL");
             byte[] expected = devToken.getBytes(StandardCharsets.UTF_8);
             var principal = new DefaultOAuth2AuthenticatedPrincipal("dev-writer",
-                    Map.of("client_id", "dev-writer"), List.of(new SimpleGrantedAuthority("SCOPE_records:write")));
+                    Map.of("client_id", "dev-writer"), List.of(
+                            new SimpleGrantedAuthority("SCOPE_records:write"),
+                            new SimpleGrantedAuthority("SCOPE_items:write")));
             http.oauth2ResourceServer(resource -> resource.opaqueToken(opaque -> opaque.introspector(token -> {
                 if (!MessageDigest.isEqual(expected, token.getBytes(StandardCharsets.UTF_8))) {
                     throw new BadOpaqueTokenException("Invalid bearer token");
@@ -109,6 +111,10 @@ public final class WriteSecurityConfiguration {
                                 .hasAuthority("SCOPE_records:write")
                         .requestMatchers(HttpMethod.PUT, "/3/records/*", "/records/*")
                                 .hasAuthority("SCOPE_records:write")
+                        .requestMatchers(HttpMethod.POST, "/3/items/*", "/items/*")
+                                .hasAuthority("SCOPE_items:write")
+                        .requestMatchers(HttpMethod.PUT, "/3/items/*", "/items/*")
+                                .hasAuthority("SCOPE_items:write")
                         .anyRequest().denyAll())
                 .build();
     }

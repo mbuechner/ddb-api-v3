@@ -16,6 +16,6 @@
  */
 
 /**
- * Hier zieht die Dataset-API ein. RDF-Konvertierung und Speicher bleiben gemeinsame Bausteine.
+ * Items routes and their SHACL policy; RDF conversion and document storage are shared.
  */
-package de.ddb.apiv3.datasets;
+package de.ddb.apiv3.api.items;

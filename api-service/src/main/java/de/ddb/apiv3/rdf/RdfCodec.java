@@ -19,6 +19,7 @@ package de.ddb.apiv3.rdf;
 
 import de.ddb.apiv3.storage.StorageException;
 import de.ddb.apiv3.config.RequestTiming;
+import de.ddb.apiv3.rdf.validation.RdfValidator;
 import eu.neverblink.jelly.convert.jena.JenaConverterFactory;
 import eu.neverblink.jelly.convert.jena.riot.JellyFormatVariant;
 import eu.neverblink.jelly.convert.jena.riot.JellyLanguage;
@@ -87,6 +88,11 @@ public final class RdfCodec {
 
     /** Validates RDF/XML and stores all its triples under the canonical graph name. */
     public byte[] toJelly(byte[] source, String baseIri) {
+        return toJelly(source, baseIri, graph -> { });
+    }
+
+    /** Parse once, validate the endpoint's policy on that same graph, then encode it as Jelly. */
+    public byte[] toJelly(byte[] source, String baseIri, RdfValidator validator) {
         Graph graph = GraphMemFactory.createDefaultGraph();
         try {
             try (var timing = RequestTiming.start("rdf_parse")) {
@@ -103,6 +109,8 @@ public final class RdfCodec {
                         "The request body is not valid RDF/XML", exception);
             }
 
+            // Validation errors must escape as SHACL failures, not be relabeled as RDF/XML syntax errors.
+            validator.validate(graph);
             if (graph.isEmpty()) {
                 throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT,
                         "The RDF document must contain at least one triple");

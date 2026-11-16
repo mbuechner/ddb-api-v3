@@ -176,6 +176,26 @@ class GatewayWriteSecurityIntegrationTest {
     }
 
     @Test
+    void itemWritesRequireTheirOwnScopeOnCanonicalAndVersionlessPaths() throws Exception {
+        int before = WRITES.get();
+        String records = sign(claims().claim("scope", "records:write").build(), key);
+        String items = sign(claims().claim("scope", "items:write").build(), key);
+        for (String method : new String[] {"POST", "PUT"}) {
+            int success = "POST".equals(method) ? 201 : 204;
+            for (String path : new String[] {"/3/items/example", "/items/example"}) {
+                assertThat(send(gateway, method, path, items).statusCode()).isEqualTo(success);
+                assertThat(send(gateway, method, path, records).statusCode()).isEqualTo(403);
+                assertThat(send(gateway, method, path, null).statusCode()).isEqualTo(401);
+            }
+            for (String path : new String[] {"/3/records/example", "/records/example"}) {
+                assertThat(send(gateway, method, path, items).statusCode()).isEqualTo(403);
+            }
+        }
+        // The fake backend has no redirects: all four authorized writes must reach it.
+        assertThat(WRITES.get()).isEqualTo(before + 4);
+    }
+
+    @Test
     void forbidsInsufficientScopeAndUnexpectedUnsafeMethods() throws Exception {
         int before = WRITES.get();
         String read = sign(claims().claim("scope", "records:read").build(), key);
@@ -184,7 +204,7 @@ class GatewayWriteSecurityIntegrationTest {
         assertThat(send(gateway, "PUT", "/records/denied", read).statusCode()).isEqualTo(403);
         assertThat(send(gateway, "DELETE", "/3/records/denied", write).statusCode()).isEqualTo(403);
         assertThat(send(gateway, "PATCH", "/3/records/denied", write).statusCode()).isEqualTo(403);
-        assertThat(send(gateway, "POST", "/3/items/future", write).statusCode()).isEqualTo(403);
+        assertThat(send(gateway, "POST", "/3/items/denied", write).statusCode()).isEqualTo(403);
         assertThat(WRITES.get()).isEqualTo(before);
     }
 
@@ -192,6 +212,7 @@ class GatewayWriteSecurityIntegrationTest {
     void keepsPublicReadsAndCorsWhileRejectingQueryTokensAndAnonymousWrites() throws Exception {
         int before = WRITES.get();
         assertThat(send(gateway, "GET", "/3/records/public", null).statusCode()).isEqualTo(200);
+        assertThat(send(gateway, "GET", "/3/items/public", null).statusCode()).isEqualTo(200);
         String write = sign(claims().claim("scope", "records:write").build(), key);
         assertThat(send(gateway, "POST", "/3/records/denied?access_token=" + write, null).statusCode()).isEqualTo(401);
         var preflight = client.send(HttpRequest.newBuilder(uri(gateway, "/3/records/public"))
@@ -229,9 +250,11 @@ class GatewayWriteSecurityIntegrationTest {
             assertThat(send(local, "GET", "/3/records/public", null).statusCode()).isEqualTo(200);
             assertThat(send(local, "POST", "/3/records/local", DEV_TOKEN).statusCode()).isEqualTo(201);
             assertThat(send(local, "PUT", "/3/records/local", DEV_TOKEN).statusCode()).isEqualTo(204);
+            assertThat(send(local, "POST", "/3/items/local", DEV_TOKEN).statusCode()).isEqualTo(201);
+            assertThat(send(local, "PUT", "/3/items/local", DEV_TOKEN).statusCode()).isEqualTo(204);
             assertThat(send(local, "POST", "/3/records/denied", null).statusCode()).isEqualTo(401);
             assertThat(send(local, "PUT", "/records/denied", "wrong-token").statusCode()).isEqualTo(401);
-            assertThat(WRITES.get()).isEqualTo(before + 2);
+            assertThat(WRITES.get()).isEqualTo(before + 4);
         }
     }
 

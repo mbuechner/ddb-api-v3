@@ -46,6 +46,7 @@ spring:
           metrics:
             enabled: true
           routes:
+            # Shared RDF route; retain its ID because distributed quota keys include it.
             - id: records
               uri: ${GATEWAY_API_SERVICE_URI:http://127.0.0.1:${DDB_API_PORT:8080}}
               predicates:
@@ -98,6 +99,7 @@ spring:
                   # Browsers need the write ETag for the next If-Match request.
                   - ETag
                   - X-Record-ETag
+                  - X-Item-ETag
                   - Location
                   - X-Request-Id
                   - X-RateLimit-Remaining

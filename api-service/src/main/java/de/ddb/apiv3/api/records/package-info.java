@@ -16,6 +16,6 @@
  */
 
 /**
- * Hier zieht die Items-API ein. RDF-Konvertierung und Speicher bleiben gemeinsame Bausteine.
+ * Records routes and their SHACL policy; RDF conversion and document storage are shared.
  */
-package de.ddb.apiv3.items;
+package de.ddb.apiv3.api.records;

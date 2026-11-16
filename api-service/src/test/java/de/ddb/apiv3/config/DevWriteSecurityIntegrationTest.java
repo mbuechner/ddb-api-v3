@@ -78,13 +78,19 @@ class DevWriteSecurityIntegrationTest {
         var updated = send("PUT", TOKEN, RDF);
         assertThat(updated.statusCode()).isEqualTo(204);
         assertThat(updated.headers().firstValue("Set-Cookie")).isEmpty();
+        assertThat(send("POST", "/3/items/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", TOKEN, RDF).statusCode()).isEqualTo(201);
+        var itemUpdate = send("PUT", "/3/items/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", TOKEN, RDF);
+        assertThat(itemUpdate.statusCode()).isEqualTo(204);
+        assertThat(itemUpdate.headers().firstValue("Set-Cookie")).isEmpty();
     }
 
     @Test
     void missingOrWrongTokensNeverReachRdfValidationOrStorage() throws Exception {
         for (String method : new String[] {"POST", "PUT"}) {
-            assertThat(send(method, null, "not RDF").statusCode()).isEqualTo(401);
-            assertThat(send(method, "B" + TOKEN.substring(1), "not RDF").statusCode()).isEqualTo(401);
+            for (String path : new String[] {PATH, "/3/items/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}) {
+                assertThat(send(method, path, null, "not RDF").statusCode()).isEqualTo(401);
+                assertThat(send(method, path, "B" + TOKEN.substring(1), "not RDF").statusCode()).isEqualTo(401);
+            }
         }
         verifyNoInteractions(repository);
     }
@@ -92,6 +98,8 @@ class DevWriteSecurityIntegrationTest {
     @Test
     void validDevAuthenticationDoesNotSkipRdfValidation() throws Exception {
         assertThat(send("POST", TOKEN, "not RDF").statusCode()).isEqualTo(422);
+        assertThat(send("POST", "/3/items/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", TOKEN, "not RDF").statusCode())
+                .isEqualTo(422);
         verifyNoInteractions(repository);
     }
 
@@ -108,7 +116,11 @@ class DevWriteSecurityIntegrationTest {
     }
 
     private HttpResponse<Void> send(String method, String token, String body) throws Exception {
-        var request = HttpRequest.newBuilder(uri(PATH)).timeout(Duration.ofSeconds(10))
+        return send(method, PATH, token, body);
+    }
+
+    private HttpResponse<Void> send(String method, String path, String token, String body) throws Exception {
+        var request = HttpRequest.newBuilder(uri(path)).timeout(Duration.ofSeconds(10))
                 .header("Content-Type", "application/rdf+xml")
                 .method(method, HttpRequest.BodyPublishers.ofString(body));
         if (token != null) {

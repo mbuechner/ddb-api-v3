@@ -15,7 +15,7 @@
  *  This code was made with help from OpenAI GTP-6.1 Sol Ultra.
  */
 
-package de.ddb.apiv3.records;
+package de.ddb.apiv3.api.records;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;

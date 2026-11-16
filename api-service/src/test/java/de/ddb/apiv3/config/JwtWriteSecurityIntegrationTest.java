@@ -20,6 +20,7 @@ package de.ddb.apiv3.config;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -119,6 +120,33 @@ class JwtWriteSecurityIntegrationTest {
     }
 
     @Test
+    void authorizedItemWritersUseTheirOwnControllerStorageKeyAndAliases() throws Exception {
+        String token = ISSUER.token(claims -> claims.claim("scope", "items:write"));
+        assertThat(send("POST", "/3/items/" + ID, token, RDF).statusCode()).isEqualTo(201);
+        verify(repository).create(eq(ID), eq("item"), any(byte[].class));
+        assertThat(send("PUT", "/3/items/" + ID, token, RDF).statusCode()).isEqualTo(204);
+        verify(repository).replace(eq(ID), eq("item"), any(byte[].class), anyString());
+        assertThat(send("POST", "/items/" + ID, token, RDF).statusCode()).isEqualTo(308);
+        assertThat(send("PUT", "/items/" + ID, token, RDF).statusCode()).isEqualTo(308);
+    }
+
+    @Test
+    void resourceWriteScopesNeverAuthorizeEachOther() throws Exception {
+        String records = ISSUER.token(claims -> claims.claim("scope", "records:write"));
+        String items = ISSUER.token(claims -> claims.claim("scope", "items:write"));
+        for (String method : new String[] {"POST", "PUT"}) {
+            for (String prefix : new String[] {"/3/items/", "/items/"}) {
+                assertThat(send(method, prefix + ID, records, "not RDF").statusCode()).isEqualTo(403);
+                assertThat(send(method, prefix + ID, null, "not RDF").statusCode()).isEqualTo(401);
+            }
+            for (String prefix : new String[] {"/3/records/", "/records/"}) {
+                assertThat(send(method, prefix + ID, items, "not RDF").statusCode()).isEqualTo(403);
+            }
+        }
+        verifyNoInteractions(repository);
+    }
+
+    @Test
     void discoversPublicKeysWhenTheOptionalJwksEnvironmentValueIsEmpty() throws Exception {
         assertThat(securityProperties.getJwt().getJwkSetUri()).isEmpty();
         assertThat(send("POST", PATH, ISSUER.token(), RDF).statusCode()).isEqualTo(201);
@@ -166,6 +194,9 @@ class JwtWriteSecurityIntegrationTest {
         assertThat(send("GET", PATH, null, "").statusCode()).isEqualTo(404);
         assertThat(send("HEAD", PATH, null, "").statusCode()).isEqualTo(404);
         assertThat(send("OPTIONS", PATH, null, "").statusCode()).isEqualTo(200);
+        assertThat(send("GET", "/3/items/" + ID, null, "").statusCode()).isEqualTo(404);
+        assertThat(send("HEAD", "/3/items/" + ID, null, "").statusCode()).isEqualTo(404);
+        assertThat(send("OPTIONS", "/3/items/" + ID, null, "").statusCode()).isEqualTo(200);
         assertThat(send("POST", "/records/" + ID, null, RDF).statusCode()).isEqualTo(401);
         assertThat(send("POST", "/records/" + ID, ISSUER.token(), RDF).statusCode()).isEqualTo(308);
         assertThat(send("DELETE", PATH, ISSUER.token(), "").statusCode()).isEqualTo(403);

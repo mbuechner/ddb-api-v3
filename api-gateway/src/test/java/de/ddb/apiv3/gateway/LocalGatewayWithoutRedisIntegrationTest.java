@@ -247,7 +247,7 @@ class LocalGatewayWithoutRedisIntegrationTest {
                 .valueEquals("Access-Control-Allow-Origin", "*")
                 .expectHeader()
                 .value("Access-Control-Expose-Headers", value -> assertThat(value.split(",\\s*"))
-                        .contains("ETag", "Location", "X-Request-Id", "X-RateLimit-Remaining",
+                        .contains("ETag", "X-Record-ETag", "X-Item-ETag", "Location", "X-Request-Id", "X-RateLimit-Remaining",
                                 "X-RateLimit-Replenish-Rate", "X-RateLimit-Burst-Capacity",
                                 "X-RateLimit-Requested-Tokens", "Retry-After"))
                 .expectHeader()

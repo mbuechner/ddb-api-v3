@@ -15,7 +15,7 @@
  *  This code was made with help from OpenAI GTP-6.1 Sol Ultra.
  */
 
-package de.ddb.apiv3.documentation;
+package de.ddb.apiv3.api.documentation;
 
 import java.net.URI;
 import org.springframework.core.io.ClassPathResource;

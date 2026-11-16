@@ -36,7 +36,7 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
 @Repository
 public final class S3RdfDocumentStore {
 
-    private static final Pattern RECORD_ID = Pattern.compile("[A-Z2-7]{32}");
+    private static final Pattern DDB_ID = Pattern.compile("[A-Z2-7]{32}");
     private static final Pattern DOCUMENT_NAME = Pattern.compile("[A-Za-z][A-Za-z0-9_-]{0,63}");
     private static final Pattern STRONG_ETAG = Pattern.compile("\"[\\x21\\x23-\\x7E\\x80-\\xFF]*\"");
     private static final String JELLY_CONTENT_TYPE = "application/x-jelly-rdf";
@@ -49,31 +49,31 @@ public final class S3RdfDocumentStore {
         this.bucket = properties.bucket();
     }
 
-    public Optional<String> create(String recordId, String documentName, byte[] jelly) {
+    public Optional<String> create(String id, String documentName, byte[] jelly) {
         return put(PutObjectRequest.builder()
                 .bucket(bucket)
-                .key(objectKey(recordId, documentName))
+                .key(objectKey(id, documentName))
                 .contentType(JELLY_CONTENT_TYPE)
                 .ifNoneMatch("*")
                 .build(), jelly);
     }
 
-    public Optional<String> replace(String recordId, String documentName, byte[] jelly, String expectedEtag) {
+    public Optional<String> replace(String id, String documentName, byte[] jelly, String expectedEtag) {
         if (expectedEtag == null || expectedEtag.isBlank()) {
             throw new IllegalArgumentException("Replacing an RDF document requires an If-Match condition");
         }
         return put(PutObjectRequest.builder()
                 .bucket(bucket)
-                .key(objectKey(recordId, documentName))
+                .key(objectKey(id, documentName))
                 .contentType(JELLY_CONTENT_TYPE)
                 .ifMatch(expectedEtag)
                 .build(), jelly);
     }
 
-    public Optional<ResponseBytes<GetObjectResponse>> read(String recordId, String documentName) {
+    public Optional<ResponseBytes<GetObjectResponse>> read(String id, String documentName) {
         GetObjectRequest request = GetObjectRequest.builder()
                 .bucket(bucket)
-                .key(objectKey(recordId, documentName))
+                .key(objectKey(id, documentName))
                 .build();
         // SDK wall time includes connection acquisition and the complete body, not just response headers.
         try (var timing = RequestTiming.start("s3_read")) {
@@ -115,14 +115,14 @@ public final class S3RdfDocumentStore {
                 && "NoSuchKey".equals(exception.awsErrorDetails().errorCode())));
     }
 
-    private static String objectKey(String recordId, String documentName) {
-        if (recordId == null || !RECORD_ID.matcher(recordId).matches()) {
+    private static String objectKey(String id, String documentName) {
+        if (id == null || !DDB_ID.matcher(id).matches()) {
             throw new IllegalArgumentException("A DDB identifier must contain 32 characters from A-Z and 2-7");
         }
         if (documentName == null || !DOCUMENT_NAME.matcher(documentName).matches()) {
             throw new IllegalArgumentException("An RDF document name must be a single 1-64 character name");
         }
-        return recordId + "/" + documentName;
+        return id + "/" + documentName;
     }
 
     private static StorageException unavailable(SdkException exception) {

@@ -7,12 +7,13 @@ info:
     email: m.buechner@dnb.de
     url: https://github.com/mbuechner/ddb-api-v3
   description: >-
-    Create, retrieve and replace RDF records identified by 32-character DDB IDs.
+    Create, retrieve and replace RDF records and items identified by 32-character DDB IDs.
     Uploads use RDF/XML. Responses support JSON-LD (the default), RDF/XML and
-    Jelly RDF. Reads are public; writes require a Bearer token with records:write.
-    Each record is an RDF dataset with a single named graph whose versionless
-    public IRI ends in /records/{recordId}. HTTP endpoints use /3.
-    Versionless record URLs redirect to their versioned endpoints with 308;
+    Jelly RDF. Reads are public; writes require records:write or items:write for
+    the respective endpoint. Each resource is an RDF dataset with a single named
+    graph whose versionless public IRI ends in /records/{recordId} or
+    /items/{itemId}. HTTP endpoints use /3. Separate SHACL shapes validate writes
+    for each endpoint before storage. Versionless resource URLs redirect with 308;
     authentication also applies to redirected writes. Requests support gzip.
 servers:
   - url: https://api.deutsche-digitale-bibliothek.de
@@ -24,6 +25,8 @@ security:
 tags:
   - name: Records
     description: RDF records identified by DDB IDs.
+  - name: Items
+    description: RDF items identified by DDB IDs.
 
 paths:
   /3/records/{recordId}:
@@ -99,7 +102,7 @@ paths:
       operationId: createRecord
       summary: Create an RDF record
       description: >-
-        Validate RDF/XML syntax and create a record under the
+        Validate RDF/XML syntax and the records SHACL shapes, then create a record under the
         supplied DDB ID. An existing record is never overwritten and returns 409.
         The successful response has no body and includes the record location
         and a strong revision validator in ETag.
@@ -143,7 +146,7 @@ paths:
       operationId: putRecord
       summary: Replace an RDF record
       description: >-
-        Validate RDF/XML syntax and replace an existing record
+        Validate RDF/XML syntax and the records SHACL shapes, then replace an existing record
         only when If-Match matches its current revision. A missing precondition
         returns 428; a failed precondition, including a missing record, returns
         412. The successful response has no body and provides the new revision
@@ -182,6 +185,162 @@ paths:
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
 
+  /3/items/{itemId}:
+    get:
+      tags: [Items]
+      operationId: getItem
+      summary: Retrieve an RDF item
+      description: >-
+        Return the complete item in the format selected by Accept; JSON-LD is
+        the default. JSON-LD includes an inline @context and a named @graph.
+        Jelly RDF also preserves the graph name. RDF/XML represents the graph's
+        triples with flat, typed nodes where possible. Absolute IRIs are preserved.
+        Use If-None-Match for conditional reads and the strong X-Item-ETag
+        value for subsequent replacements. The response ETag is weak and cannot
+        be used with PUT If-Match.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ItemId'
+        - $ref: '#/components/parameters/IfNoneMatch'
+      responses:
+        '200':
+          description: Complete RDF dataset in the negotiated serialization
+          headers:
+            ETag:
+              $ref: '#/components/headers/WeakETag'
+            X-Item-ETag:
+              $ref: '#/components/headers/ETag'
+            Vary:
+              description: Response selection depends on RDF and HTTP content negotiation
+              schema:
+                type: string
+                example: Accept, Accept-Encoding
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/RdfDocument'
+            application/rdf+xml:
+              schema:
+                $ref: '#/components/schemas/RdfDocument'
+            application/x-jelly-rdf:
+              schema:
+                $ref: '#/components/schemas/RdfDocument'
+        '304':
+          description: The item matches If-None-Match; no response body
+          headers:
+            ETag:
+              $ref: '#/components/headers/WeakETag'
+            X-Item-ETag:
+              $ref: '#/components/headers/ETag'
+            Vary:
+              description: Response selection depends on Accept and Accept-Encoding
+              schema:
+                type: string
+                example: Accept, Accept-Encoding
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    post:
+      tags: [Items]
+      operationId: createItem
+      summary: Create an RDF item
+      description: >-
+        Validate RDF/XML syntax and the items SHACL shapes, then create an item under the
+        supplied DDB ID. An existing item is never overwritten and returns 409.
+        The successful response has no body and includes the item location
+        and a strong revision validator in ETag.
+      parameters:
+        - $ref: '#/components/parameters/ItemId'
+      requestBody:
+        $ref: '#/components/requestBodies/RdfItem'
+      responses:
+        '201':
+          description: RDF item created
+          headers:
+            Location:
+              description: API location of the item document
+              schema:
+                type: string
+                format: uri-reference
+            ETag:
+              $ref: '#/components/headers/ETag'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/ContentTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/UnprocessableContent'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    put:
+      tags: [Items]
+      operationId: putItem
+      summary: Replace an RDF item
+      description: >-
+        Validate RDF/XML syntax and the items SHACL shapes, then replace an existing item
+        only when If-Match matches its current revision. A missing precondition
+        returns 428; a failed precondition, including a missing item, returns
+        412. The successful response has no body and provides the new revision
+        validator in X-Item-ETag. PUT does not return ETag.
+      parameters:
+        - $ref: '#/components/parameters/ItemId'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        $ref: '#/components/requestBodies/RdfItem'
+      responses:
+        '204':
+          description: RDF item replaced
+          headers:
+            X-Item-ETag:
+              $ref: '#/components/headers/ETag'
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '413':
+          $ref: '#/components/responses/ContentTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/UnprocessableContent'
+        '428':
+          $ref: '#/components/responses/PreconditionRequired'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -189,11 +348,23 @@ components:
       scheme: bearer
       description: >-
         A Bearer access token with records:write permits creating and replacing
-        records under any DDB ID. Read operations do not require a token.
+        records under any DDB ID. items:write independently permits creating and
+        replacing items. Neither scope grants the other. Read operations do not
+        require a token.
 
   parameters:
     RecordId:
       name: recordId
+      in: path
+      required: true
+      description: Externally assigned 32-character DDB ID, RFC 4648 Base32 without padding
+      schema:
+        type: string
+        minLength: 32
+        maxLength: 32
+        pattern: '^[A-Z2-7]{32}$'
+    ItemId:
+      name: itemId
       in: path
       required: true
       description: Externally assigned 32-character DDB ID, RFC 4648 Base32 without padding
@@ -208,9 +379,10 @@ components:
       required: false
       description: >-
         Required for replacement; omission returns 428. Supply a quoted current
-        revision validator from POST ETag or GET/PUT X-Record-ETag, a comma-separated ETag list,
+        revision validator from POST ETag or GET/PUT X-Record-ETag (records) or
+        X-Item-ETag (items), a comma-separated ETag list,
         or * by itself to require an existing
-        record. Weak tags never match. A malformed header is rejected as a whole.
+        resource. Weak tags never match. A malformed header is rejected as a whole.
       schema:
         type: string
     IfNoneMatch:
@@ -219,17 +391,17 @@ components:
       required: false
       description: >-
         Return 304 without a body if the current dataset matches an ETag in this
-        list. Weak comparison is used; * matches any existing record.
+        list. Weak comparison is used; * matches any existing resource.
       schema:
         type: string
 
   headers:
     ETag:
-      description: Strong opaque record revision validator, including quotation marks
+      description: Strong opaque resource revision validator, including quotation marks
       schema:
         type: string
     WeakETag:
-      description: Weak record validator, for example W/"revision"; cannot be used for PUT If-Match
+      description: Weak resource validator, for example W/"revision"; cannot be used for PUT If-Match
       schema:
         type: string
     RequestId:
@@ -241,7 +413,8 @@ components:
     RdfRecord:
       required: true
       description: >-
-        A complete RDF/XML document containing at least one triple. Its triples
+        A complete RDF/XML document containing at least one triple and conforming
+        to this endpoint's SHACL shapes. Its triples
         form the record's single named graph. Use xml:base="/" with versionless,
         root-relative references such
         as /records/{recordId} and /items/{recordId}. Absolute IRIs remain unchanged;
@@ -249,6 +422,24 @@ components:
         With xml:base="/", an empty rdf:about
         or a fragment-only reference identifies the origin root or its fragment,
         not the record. The upload size limit applies after content decoding,
+        including gzip decompression.
+      content:
+        application/rdf+xml:
+          schema:
+            $ref: '#/components/schemas/RdfDocument'
+
+    RdfItem:
+      required: true
+      description: >-
+        A complete RDF/XML document containing at least one triple and conforming
+        to this endpoint's SHACL shapes. Its triples
+        form the item's single named graph. Use xml:base="/" with versionless,
+        root-relative references such
+        as /records/{itemId} and /items/{itemId}. Absolute IRIs remain unchanged;
+        an explicit absolute xml:base controls resolution of relative IRIs.
+        With xml:base="/", an empty rdf:about
+        or a fragment-only reference identifies the origin root or its fragment,
+        not the item. The upload size limit applies after content decoding,
         including gzip decompression.
       content:
         application/rdf+xml:
@@ -308,13 +499,13 @@ components:
           schema:
             type: string
     Conflict:
-      description: An RDF record already exists under this DDB ID
+      description: An RDF document already exists for this endpoint and DDB ID
       content:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
     NotFound:
-      description: No RDF record exists at the requested path, including identifiers outside the DDB ID syntax
+      description: No RDF document exists at the requested path, including identifiers outside the DDB ID syntax
       content:
         application/problem+json:
           schema:
@@ -326,7 +517,7 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
     PreconditionFailed:
-      description: If-Match does not identify the current existing RDF record
+      description: If-Match does not identify the current existing RDF document
       content:
         application/problem+json:
           schema:
@@ -350,7 +541,7 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
     UnprocessableContent:
-      description: The request body is not valid RDF/XML or contains no triples
+      description: The request body is not valid RDF/XML, contains no triples or violates the endpoint-specific SHACL shapes
       content:
         application/problem+json:
           schema:

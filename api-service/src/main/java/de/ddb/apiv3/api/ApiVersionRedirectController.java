@@ -15,7 +15,7 @@
  *  This code was made with help from OpenAI GTP-6.1 Sol Ultra.
  */
 
-package de.ddb.apiv3.config;
+package de.ddb.apiv3.api;
 
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;

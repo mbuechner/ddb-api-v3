@@ -1,7 +1,9 @@
 # HTTP-Vertrag
 
 [openapi.yaml](openapi.yaml): GET/HEAD öffentlich, POST/PUT mit Bearer-Token.
-Pfad: `/3/records/{recordId}`. Input: RDF/XML. Output: JSON-LD, RDF/XML, Jelly RDF.
+Pfade: `/3/records/{recordId}` und `/3/items/{itemId}`. Input: RDF/XML.
+Output: JSON-LD, RDF/XML, Jelly RDF. Writes benötigen den jeweiligen Scope
+`records:write` beziehungsweise `items:write` und durchlaufen getrennte SHACL-Shapes.
 Der Vertrag beschreibt HTTP-Verhalten, keine Implementierungs- oder ENV-Details.
 
 Auslieferung: `/openapi/openapi.yaml`. Swagger: `/swagger-ui.html`;

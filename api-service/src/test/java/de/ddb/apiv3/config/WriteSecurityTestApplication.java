@@ -17,21 +17,27 @@
 
 package de.ddb.apiv3.config;
 
+import de.ddb.apiv3.api.ApiVersionRedirectController;
+
 import de.ddb.apiv3.error.ApiExceptionHandler;
 import de.ddb.apiv3.rdf.RdfCodec;
-import de.ddb.apiv3.records.RecordUploadService;
-import de.ddb.apiv3.records.RecordsController;
+import de.ddb.apiv3.documents.RdfDocumentService;
+import de.ddb.apiv3.api.items.ItemsController;
+import de.ddb.apiv3.api.items.ItemShaclValidator;
+import de.ddb.apiv3.api.records.RecordShaclValidator;
+import de.ddb.apiv3.api.records.RecordsController;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 
-/** The actual record controller and RDF validator; only the S3 repository is mocked. */
+/** Actual resource controllers and validators; only the S3 repository is mocked. */
 @Configuration(proxyBeanMethods = false)
 @EnableAutoConfiguration(exclude = UserDetailsServiceAutoConfiguration.class)
 @EnableConfigurationProperties(ApiProperties.class)
-@Import({WriteSecurityConfiguration.class, RecordsController.class, RecordUploadService.class,
+@Import({WriteSecurityConfiguration.class, RecordsController.class, ItemsController.class,
+        RecordShaclValidator.class, ItemShaclValidator.class, RdfDocumentService.class,
         RdfCodec.class, ApiExceptionHandler.class, ApiVersionRedirectController.class})
 class WriteSecurityTestApplication {
 }
