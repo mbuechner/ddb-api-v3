@@ -18,6 +18,7 @@
 package de.ddb.apiv3.records;
 
 import de.ddb.apiv3.config.ApiProperties;
+import de.ddb.apiv3.config.RequestTiming;
 import de.ddb.apiv3.storage.s3.S3RdfDocumentStore;
 import de.ddb.apiv3.rdf.RdfCodec;
 import java.io.IOException;
@@ -81,7 +82,7 @@ public final class RecordUploadService {
 
     private byte[] validatedContent(String recordId, InputStreamSource content, URI requestUri) {
         byte[] rdf;
-        try (InputStream stream = content.getInputStream()) {
+        try (var timing = RequestTiming.start("upload_read"); InputStream stream = content.getInputStream()) {
             // Limit decompressed input, including requests without a Content-Length header.
             rdf = stream.readNBytes(maxDocumentBytes + 1);
         } catch (IOException exception) {

@@ -19,10 +19,10 @@ package de.ddb.apiv3.records;
 
 import de.ddb.apiv3.storage.s3.S3RdfDocumentStore;
 import de.ddb.apiv3.storage.StorageException;
+import de.ddb.apiv3.config.RequestTiming;
 import de.ddb.apiv3.rdf.RdfCodec;
 import jakarta.validation.constraints.Pattern;
 import java.net.URI;
-import java.util.UUID;
 import org.apache.jena.riot.RDFLanguages;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.ETag;
@@ -67,7 +67,7 @@ public final class RecordsController {
         String etag = uploadService.create(recordId, body, requestUri.build(true).toUri());
         return ResponseEntity.created(URI.create("/3/records/" + recordId))
                 .eTag(etag)
-                .header("X-Request-Id", UUID.randomUUID().toString())
+                .header("X-Request-Id", RequestTiming.requestId())
                 .build();
     }
 
@@ -80,7 +80,7 @@ public final class RecordsController {
         // PUT transforms the representation, so RFC 9110 forbids a response ETag here.
         return ResponseEntity.noContent()
                 .header("X-Record-ETag", etag)
-                .header("X-Request-Id", UUID.randomUUID().toString())
+                .header("X-Request-Id", RequestTiming.requestId())
                 .build();
     }
 
@@ -114,7 +114,7 @@ public final class RecordsController {
                         ? HttpStatus.NOT_MODIFIED : HttpStatus.OK)
                 .eTag(responseEtag)
                 .header("X-Record-ETag", recordEtag)
-                .header("X-Request-Id", UUID.randomUUID().toString())
+                .header("X-Request-Id", RequestTiming.requestId())
                 .varyBy(HttpHeaders.ACCEPT, HttpHeaders.ACCEPT_ENCODING);
         if (notModified) {
             return response.build();

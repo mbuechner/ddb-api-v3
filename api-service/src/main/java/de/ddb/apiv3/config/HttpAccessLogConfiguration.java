@@ -19,6 +19,7 @@ package de.ddb.apiv3.config;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import jakarta.servlet.Filter;
 import java.util.regex.Pattern;
 import org.eclipse.jetty.server.Request;
 import org.eclipse.jetty.server.Response;
@@ -28,13 +29,17 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.spi.LoggingEventBuilder;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.boot.jetty.servlet.JettyServletWebServerFactory;
 import org.springframework.boot.web.server.WebServerFactoryCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.Ordered;
 
 /** Jetty logs once after the response, including time spent waiting for RDF capacity. */
 @Configuration(proxyBeanMethods = false)
+@EnableConfigurationProperties(PerformanceLoggingProperties.class)
 public final class HttpAccessLogConfiguration {
 
     private static final Logger ACCESS = LoggerFactory.getLogger("de.ddb.apiv3.access");
@@ -43,12 +48,36 @@ public final class HttpAccessLogConfiguration {
     @Bean
     @ConditionalOnProperty(prefix = "ddb.logging.access", name = "enabled", matchIfMissing = true)
     static WebServerFactoryCustomizer<JettyServletWebServerFactory> httpAccessLog(
-            @Value("${ddb.logging.access.client-id-header-name:X-Client-Id}") String clientIdHeader) {
+            @Value("${ddb.logging.access.client-id-header-name:X-Client-Id}") String clientIdHeader,
+            PerformanceLoggingProperties performance) {
+        long slowThresholdNanos = performance.slowThreshold().toNanos();
         return factory -> factory.addServerCustomizers(server ->
-                server.setRequestLog((request, response) -> log(request, response, clientIdHeader)));
+                server.setRequestLog((request, response) -> log(request, response, clientIdHeader, slowThresholdNanos)));
     }
 
-    private static void log(Request request, Response response, String clientIdHeader) {
+    @Bean
+    static FilterRegistrationBean<Filter> requestTimingFilter(PerformanceLoggingProperties performance,
+            @Value("${ddb.logging.access.enabled:true}") boolean accessEnabled) {
+        Filter filter = (request, response, chain) -> {
+            var timing = RequestTiming.get((jakarta.servlet.http.HttpServletRequest) request);
+            timing.enable(performance.enabled() && accessEnabled && accessLogEnabled());
+            ((jakarta.servlet.http.HttpServletResponse) response).setHeader(RequestTiming.HEADER, timing.requestIdValue());
+            // ThreadLocal is only a bridge for synchronous MVC/service calls, scoped and cleared even on failure.
+            try (var scope = timing.bind(); var stage = RequestTiming.start("application")) {
+                chain.doFilter(request, response);
+            }
+        };
+        var registration = new FilterRegistrationBean<>(filter);
+        registration.setOrder(Ordered.HIGHEST_PRECEDENCE + 10);
+        return registration;
+    }
+
+    static boolean accessLogEnabled() {
+        return ACCESS.isInfoEnabled();
+    }
+
+    private static void log(Request request, Response response, String clientIdHeader,
+            long slowThresholdNanos) {
         if (!ACCESS.isInfoEnabled()) {
             return;
         }
@@ -58,10 +87,11 @@ public final class HttpAccessLogConfiguration {
             return;
         }
         var connection = request.getConnectionMetaData();
+        long totalNanos = NanoTime.since(request.getBeginNanoTime());
         var event = ACCESS.atInfo()
                 .addKeyValue("event.dataset", "http.access")
                 .addKeyValue("event.kind", "event")
-                .addKeyValue("event.duration", NanoTime.since(request.getBeginNanoTime()))
+                .addKeyValue("event.duration", totalNanos)
                 .addKeyValue("http.request.method", request.getMethod())
                 .addKeyValue("url.path", path)
                 .addKeyValue("http.response.status_code", response.getStatus())
@@ -69,6 +99,7 @@ public final class HttpAccessLogConfiguration {
                 .addKeyValue("http.response.body.bytes", Response.getContentBytesWritten(response))
                 .addKeyValue("network.protocol", "http")
                 .addKeyValue("http.version", connection.getHttpVersion().asString().substring(5));
+        RequestTiming.get(request).addFields(event, totalNanos, slowThresholdNanos);
 
         // Read the transport, not an address claimed in Forwarded/X-Forwarded-For headers.
         var peer = connection.getConnection().getEndPoint().getRemoteSocketAddress();

@@ -21,13 +21,14 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import java.nio.ByteBuffer;
 import java.time.Duration;
-import java.util.UUID;
 import org.eclipse.jetty.http.HttpHeader;
 import org.eclipse.jetty.server.Request;
+import org.eclipse.jetty.server.Handler;
 import org.eclipse.jetty.server.Response;
 import org.eclipse.jetty.server.handler.QoSHandler;
 import org.eclipse.jetty.util.Callback;
 import org.hibernate.validator.constraints.time.DurationMin;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
@@ -44,18 +45,28 @@ import tools.jackson.databind.ObjectWriter;
 
 /** Virtual threads are cheap; RDF graphs are not. Jetty bounds work before reading bodies. */
 @Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties(RequestConcurrencyConfiguration.Limits.class)
+@EnableConfigurationProperties({RequestConcurrencyConfiguration.Limits.class, PerformanceLoggingProperties.class})
 public final class RequestConcurrencyConfiguration {
 
     @Bean
-    static WebServerFactoryCustomizer<JettyServletWebServerFactory> requestConcurrency(Limits limits) {
+    static WebServerFactoryCustomizer<JettyServletWebServerFactory> requestConcurrency(
+            Limits limits, PerformanceLoggingProperties performance,
+            @Value("${ddb.logging.access.enabled:true}") boolean accessEnabled) {
         return factory -> factory.addServerCustomizers(server -> {
-            var qos = new ProblemQoSHandler();
+            var qos = new ProblemQoSHandler(performance.enabled() && accessEnabled);
             qos.includePath("/3/*");
             qos.setMaxRequestCount(limits.maxRequests());
             qos.setMaxSuspendedRequestCount(limits.maxQueuedRequests());
             qos.setMaxSuspend(limits.queueTimeout());
             server.insertHandler(qos);
+            // Runs after QoS admission, including asynchronous resumption of suspended requests.
+            qos.setHandler(new Handler.Wrapper(qos.getHandler()) {
+                @Override
+                public boolean handle(Request request, Response response, Callback callback) throws Exception {
+                    RequestTiming.get(request).admissionFinished();
+                    return super.handle(request, response, callback);
+                }
+            });
         });
     }
 
@@ -70,14 +81,28 @@ public final class RequestConcurrencyConfiguration {
     /** Keep Spring's ProblemDetail representation even when Jetty rejects before MVC. */
     private static final class ProblemQoSHandler extends QoSHandler {
 
+        private final boolean performanceEnabled;
+
+        private ProblemQoSHandler(boolean performanceEnabled) {
+            this.performanceEnabled = performanceEnabled;
+        }
+
         private static final ObjectWriter PROBLEMS = new JacksonJsonHttpMessageConverter()
                 .getMapper().writerFor(ProblemDetail.class);
+
+        @Override
+        public boolean onConditionsMet(Request request, Response response, Callback callback) throws Exception {
+            RequestTiming.get(request).admissionStarted(performanceEnabled && HttpAccessLogConfiguration.accessLogEnabled());
+            return super.onConditionsMet(request, response, callback);
+        }
 
         @Override
         protected void reject(Request request, Response response, Callback callback, int status) {
             var problem = ProblemDetail.forStatusAndDetail(HttpStatusCode.valueOf(status),
                     "This API instance is at capacity; retry later");
-            String requestId = UUID.randomUUID().toString();
+            var timing = RequestTiming.get(request);
+            timing.admissionFinished();
+            String requestId = timing.requestIdValue();
             problem.setProperty("requestId", requestId);
             try {
                 byte[] body = PROBLEMS.writeValueAsBytes(problem);

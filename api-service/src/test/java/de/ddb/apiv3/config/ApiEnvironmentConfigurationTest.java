@@ -40,6 +40,8 @@ class ApiEnvironmentConfigurationTest {
                 Map.entry("DDB_API_LOG_FORMAT", "logstash"),
                 Map.entry("DDB_API_ACCESS_LOG_ENABLED", "false"),
                 Map.entry("DDB_API_ACCESS_LOG_LEVEL", "WARN"),
+                Map.entry("DDB_API_PERFORMANCE_LOG_ENABLED", "false"),
+                Map.entry("DDB_API_SLOW_REQUEST_THRESHOLD", "250ms"),
                 Map.entry("DDB_API_CLIENT_ID_HEADER_NAME", "X-Api-Client"),
                 Map.entry("DDB_API_S3_ENDPOINT", "http://storage.example:9000"),
                 Map.entry("DDB_API_S3_REGION", "eu-west-1"),
@@ -54,6 +56,8 @@ class ApiEnvironmentConfigurationTest {
         assertThat(environment.getProperty("logging.structured.format.console")).isEqualTo("logstash");
         assertThat(environment.getProperty("logging.level.de.ddb.apiv3.access")).isEqualTo("WARN");
         assertThat(environment.getProperty("ddb.logging.access.enabled", Boolean.class)).isFalse();
+        assertThat(environment.getProperty("ddb.logging.performance.enabled", Boolean.class)).isFalse();
+        assertThat(environment.getProperty("ddb.logging.performance.slow-threshold")).isEqualTo("250ms");
         assertThat(environment.getProperty("ddb.logging.access.client-id-header-name")).isEqualTo("X-Api-Client");
         assertThat(environment.getProperty("ddb.storage.s3.endpoint")).isEqualTo("http://storage.example:9000");
         assertThat(environment.getProperty("ddb.storage.s3.region")).isEqualTo("eu-west-1");
@@ -65,19 +69,23 @@ class ApiEnvironmentConfigurationTest {
 
     @Test
     void gatewayEnvironmentDoesNotChangeApiDefaults() throws IOException {
-        var environment = environment(Map.of(
-                "GATEWAY_PORT", "18081",
-                "GATEWAY_FORWARD_HEADERS_STRATEGY", "native",
-                "GATEWAY_LOG_FORMAT", "logstash",
-                "GATEWAY_ACCESS_LOG_ENABLED", "false",
-                "GATEWAY_ACCESS_LOG_LEVEL", "WARN",
-                "GATEWAY_CLIENT_ID_HEADER_NAME", "X-Gateway-Client"));
+        var environment = environment(Map.ofEntries(
+                Map.entry("GATEWAY_PORT", "18081"),
+                Map.entry("GATEWAY_FORWARD_HEADERS_STRATEGY", "native"),
+                Map.entry("GATEWAY_LOG_FORMAT", "logstash"),
+                Map.entry("GATEWAY_ACCESS_LOG_ENABLED", "false"),
+                Map.entry("GATEWAY_ACCESS_LOG_LEVEL", "WARN"),
+                Map.entry("GATEWAY_PERFORMANCE_LOG_ENABLED", "false"),
+                Map.entry("GATEWAY_SLOW_REQUEST_THRESHOLD", "250ms"),
+                Map.entry("GATEWAY_CLIENT_ID_HEADER_NAME", "X-Gateway-Client")));
 
         assertThat(environment.getProperty("server.port", Integer.class)).isEqualTo(8080);
         assertThat(environment.getProperty("server.forward-headers-strategy")).isEqualTo("none");
         assertThat(environment.getProperty("logging.structured.format.console")).isEqualTo("ecs");
         assertThat(environment.getProperty("logging.level.de.ddb.apiv3.access")).isEqualTo("INFO");
         assertThat(environment.getProperty("ddb.logging.access.enabled", Boolean.class)).isTrue();
+        assertThat(environment.getProperty("ddb.logging.performance.enabled", Boolean.class)).isTrue();
+        assertThat(environment.getProperty("ddb.logging.performance.slow-threshold")).isEqualTo("100ms");
         assertThat(environment.getProperty("ddb.logging.access.client-id-header-name")).isEqualTo("X-Client-Id");
     }
 

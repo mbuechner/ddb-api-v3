@@ -18,7 +18,7 @@
 package de.ddb.apiv3.error;
 
 import de.ddb.apiv3.storage.StorageException;
-import java.util.UUID;
+import de.ddb.apiv3.config.RequestTiming;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,7 +55,7 @@ public final class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @Override
     protected ResponseEntity<Object> createResponseEntity(
             @Nullable Object body, HttpHeaders headers, HttpStatusCode status, WebRequest request) {
-        String requestId = UUID.randomUUID().toString();
+        String requestId = RequestTiming.requestId(request);
         if (body instanceof ProblemDetail problem) {
             problem.setProperty("requestId", requestId);
         }

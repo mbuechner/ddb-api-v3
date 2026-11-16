@@ -71,6 +71,10 @@ ddb:
     # Empty means write access stays locked. Production accepts only verified JWTs.
     dev-write-token: ${DDB_DEV_WRITE_TOKEN:}
   logging:
+    performance:
+      # Enrich one access event with monotonic wall times; nested stages are not additive.
+      enabled: ${DDB_API_PERFORMANCE_LOG_ENABLED:true}
+      slow-threshold: ${DDB_API_SLOW_REQUEST_THRESHOLD:100ms}
     access:
       enabled: ${DDB_API_ACCESS_LOG_ENABLED:true}
       client-id-header-name: ${DDB_API_CLIENT_ID_HEADER_NAME:X-Client-Id}

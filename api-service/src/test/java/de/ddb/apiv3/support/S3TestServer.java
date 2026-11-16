@@ -28,6 +28,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.ZonedDateTime;
+import java.time.Duration;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.HexFormat;
@@ -62,6 +63,7 @@ public final class S3TestServer implements AutoCloseable {
     private final Map<String, StoredObject> objects = new HashMap<>();
     private int writeCount;
     private volatile boolean available = true;
+    private volatile Duration readBodyDelay = Duration.ZERO;
 
     public S3TestServer() {
         try {
@@ -82,6 +84,11 @@ public final class S3TestServer implements AutoCloseable {
 
     public void setAvailable(boolean available) {
         this.available = available;
+    }
+
+    /** Delay after response headers, so tests catch timers that stop before reading S3's body. */
+    public void setReadBodyDelay(Duration delay) {
+        readBodyDelay = delay;
     }
 
     public synchronized int recordCount() {
@@ -181,6 +188,12 @@ public final class S3TestServer implements AutoCloseable {
                             .format(ZonedDateTime.parse("2026-01-01T12:00:00Z")));
                     exchange.sendResponseHeaders(200, "HEAD".equals(method) ? -1 : current.body().length);
                     if (!"HEAD".equals(method)) {
+                        try {
+                            Thread.sleep(readBodyDelay);
+                        } catch (InterruptedException exception) {
+                            Thread.currentThread().interrupt();
+                            throw new IOException("Interrupted S3 fixture transfer", exception);
+                        }
                         exchange.getResponseBody().write(current.body());
                     }
                 } else {

@@ -18,6 +18,7 @@
 package de.ddb.apiv3.rdf;
 
 import de.ddb.apiv3.storage.StorageException;
+import de.ddb.apiv3.config.RequestTiming;
 import eu.neverblink.jelly.convert.jena.JenaConverterFactory;
 import eu.neverblink.jelly.convert.jena.riot.JellyFormatVariant;
 import eu.neverblink.jelly.convert.jena.riot.JellyLanguage;
@@ -87,7 +88,7 @@ public final class RdfCodec {
     public byte[] toJelly(byte[] source, String baseIri) {
         Graph graph = GraphMemFactory.createDefaultGraph();
         try {
-            try {
+            try (var timing = RequestTiming.start("rdf_parse")) {
                 RDFParser.create()
                         .source(new ByteArrayInputStream(source))
                         .lang(Lang.RDFXML)
@@ -106,7 +107,9 @@ public final class RdfCodec {
                         "The RDF record must contain at least one triple");
             }
             // TODO: SHACL ergänzen.
-            return encodeGraph(graph, NodeFactory.createURI(baseIri));
+            try (var timing = RequestTiming.start("jelly_encode")) {
+                return encodeGraph(graph, NodeFactory.createURI(baseIri));
+            }
         } finally {
             graph.close();
         }
@@ -126,7 +129,7 @@ public final class RdfCodec {
         DatasetGraph dataset = JellyLanguage.JELLY.equals(outputLanguage)
                 ? null : DatasetGraphFactory.createGeneral();
         try {
-            try {
+            try (var timing = RequestTiming.start("jelly_decode")) {
                 if (jelly.length == 0) {
                     throw new RiotException("The stored Jelly stream is empty");
                 }
@@ -135,7 +138,7 @@ public final class RdfCodec {
                 throw new StorageException("The stored RDF object is not valid Jelly", exception);
             }
 
-            try {
+            try (var timing = RequestTiming.start("rdf_serialize")) {
                 return switch (contentType(outputLanguage)) {
                     case "application/rdf+xml" -> RdfXmlRecordWriter.write(graphWithPrefixes(dataset));
                     case "application/ld+json" -> JsonLdRecordWriter.write(dataset);

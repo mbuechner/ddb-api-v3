@@ -96,7 +96,8 @@ class HttpConcurrencyIntegrationTest extends S3TestSupport {
                     HttpResponse.BodyHandlers.ofString());
             try {
                 assertThat(gate.entered().await(5, TimeUnit.SECONDS)).isTrue();
-                var queued = client.sendAsync(request("/3/concurrency-test"),
+                var queued = client.sendAsync(HttpRequest.newBuilder(request("/3/concurrency-test").uri())
+                                .header("X-Request-Id", "capacity:queued").GET().build(),
                         HttpResponse.BodyHandlers.ofString());
                 await().pollInterval(Duration.ofMillis(10)).atMost(Duration.ofSeconds(5))
                         .until(() -> qos.getSuspendedRequestCount() == 1);
@@ -106,7 +107,20 @@ class HttpConcurrencyIntegrationTest extends S3TestSupport {
                 assertThat(health.statusCode()).isEqualTo(200);
                 var documentation = client.send(request("/openapi/openapi.yaml"), HttpResponse.BodyHandlers.ofString());
                 assertThat(documentation.statusCode()).isEqualTo(200);
-                assertOverload(queued.get(5, TimeUnit.SECONDS));
+                var timedOut = queued.get(5, TimeUnit.SECONDS);
+                assertOverload(timedOut);
+                assertThat(timedOut.headers().firstValue("X-Request-Id")).contains("capacity:queued");
+                await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
+                        assertThat(accessEvents.list).anySatisfy(event -> {
+                            assertThat(event.getKeyValuePairs()).anySatisfy(pair -> {
+                                assertThat(pair.key).isEqualTo("http.request.id");
+                                assertThat(pair.value).isEqualTo("capacity:queued");
+                            });
+                            assertThat(event.getKeyValuePairs()).anySatisfy(pair -> {
+                                assertThat(pair.key).isEqualTo("performance.capacity_wait_ms");
+                                assertThat((Double) pair.value).isGreaterThanOrEqualTo(1_900.0);
+                            });
+                        }));
                 assertThat(gate.executed().get()).isEqualTo(1);
             } finally {
                 gate.release().countDown();

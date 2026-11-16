@@ -18,6 +18,7 @@
 package de.ddb.apiv3.storage.s3;
 
 import de.ddb.apiv3.storage.StorageException;
+import de.ddb.apiv3.config.RequestTiming;
 import java.util.Optional;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Repository;
@@ -74,7 +75,8 @@ public final class S3RdfDocumentStore {
                 .bucket(bucket)
                 .key(objectKey(recordId, documentName))
                 .build();
-        try {
+        // SDK wall time includes connection acquisition and the complete body, not just response headers.
+        try (var timing = RequestTiming.start("s3_read")) {
             return Optional.of(client.getObjectAsBytes(request));
         } catch (S3Exception exception) {
             if (missingObject(exception)) {
@@ -87,7 +89,7 @@ public final class S3RdfDocumentStore {
     }
 
     private Optional<String> put(PutObjectRequest request, byte[] jelly) {
-        try {
+        try (var timing = RequestTiming.start("s3_write")) {
             String etag = client.putObject(request, RequestBody.fromBytes(jelly)).eTag();
             if (etag == null || !STRONG_ETAG.matcher(etag).matches()) {
                 throw new StorageException("The S3 write response did not contain a valid strong ETag");
