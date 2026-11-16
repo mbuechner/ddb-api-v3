@@ -43,7 +43,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
-class JsonLdRecordWriterTest {
+class JsonLdDocumentWriterTest {
 
     private static final String GRAPH = "https://example.org/records/EXAMPLE";
 
@@ -59,7 +59,7 @@ class JsonLdRecordWriterTest {
             var accelerated = NamespaceJsonLdCompactor.compactIfSupported(expanded, active);
             assertThat(accelerated).isNotNull()
                     .isEqualTo(Compaction.with(active).compactArrays(true).compact(expanded));
-            byte[] output = JsonLdRecordWriter.write(source);
+            byte[] output = JsonLdDocumentWriter.write(source);
             assertGraphRoundTrip(output, source);
             try (var reader = Json.createReader(new ByteArrayInputStream(output))) {
                 var graph = reader.readObject().getJsonArray("@graph");
@@ -133,7 +133,7 @@ class JsonLdRecordWriterTest {
             var active = new ActiveContext(ProcessingRuntime.of(options)).newContext()
                     .create(namespaceContext(source), null);
             assertThat(NamespaceJsonLdCompactor.compactIfSupported(expanded, active)).isNull();
-            byte[] output = JsonLdRecordWriter.write(source);
+            byte[] output = JsonLdDocumentWriter.write(source);
             assertThat(new String(output, StandardCharsets.UTF_8)).contains("\"@list\":[\"first\",\"second\"]");
             assertGraphRoundTrip(output, source);
         } finally {
@@ -165,7 +165,7 @@ class JsonLdRecordWriterTest {
                 }
                 """).lang(Lang.TRIG).toDatasetGraph();
         try {
-            byte[] output = JsonLdRecordWriter.write(source);
+            byte[] output = JsonLdDocumentWriter.write(source);
             try (var reader = Json.createReader(new ByteArrayInputStream(output))) {
                 var document = reader.readObject();
                 assertThat(document.keySet()).containsExactlyInAnyOrder("@context", "@id", "@graph");
@@ -194,7 +194,7 @@ class JsonLdRecordWriterTest {
                 }
                 """).lang(Lang.TRIG).toDatasetGraph();
         try {
-            byte[] output = JsonLdRecordWriter.write(source);
+            byte[] output = JsonLdDocumentWriter.write(source);
             try (var reader = Json.createReader(new ByteArrayInputStream(output))) {
                 var context = reader.readObject().getJsonObject("@context");
                 assertThat(context.getString("ns1"))
@@ -215,7 +215,7 @@ class JsonLdRecordWriterTest {
                 <https://example.org/records/EXAMPLE> { custom:Subject custom:Property "value" . }
                 """).lang(Lang.TRIG).toDatasetGraph();
         try {
-            byte[] output = JsonLdRecordWriter.write(source);
+            byte[] output = JsonLdDocumentWriter.write(source);
             try (var reader = Json.createReader(new ByteArrayInputStream(output))) {
                 var context = reader.readObject().getJsonObject("@context");
                 assertThat(context.getString("custom"))
@@ -235,7 +235,7 @@ class JsonLdRecordWriterTest {
                 NodeFactory.createURI("https://example.org/p"), NodeFactory.createLiteralString("value")));
         dataset.addGraph(NodeFactory.createURI(GRAPH), graph);
         try {
-            byte[] output = JsonLdRecordWriter.write(dataset);
+            byte[] output = JsonLdDocumentWriter.write(dataset);
             try (var reader = Json.createReader(new ByteArrayInputStream(output))) {
                 var context = reader.readObject().getJsonObject("@context");
                 assertThat(context).isEmpty();
@@ -254,7 +254,7 @@ class JsonLdRecordWriterTest {
                 <https://example.org/records/EXAMPLE> { :record :label "value" . }
                 """).lang(Lang.TRIG).toDatasetGraph();
         try {
-            byte[] output = JsonLdRecordWriter.write(source);
+            byte[] output = JsonLdDocumentWriter.write(source);
             try (var reader = Json.createReader(new ByteArrayInputStream(output))) {
                 var context = reader.readObject().getJsonObject("@context");
                 assertThat(context.getString("@vocab")).isEqualTo("https://example.org/vocab/");
@@ -271,7 +271,7 @@ class JsonLdRecordWriterTest {
         var dataset = DatasetGraphFactory.createGeneral();
         dataset.addGraph(NodeFactory.createURI(GRAPH), GraphMemFactory.createDefaultGraph());
         try {
-            byte[] output = JsonLdRecordWriter.write(dataset);
+            byte[] output = JsonLdDocumentWriter.write(dataset);
             try (var reader = Json.createReader(new ByteArrayInputStream(output))) {
                 var document = reader.readObject();
                 assertThat(document.getString("@id")).isEqualTo(GRAPH);
@@ -296,7 +296,7 @@ class JsonLdRecordWriterTest {
                 """).lang(Lang.TRIG).toDatasetGraph();
         try {
             hints.forEach(dataset.prefixes()::add);
-            byte[] output = JsonLdRecordWriter.write(dataset);
+            byte[] output = JsonLdDocumentWriter.write(dataset);
             assertGraphRoundTrip(output, dataset);
             try (var reader = Json.createReader(new ByteArrayInputStream(output))) {
                 var context = reader.readObject().getJsonObject("@context");
@@ -333,7 +333,7 @@ class JsonLdRecordWriterTest {
         dataset.addGraph(NodeFactory.createURI(GRAPH), GraphMemFactory.createDefaultGraph());
         dataset.prefixes().add("urn", "urn:ns:");
         dataset.prefixes().add("_", "https://example.org/vocab/");
-        try (var reader = Json.createReader(new ByteArrayInputStream(JsonLdRecordWriter.write(dataset)))) {
+        try (var reader = Json.createReader(new ByteArrayInputStream(JsonLdDocumentWriter.write(dataset)))) {
             var document = reader.readObject();
             assertThat(document.getString("@id")).isEqualTo(GRAPH);
             assertThat(document.getJsonArray("@graph")).isEmpty();

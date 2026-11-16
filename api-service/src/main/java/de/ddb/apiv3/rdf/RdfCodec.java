@@ -34,7 +34,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import org.apache.jena.graph.Node;
 import org.apache.jena.graph.NodeFactory;
 import org.apache.jena.graph.Graph;
@@ -63,8 +62,10 @@ public final class RdfCodec {
     private static final List<Lang> OUTPUT_LANGUAGES = List.of(
             Lang.JSONLD, Lang.RDFXML, JellyLanguage.JELLY);
     private static final List<MediaType> OUTPUT_MEDIA_TYPES;
-    private static final Comparator<MediaType> PRECEDENCE = Comparator.comparingInt(RdfCodec::specificity)
+    private static final Comparator<MediaType> RANGE_PRECEDENCE = Comparator.comparingInt(RdfCodec::specificity)
             .thenComparingDouble(range -> range.getQualityValue());
+    private static final Comparator<MediaType> REPRESENTATION_PREFERENCE =
+            Comparator.comparingDouble(MediaType::getQualityValue).thenComparingInt(RdfCodec::specificity);
     private static final RDFFormat STORAGE_FORMAT = new RDFFormat(JellyLanguage.JELLY,
             JellyFormatVariant.builder().options(JellyOptions.SMALL_STRICT)
                     .enableNamespaceDeclarations(true).build());
@@ -104,9 +105,8 @@ public final class RdfCodec {
 
             if (graph.isEmpty()) {
                 throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT,
-                        "The RDF record must contain at least one triple");
+                        "The RDF document must contain at least one triple");
             }
-            // TODO: SHACL ergänzen.
             try (var timing = RequestTiming.start("jelly_encode")) {
                 return encodeGraph(graph, NodeFactory.createURI(baseIri));
             }
@@ -140,8 +140,8 @@ public final class RdfCodec {
 
             try (var timing = RequestTiming.start("rdf_serialize")) {
                 return switch (contentType(outputLanguage)) {
-                    case "application/rdf+xml" -> RdfXmlRecordWriter.write(graphWithPrefixes(dataset));
-                    case "application/ld+json" -> JsonLdRecordWriter.write(dataset);
+                    case "application/rdf+xml" -> RdfXmlDocumentWriter.write(graphWithPrefixes(dataset));
+                    case "application/ld+json" -> JsonLdDocumentWriter.write(dataset);
                     case JELLY_CONTENT_TYPE -> jelly;
                     default -> throw notAcceptable();
                 };
@@ -165,19 +165,39 @@ public final class RdfCodec {
     /** Keeps an accepted media-type alias on the response instead of replacing it with its canonical name. */
     public MediaType outputMediaType(List<MediaType> accepted) {
         List<MediaType> ranges = accepted == null || accepted.isEmpty() ? List.of(MediaType.ALL) : accepted;
-        Comparator<MediaType> preference = Comparator.comparingDouble((MediaType range) -> range.getQualityValue())
-                .thenComparingInt(RdfCodec::specificity)
-                .thenComparingInt(range -> -ranges.indexOf(range));
-        return OUTPUT_MEDIA_TYPES.stream()
-                .flatMap(offered -> ranges.stream()
-                        .filter(range -> range.isCompatibleWith(offered) && supportedParameters(range))
-                        .max(PRECEDENCE)
-                        .filter(range -> range.getQualityValue() > 0)
-                        .map(range -> Map.entry(offered, range)).stream())
-                .max(Map.Entry.comparingByValue(preference))
-                .map(match -> match.getValue().getCharset() == null ? match.getKey()
-                        : new MediaType(match.getKey(), StandardCharsets.UTF_8))
-                .orElseThrow(RdfCodec::notAcceptable);
+        MediaType selected = null;
+        int selectedRange = -1;
+        for (MediaType offered : OUTPUT_MEDIA_TYPES) {
+            int match = mostSpecificRange(offered, ranges);
+            if (match < 0 || !(ranges.get(match).getQualityValue() > 0)) {
+                continue;
+            }
+            int preference = selectedRange < 0 ? 1
+                    : REPRESENTATION_PREFERENCE.compare(ranges.get(match), ranges.get(selectedRange));
+            // Equal preferences keep the client's first range, then our offered order (JSON-LD first).
+            if (preference > 0 || preference == 0 && match < selectedRange) {
+                selected = offered;
+                selectedRange = match;
+            }
+        }
+        if (selected == null) {
+            throw notAcceptable();
+        }
+        return ranges.get(selectedRange).getCharset() == null ? selected
+                : new MediaType(selected, StandardCharsets.UTF_8);
+    }
+
+    private static int mostSpecificRange(MediaType offered, List<MediaType> ranges) {
+        int selected = -1;
+        for (int index = 0; index < ranges.size(); index++) {
+            MediaType range = ranges.get(index);
+            if (range.isCompatibleWith(offered) && supportedParameters(range)
+                    && (selected < 0 || RANGE_PRECEDENCE.compare(range, ranges.get(selected)) > 0)) {
+                selected = index;
+            }
+        }
+        // A specific q=0 must win over an accepting wildcard: reject it only after range selection.
+        return selected;
     }
 
     /** The canonical media type registered by the actual Jena writer. */
@@ -261,13 +281,23 @@ public final class RdfCodec {
 
     private static int specificity(MediaType type) {
         int wildcardRank = type.isWildcardType() ? 0 : type.isWildcardSubtype() ? 1 : 2;
-        return wildcardRank * 100 + (int) type.getParameters().keySet().stream()
-                .filter(parameter -> !parameter.equalsIgnoreCase("q")).count();
+        int result = wildcardRank * 100;
+        for (String parameter : type.getParameters().keySet()) {
+            if (!parameter.equalsIgnoreCase("q")) {
+                result++;
+            }
+        }
+        return result;
     }
 
     private static boolean supportedParameters(MediaType range) {
-        return range.getParameters().keySet().stream().allMatch(parameter -> parameter.equalsIgnoreCase("q")
-                || parameter.equalsIgnoreCase("charset") && StandardCharsets.UTF_8.equals(range.getCharset()));
+        for (String parameter : range.getParameters().keySet()) {
+            if (!parameter.equalsIgnoreCase("q")
+                    && !(parameter.equalsIgnoreCase("charset") && StandardCharsets.UTF_8.equals(range.getCharset()))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static ResponseStatusException notAcceptable() {

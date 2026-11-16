@@ -44,7 +44,7 @@ import org.apache.jena.vocabulary.RDF;
 import org.unbescape.xml.XmlEscape;
 
 /** Jena writes flat nodes directly; a usable rdf:type supplies each node's XML element name. */
-final class RdfXmlRecordWriter extends RDFXML_Basic {
+final class RdfXmlDocumentWriter extends RDFXML_Basic {
 
     private static final String RDF_NS = RDF.getURI();
     private static final Set<String> RESERVED_NODE_NAMES = Set.of(
@@ -58,7 +58,7 @@ final class RdfXmlRecordWriter extends RDFXML_Basic {
     // Jena's RIOT plain writer uses this deprecated constructor too.
     // Keep the exemption local: typed, flat nodes need the subclass hooks.
     @SuppressWarnings("deprecation")
-    private RdfXmlRecordWriter(Model model) {
+    private RdfXmlDocumentWriter(Model model) {
         model.listStatements(null, RDF.type, (RDFNode) null).forEachRemaining(statement -> {
             if (statement.getObject().isURIResource()) {
                 String iri = statement.getResource().getURI();
@@ -88,7 +88,7 @@ final class RdfXmlRecordWriter extends RDFXML_Basic {
 
     static byte[] write(Graph graph) {
         Model model = ModelFactory.createModelForGraph(graph);
-        var writer = new RdfXmlRecordWriter(model);
+        var writer = new RdfXmlDocumentWriter(model);
         var output = new ByteArrayOutputStream();
         writer.write(model, new BufferedWriter(FileUtils.asUTF8(output)), null);
         return output.toByteArray();

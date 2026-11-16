@@ -48,6 +48,7 @@ import org.apache.jena.riot.RDFParser;
 import org.apache.jena.sparql.core.DatasetGraph;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -400,6 +401,29 @@ class RdfCodecTest {
                     .isInstanceOfSatisfying(ResponseStatusException.class,
                             exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.NOT_ACCEPTABLE));
         }
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+        "application/ld+json;q=0.7,application/rdf+xml;q=0.7|application/ld+json",
+        "application/rdf+xml;q=0.7,application/ld+json;q=0.7|application/rdf+xml",
+        "application/x-jelly-rdf;q=0.8,application/ld+json;q=0.8|application/x-jelly-rdf",
+        "application/rdf+xml;q=0,application/*;q=1|application/ld+json",
+        "application/ld+json;q=0.9,application/ld+json;charset=UTF-8;q=0,*/*;q=1|application/rdf+xml",
+        "application/ld+json;q=1,application/rdf+xml;charset=UTF-8;q=1|application/rdf+xml;charset=UTF-8",
+        "application/rdf+xml;charset=UTF-8;q=0.4,application/ld+json;q=0.9|application/ld+json"
+    })
+    void preservesHeaderOrderExclusionsAndUtf8DuringRepresentationSelection(String accept, String expected) {
+        assertThat(codec.outputMediaType(MediaType.parseMediaTypes(accept)))
+                .isEqualTo(MediaType.parseMediaType(expected));
+    }
+
+    @Test
+    void aSpecificUtf8ExclusionOverridesTheAcceptingUnqualifiedRange() {
+        assertThatThrownBy(() -> codec.outputMediaType(MediaType.parseMediaTypes(
+                "application/rdf+xml;charset=UTF-8;q=0,application/rdf+xml;q=1")))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.NOT_ACCEPTABLE));
     }
 
     private void assertInvalidStoredJelly(byte[] jelly) {

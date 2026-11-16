@@ -34,9 +34,9 @@ import org.apache.jena.sparql.core.DatasetGraph;
  * Jena owns RDF expansion; namespace compaction has a guarded fast path and a Titanium fallback.
  * No vocabulary-specific assumptions or converted records are retained between requests.
  */
-final class JsonLdRecordWriter {
+final class JsonLdDocumentWriter {
 
-    private JsonLdRecordWriter() {
+    private JsonLdDocumentWriter() {
     }
 
     static byte[] write(DatasetGraph dataset) {

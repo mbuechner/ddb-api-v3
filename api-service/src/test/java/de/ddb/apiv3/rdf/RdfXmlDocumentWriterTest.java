@@ -39,7 +39,7 @@ import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 
-class RdfXmlRecordWriterTest {
+class RdfXmlDocumentWriterTest {
 
     private static final String RDF = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
     private static final String EX = "https://example.org/";
@@ -53,7 +53,7 @@ class RdfXmlRecordWriterTest {
                 _:detail a ex:Detail ; ex:value "0042" .
                 """).lang(Lang.TURTLE).toGraph();
         try {
-            byte[] xml = RdfXmlRecordWriter.write(source);
+            byte[] xml = RdfXmlDocumentWriter.write(source);
             Document document = xml(xml);
             Element root = document.getDocumentElement();
             List<Element> resources = children(root);
@@ -86,7 +86,7 @@ class RdfXmlRecordWriterTest {
                   ex:markup '<m:span xmlns:m="urn:markup">  a <m:em>b</m:em> c  </m:span>'^^rdf:XMLLiteral .
                 """).lang(Lang.TURTLE).toGraph();
         try {
-            byte[] xml = RdfXmlRecordWriter.write(source);
+            byte[] xml = RdfXmlDocumentWriter.write(source);
             Document document = xml(xml);
             assertThat(document.getElementsByTagNameNS(RDF, "Description").getLength()).isEqualTo(3);
             assertThat(document.getElementsByTagNameNS(EX, "Main").getLength()).isEqualTo(1);
@@ -104,7 +104,7 @@ class RdfXmlRecordWriterTest {
                 <https://example.org/record> a %s:Record .
                 """.formatted(prefix, prefix)).lang(Lang.TURTLE).toGraph();
         try {
-            byte[] output = RdfXmlRecordWriter.write(source);
+            byte[] output = RdfXmlDocumentWriter.write(source);
             Element resource = children(xml(output).getDocumentElement()).getFirst();
             assertThat(resource.getNamespaceURI()).isEqualTo("https://example.org/types/");
             assertThat(resource.getLocalName()).isEqualTo("Record");
@@ -126,7 +126,7 @@ class RdfXmlRecordWriterTest {
     void preservesPrefixlessTypesAndLiteralLexemes(String turtle) throws Exception {
         Graph source = RDFParser.create().fromString(turtle).lang(Lang.TURTLE).toGraph();
         try {
-            byte[] output = RdfXmlRecordWriter.write(source);
+            byte[] output = RdfXmlDocumentWriter.write(source);
             assertThat(children(xml(output).getDocumentElement()).getFirst().getLocalName()).isEqualTo("Record");
             assertRoundTrip(source, output);
         } finally {
@@ -141,7 +141,7 @@ class RdfXmlRecordWriterTest {
         source.add(Triple.create(NodeFactory.createURI(EX + "record"), NodeFactory.createURI(EX + "label"),
                 NodeFactory.createLiteralString("text" + character)));
         try {
-            assertThatThrownBy(() -> RdfXmlRecordWriter.write(source)).isInstanceOf(RuntimeException.class);
+            assertThatThrownBy(() -> RdfXmlDocumentWriter.write(source)).isInstanceOf(RuntimeException.class);
         } finally {
             source.close();
         }
@@ -160,7 +160,7 @@ class RdfXmlRecordWriterTest {
         };
         source.add(Triple.create(subject, predicate, literal));
         try {
-            assertThatThrownBy(() -> RdfXmlRecordWriter.write(source)).isInstanceOf(RuntimeException.class);
+            assertThatThrownBy(() -> RdfXmlDocumentWriter.write(source)).isInstanceOf(RuntimeException.class);
         } finally {
             source.close();
         }
@@ -173,7 +173,7 @@ class RdfXmlRecordWriterTest {
         source.add(Triple.create(NodeFactory.createURI(EX + "record"), NodeFactory.createURI(RDF + "type"),
                 NodeFactory.createURI(iri)));
         try {
-            assertThatThrownBy(() -> RdfXmlRecordWriter.write(source)).isInstanceOf(RuntimeException.class);
+            assertThatThrownBy(() -> RdfXmlDocumentWriter.write(source)).isInstanceOf(RuntimeException.class);
         } finally {
             source.close();
         }
@@ -185,7 +185,7 @@ class RdfXmlRecordWriterTest {
         source.add(Triple.create(NodeFactory.createURI(EX + "record"), NodeFactory.createURI(EX + "label"),
                 NodeFactory.createLiteralDirLang("\u0645\u0631\u062D\u0628\u0627", "ar", TextDirection.RTL)));
         try {
-            assertRoundTrip(source, RdfXmlRecordWriter.write(source));
+            assertRoundTrip(source, RdfXmlDocumentWriter.write(source));
         } finally {
             source.close();
         }
@@ -206,7 +206,7 @@ class RdfXmlRecordWriterTest {
             source.add(Triple.create(NodeFactory.createURI(EX + "record"), NodeFactory.createURI(EX + "label"),
                     literal));
             try {
-                assertRoundTrip(source, RdfXmlRecordWriter.write(source));
+                assertRoundTrip(source, RdfXmlDocumentWriter.write(source));
             } finally {
                 source.close();
             }
