@@ -36,6 +36,8 @@ spring:
             response-timeout: 30s
             pool:
               type: fixed
+              # Fixed-pool gauges expose saturation/waiters without request-ID or URI label cardinality.
+              metrics: ${GATEWAY_PERFORMANCE_LOG_ENABLED:true}
               max-connections: ${GATEWAY_HTTP_MAX_CONNECTIONS:256}
               acquire-timeout: 1000
               max-idle-time: 30s
@@ -53,7 +55,7 @@ spring:
                 - PreserveHostHeader
                 - name: RequestRateLimiter
                   args:
-                    rate-limiter: "#{@bucket4jRateLimiter}"
+                    rate-limiter: "#{@observedBucket4jRateLimiter}"
                     key-resolver: "#{@clientIdKeyResolver}"
                     bucket4j-rate-limiter.capacity: ${GATEWAY_RATE_LIMIT_BURST_CAPACITY:20}
                     bucket4j-rate-limiter.refillTokens: ${GATEWAY_RATE_LIMIT_REPLENISH_RATE:10}
@@ -112,6 +114,9 @@ ddb:
   logging:
     access:
       enabled: ${GATEWAY_ACCESS_LOG_ENABLED:true}
+    performance:
+      enabled: ${GATEWAY_PERFORMANCE_LOG_ENABLED:true}
+      slow-threshold: ${GATEWAY_SLOW_REQUEST_THRESHOLD:100ms}
   gateway:
     client-id:
       allow-header: ${GATEWAY_CLIENT_ID_HEADER_ENABLED:true}
@@ -124,6 +129,7 @@ ddb:
 logging:
   level:
     de.ddb.apiv3.access: ${GATEWAY_ACCESS_LOG_LEVEL:INFO}
+    de.ddb.apiv3.performance: INFO
   structured:
     format:
       console: ${GATEWAY_LOG_FORMAT:ecs}

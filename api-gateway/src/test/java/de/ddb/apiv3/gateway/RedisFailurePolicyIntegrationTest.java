@@ -43,6 +43,11 @@ class RedisFailurePolicyIntegrationTest {
                         .web(WebApplicationType.REACTIVE)
                         .run(
                                 "--APP_PROFILE=prod",
+                                // Isolate backend failure from the developer's local .env trust settings.
+                                "--DDB_DEV_WRITE_TOKEN=",
+                                "--OAUTH2_ISSUER_URI=",
+                                "--OAUTH2_AUDIENCE=",
+                                "--OAUTH2_JWK_SET_URI=",
                                 "--GATEWAY_PORT=0",
                                 "--GATEWAY_REDIS_HOST=127.0.0.1",
                                 "--GATEWAY_REDIS_PORT=" + unavailablePort,

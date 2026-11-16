@@ -72,7 +72,9 @@ class LocalGatewayWithoutRedisIntegrationTest {
             exchange.getResponseHeaders().set("Content-Type", "application/json");
             exchange.getResponseHeaders().set("ETag", "\"stored-rdf\"");
             exchange.getResponseHeaders().set("Location", "/3/records/example");
-            exchange.getResponseHeaders().set("X-Request-Id", "gateway-test-request");
+            String requestId = exchange.getRequestHeaders().getFirst("X-Request-Id");
+            exchange.getResponseHeaders().set("X-Request-Id", requestId);
+            exchange.getResponseHeaders().set("X-Backend-Request-Id", requestId);
             exchange.getResponseHeaders().set("X-Backend-Host", exchange.getRequestHeaders().getFirst("Host"));
             if (exchange.getRequestMethod().equals("HEAD")) {
                 exchange.getResponseHeaders().set("Content-Length", Integer.toString(response.length));
@@ -80,8 +82,19 @@ class LocalGatewayWithoutRedisIntegrationTest {
                 exchange.close();
                 return;
             }
+            boolean delayed = exchange.getRequestURI().getPath().equals("/3/performance-delay");
+            if (delayed) {
+                delay(80);
+            }
             exchange.sendResponseHeaders(200, response.length);
-            exchange.getResponseBody().write(response);
+            if (delayed) {
+                exchange.getResponseBody().write(response, 0, 1);
+                exchange.getResponseBody().flush();
+                delay(80);
+                exchange.getResponseBody().write(response, 1, response.length - 1);
+            } else {
+                exchange.getResponseBody().write(response);
+            }
             exchange.close();
         });
         backend.start();
@@ -90,6 +103,10 @@ class LocalGatewayWithoutRedisIntegrationTest {
                 .web(WebApplicationType.REACTIVE)
                 .run(
                         "--APP_PROFILE=dev",
+                        "--DDB_DEV_WRITE_TOKEN=",
+                        // Timing assertions must not inherit a developer's diagnostic switches.
+                        "--GATEWAY_PERFORMANCE_LOG_ENABLED=true",
+                        "--GATEWAY_SLOW_REQUEST_THRESHOLD=100ms",
                         "--GATEWAY_PORT=0",
                         "--GATEWAY_API_SERVICE_URI=http://127.0.0.1:" + backend.getAddress().getPort(),
                         "--GATEWAY_REDIS_HOST=redis-is-not-running.invalid",
@@ -222,6 +239,7 @@ class LocalGatewayWithoutRedisIntegrationTest {
                 .uri("/3/probe")
                 .header("Origin", "https://client.example")
                 .header("X-Client-Id", "cors-client")
+                .header("X-Request-Id", "gateway-test-request")
                 .exchange()
                 .expectStatus()
                 .isOk()
@@ -326,6 +344,7 @@ class LocalGatewayWithoutRedisIntegrationTest {
             for (int attempt = 0; attempt < 3; attempt++) {
                 webTestClient().get().uri("/3/access-log-test?token=private-query-secret")
                         .header("X-Client-Id", "access-log-client")
+                        .header("X-Request-Id", "gateway-test-request")
                         .header("X-Forwarded-For", "203.0.113.24")
                         .header("Forwarded", "for=203.0.113.25")
                         .header("Authorization", "Bearer private-authorization-secret")
@@ -367,7 +386,7 @@ class LocalGatewayWithoutRedisIntegrationTest {
             assertThat(successful.at("/event/duration").longValue()).isNotNegative();
             assertThat(successful.at("/source/port").intValue()).isPositive();
             assertThat(successful.at("/http/response/body/bytes").longValue()).isEqualTo(15);
-            assertThat(events.get(2).at("/labels/request_id_source").asString()).isEqualTo("native");
+            assertThat(events.get(2).at("/labels/request_id_source").asString()).isEqualTo("response");
             assertThat(events.get(2).at("/http/request/id").asString()).isNotBlank();
             assertThat(events.get(3).at("/labels/client_id").isMissingNode()).isTrue();
             assertThat(events.get(3).at("/user_agent/original").asString()).isEqualTo("x".repeat(512));
@@ -382,7 +401,7 @@ class LocalGatewayWithoutRedisIntegrationTest {
     }
 
     @Test
-    void keepsConcurrentRequestFieldsSeparateAndNativeRequestIdsDistinct() throws Exception {
+    void keepsConcurrentRequestFieldsSeparateAndGeneratedRequestIdsDistinct() throws Exception {
         final Logger logger = (Logger) LoggerFactory.getLogger("de.ddb.apiv3.access");
         final var appender = new ListAppender<ILoggingEvent>();
         appender.list = new CopyOnWriteArrayList<>();
@@ -403,11 +422,82 @@ class LocalGatewayWithoutRedisIntegrationTest {
                 final String path = event.at("/url/path").asString();
                 final String suffix = path.substring(path.lastIndexOf('/') + 1);
                 assertThat(event.at("/labels/client_id").asString()).isEqualTo("parallel-" + suffix);
-                assertThat(event.at("/labels/request_id_source").asString()).isEqualTo("native");
+                assertThat(event.at("/labels/request_id_source").asString()).isEqualTo("response");
             });
         } finally {
             logger.detachAppender(appender);
             appender.stop();
+        }
+    }
+
+    @Test
+    void correlatesTimingsAndSeparatesBackendHeadersFromBodyTransferIncludingEarlyRejections() {
+        final Logger logger = (Logger) LoggerFactory.getLogger("de.ddb.apiv3.performance");
+        final var appender = new ListAppender<ILoggingEvent>();
+        appender.list = new CopyOnWriteArrayList<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            webTestClient().get().uri("/3/performance-delay?token=private-query-secret")
+                    .header("X-Client-Id", "performance-client")
+                    .header("X-Request-Id", "performance-known-id")
+                    .exchange().expectStatus().isOk()
+                    .expectHeader().valueEquals("X-Request-Id", "performance-known-id")
+                    .expectHeader().valueEquals("X-Backend-Request-Id", "performance-known-id")
+                    .expectBody().returnResult();
+            var invalid = webTestClient().get().uri("/3/performance-invalid-id")
+                    .header("X-Client-Id", "performance-client")
+                    .header("X-Request-Id", "invalid/id?private-header-secret")
+                    .exchange().expectStatus().isOk()
+                    .expectHeader().valueMatches("X-Request-Id", "[a-f0-9-]{36}")
+                    .expectBody().returnResult();
+            assertThat(invalid.getResponseHeaders().getFirst("X-Backend-Request-Id"))
+                    .isEqualTo(invalid.getResponseHeaders().getFirst("X-Request-Id"));
+            webTestClient().get().uri("/3/performance-limit")
+                    .header("X-Client-Id", "performance-client")
+                    .header("X-Request-Id", "performance-denied-id")
+                    .exchange().expectStatus().isEqualTo(429)
+                    .expectHeader().valueEquals("X-Request-Id", "performance-denied-id")
+                    .expectBody().returnResult();
+            webTestClient().post().uri("/3/records/unauthorized")
+                    .header("X-Request-Id", "performance-auth-id")
+                    .exchange().expectStatus().isUnauthorized()
+                    .expectHeader().valueEquals("X-Request-Id", "performance-auth-id")
+                    .expectBody().returnResult();
+            webTestClient().get().uri("/contexts/performance-missing")
+                    .header("X-Request-Id", "performance-missing-id")
+                    .exchange().expectStatus().isNotFound().expectBody().returnResult();
+
+            await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> assertThat(appender.list).hasSize(5));
+            var events = appender.list.stream().map(LocalGatewayWithoutRedisIntegrationTest::ecsJson).toList();
+            var delayed = events.getFirst();
+            assertThat(delayed.at("/event/dataset").asString()).isEqualTo("http.performance");
+            assertThat(delayed.at("/http/request/id").asString()).isEqualTo("performance-known-id");
+            assertThat(delayed.at("/performance/backend_headers_ms").doubleValue()).isGreaterThanOrEqualTo(60);
+            assertThat(delayed.at("/performance/response_transfer_ms").doubleValue()).isGreaterThanOrEqualTo(60);
+            assertThat(delayed.at("/performance/total_ms").doubleValue()).isGreaterThanOrEqualTo(140);
+            assertThat(delayed.at("/performance/slow").booleanValue()).isTrue();
+            assertThat(delayed.at("/performance/rate_limit_ms").doubleValue()).isNotNegative();
+            assertThat(delayed.at("/labels/rate_limit_backend").asString()).isEqualTo("local");
+            assertThat(delayed.at("/labels/rate_limit_outcome").asString()).isEqualTo("allowed");
+            assertThat(events.get(2).at("/labels/rate_limit_outcome").asString()).isEqualTo("denied");
+            assertThat(events.get(2).at("/performance/backend_headers_ms").isMissingNode()).isTrue();
+            assertThat(events.get(3).at("/performance/rate_limit_ms").isMissingNode()).isTrue();
+            assertThat(events).extracting(event -> event.at("/http/response/status_code").intValue())
+                    .containsExactly(200, 200, 429, 401, 404);
+            assertThat(events.toString()).doesNotContain("private-query-secret", "private-header-secret", "invalid/id");
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+    }
+
+    private static void delay(long millis) throws IOException {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted fake backend", exception);
         }
     }
 

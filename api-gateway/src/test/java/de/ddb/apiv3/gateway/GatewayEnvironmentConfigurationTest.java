@@ -51,6 +51,27 @@ class GatewayEnvironmentConfigurationTest {
     }
 
     @Test
+    void performanceLoggingUsesGatewaySettingsAndDisablesPoolMetricsWithTimings() throws IOException {
+        var environment = environment(Map.of("GATEWAY_PERFORMANCE_LOG_ENABLED", "false",
+                "GATEWAY_SLOW_REQUEST_THRESHOLD", "175ms", "DDB_API_PERFORMANCE_LOG_ENABLED", "true",
+                "DDB_API_SLOW_REQUEST_THRESHOLD", "900ms"), false);
+
+        assertThat(environment.getProperty("ddb.logging.performance.enabled", Boolean.class)).isFalse();
+        assertThat(environment.getProperty("ddb.logging.performance.slow-threshold")).isEqualTo("175ms");
+        assertThat(environment.getProperty("logging.level.de.ddb.apiv3.performance")).isEqualTo("INFO");
+        assertThat(environment.getProperty(GATEWAY + "httpclient.pool.metrics", Boolean.class)).isFalse();
+        assertThat(environment.getProperty(GATEWAY + "routes[0].filters[1].args.rate-limiter"))
+                .isEqualTo("#{@observedBucket4jRateLimiter}");
+    }
+
+    @Test
+    void poolMetricsAreEnabledWithPerformanceLoggingByDefault() throws IOException {
+        var environment = environment(Map.of(), false);
+        assertThat(environment.getProperty("ddb.logging.performance.enabled", Boolean.class)).isTrue();
+        assertThat(environment.getProperty(GATEWAY + "httpclient.pool.metrics", Boolean.class)).isTrue();
+    }
+
+    @Test
     void productionRedisAndRateLimitsUseTheGatewayNamespaceWithoutEnablingSentinel() throws IOException {
         var environment = environment(Map.ofEntries(
                 Map.entry("GATEWAY_REDIS_HOST", "redis.internal.example"),
