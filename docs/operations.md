@@ -119,6 +119,9 @@ verbinden HTTP-Antworten mit Log-Ereignissen. Nutzungszahlen aus Gateway-Logs
 berechnen, API-Logs getrennt für die Backend-Performance auswerten:
 [Logging und Statistiken](logging.md). Daten und Log-Backend werden nicht
 im API-Prozess zwischengespeichert oder betrieben.
+Bei zusätzlichen Antwortzeiten zuerst die korrelierten Teilzeiten ansehen:
+[OpenShift-Latenzdiagnose](latency-diagnostics.md) trennt öffentlichen Netzweg,
+Gateway/Redis, API-Warteschlange, S3 und RDF-Ausgabe.
 
 ### Gateway-Startmeldungen
 

@@ -17,6 +17,8 @@ data:
   DDB_API_LOG_FORMAT: ecs
   DDB_API_ACCESS_LOG_ENABLED: {{ .Values.logging.accessEnabled | quote }}
   DDB_API_ACCESS_LOG_LEVEL: INFO
+  DDB_API_PERFORMANCE_LOG_ENABLED: {{ .Values.logging.performanceEnabled | quote }}
+  DDB_API_SLOW_REQUEST_THRESHOLD: {{ .Values.logging.slowRequestThreshold | quote }}
   DDB_API_CLIENT_ID_HEADER_NAME: X-Client-Id
   DDB_API_BASE_URL: {{ .Values.apiService.baseUrl | quote }}
   DDB_API_UPLOAD_MAX_FILE_SIZE: {{ .Values.apiService.maxDocumentSize | quote }}
@@ -37,6 +39,8 @@ data:
   GATEWAY_LOG_FORMAT: ecs
   GATEWAY_ACCESS_LOG_ENABLED: {{ .Values.logging.accessEnabled | quote }}
   GATEWAY_ACCESS_LOG_LEVEL: INFO
+  GATEWAY_PERFORMANCE_LOG_ENABLED: {{ .Values.logging.performanceEnabled | quote }}
+  GATEWAY_SLOW_REQUEST_THRESHOLD: {{ .Values.logging.slowRequestThreshold | quote }}
   GATEWAY_HTTP_MAX_CONNECTIONS: {{ .Values.gateway.maxConnections | quote }}
   GATEWAY_API_SERVICE_URI: {{ printf "http://%s:8080" (include "ddb-api-v3.apiServiceName" .) | quote }}
   # Standalone uses the Redis service; HA discovers the primary through Sentinel.

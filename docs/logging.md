@@ -47,6 +47,53 @@ die vollständige Laufzeit im Browser. Große Antworten und langsame Leser könn
 daher längere Zeiten verursachen. Bytezahlen sind Servermessungen, keine
 TCP-/TLS-Abrechnung; Kompression und die betrachtete Schicht berücksichtigen.
 
+## Request-Korrelation und Teilzeiten
+
+Gateway und API übernehmen eine gültige `X-Request-Id` oder erzeugen eine UUID.
+Der Gateway reicht sie zur API durch; Antwort, ProblemDetail und Logs verwenden
+dieselbe ID. Zulässig sind 1–128 Zeichen, erstes Zeichen alphanumerisch, danach
+zusätzlich `.`, `_`, `:`, `-`. Eine vom Client gelieferte ID dient ausschließlich
+der Korrelation und ist kein Identitätsnachweis. Für eigene Messungen pro Anfrage
+eine neue ID verwenden; wiederverwendete Request-IDs können sonst zusammenfallen.
+
+Die API ergänzt ihr vorhandenes `http.access`-Event. Der Gateway schreibt neben
+seinem nativen Access-Event eine Zusammenfassung mit `event.dataset=http.performance`
+und Logger `de.ddb.apiv3.performance`. Diese unterscheidet auch Fehler und
+abgebrochene reaktive Verarbeitung. Für Nutzungsstatistiken weiterhin nur
+`http.access` zählen; zusätzliche Timing-Events sind keine weiteren Requests.
+
+Alle `performance.*_ms`-Werte sind numerische Millisekunden. Die Zeitmessung nutzt
+`System.nanoTime()`, nicht synchronisierte Wanduhren zwischen Pods. Die bereits
+vorhandene ECS-`event.duration` bleibt in Nanosekunden. Fehlende Stages wurden
+nicht ausgeführt oder nicht erreicht; sie sind nicht als Nullzeit zu interpretieren.
+
+| Komponente / Feld | Gemessener Abschnitt |
+| --- | --- |
+| Beide: `performance.total_ms`, `performance.slow` | Gesamtdauer und Markierung ab der konfigurierten Schwelle, standardmäßig 100 ms |
+| Gateway: `performance.gateway_before_backend_ms` | Bis zum Start des Backend-Aufrufs, einschließlich Security, Routing und Rate-Limit |
+| Gateway: `performance.rate_limit_ms` | Bucket4j-Prüfung, im Profil `prod` einschließlich Redis-Kommunikation; im Profil `dev` lokale Zustandsverwaltung |
+| Gateway: `performance.backend_headers_ms` | Backend-Aufruf bis zu den Antwortheadern: Pool, DNS/Connect, Anfrageübertragung und API-Verarbeitung zusammen |
+| Gateway: `performance.backend_wait_ms` | Bei Fehler/Abbruch vor Backend-Headern: bis dahin verstrichene Wartezeit; keine erfundene Header- oder Transferzeit |
+| Gateway: `performance.response_transfer_ms` | Ab Backend-Headern bis zum vollständigen Abschluss, einschließlich Streaming, Client-Backpressure und gegebenenfalls lokaler Fehlerbehandlung |
+| API: `performance.capacity_wait_ms` | Eintritt in die Kapazitätsbegrenzung bis Weitergabe; einschließlich Suspend-/Resume-Scheduling, keine Messung sämtlicher Wartezeit vor Jetty |
+| API: `performance.application_ms` | Servlet-/Security-/MVC-Verarbeitung einschließlich der nachfolgenden API-Stages |
+| API: `performance.s3_read_ms`, `performance.s3_write_ms` | Vollständiger S3-SDK-Aufruf einschließlich Body und Poolwartezeit; automatische SDK-Retries sind derzeit deaktiviert |
+| API: `performance.jelly_decode_ms`, `performance.rdf_serialize_ms` | Jelly prüfen/dekodieren und gewünschtes Ausgabeformat erzeugen |
+| API bei Uploads: `performance.upload_read_ms`, `performance.rdf_parse_ms`, `performance.jelly_encode_ms` | Body einlesen, RDF/XML validieren/parsen und Jelly für S3 erzeugen |
+
+**Verschachtelte Zeiten nicht addieren:** Rate-Limit ist Teil von
+`gateway_before_backend_ms`, S3 und RDF sind Teil von `application_ms`, die API
+liegt wiederum im Backend-Aufruf des Gateways. `backend_headers_ms` ist keine
+reine API- oder Netzwerkzeit. Native Accesslogs schließen das serverseitige
+Schreiben ein; ein reaktives Summary ist keine Bestätigung, dass der Client alle
+Bytes bereits empfangen hat. Für Summen oder Differenzen immer dieselbe Request-ID
+vergleichen, nicht voneinander unabhängige p95-Werte subtrahieren.
+
+Die Slow-Schwelle filtert und sampelt keine Events: schnelle Referenzrequests
+bleiben für Vergleiche sichtbar. Erfolgreiche Liveness-/Readiness-Probes werden
+weiterhin ausgelassen. Die Diagnose fügt keine RDF-Bodies, Tokens oder Querys zum
+Log hinzu. Für die konkrete Untersuchung siehe [OpenShift-Latenzdiagnose](latency-diagnostics.md).
+
 ## Richtig zählen
 
 **Nutzungsstatistiken aus den Gateway-Events bilden.** Die API sieht dieselbe
@@ -115,12 +162,16 @@ nicht ausgeführt.
 DDB_API_LOG_FORMAT=ecs
 DDB_API_ACCESS_LOG_ENABLED=true
 DDB_API_ACCESS_LOG_LEVEL=INFO
+DDB_API_PERFORMANCE_LOG_ENABLED=true
+DDB_API_SLOW_REQUEST_THRESHOLD=100ms
 DDB_API_CLIENT_ID_HEADER_NAME=X-Client-Id
 DDB_API_FORWARD_HEADERS_STRATEGY=none
 
 GATEWAY_LOG_FORMAT=ecs
 GATEWAY_ACCESS_LOG_ENABLED=true
 GATEWAY_ACCESS_LOG_LEVEL=INFO
+GATEWAY_PERFORMANCE_LOG_ENABLED=true
+GATEWAY_SLOW_REQUEST_THRESHOLD=100ms
 GATEWAY_CLIENT_ID_HEADER_NAME=X-Client-Id
 GATEWAY_FORWARD_HEADERS_STRATEGY=none
 ```
@@ -133,6 +184,14 @@ Der Helm-Chart aktiviert ECS und Access-Logs standardmäßig;
 vollständige Nutzungsstatistiken für diesen Zeitraum unmöglich. Das Access-Level
 ist separat auf `INFO` gesetzt, damit ein allgemeines `WARN` die Statistik nicht
 versehentlich abschaltet. Ein eigenes höheres Access-Level unterdrückt sie trotzdem.
+`logging.performanceEnabled` und `logging.slowRequestThreshold` steuern im Chart
+die Teilzeiten beider Anwendungen. Mit `*_PERFORMANCE_LOG_ENABLED=false` entfällt
+die jeweilige Timing-Diagnose; die Request-ID-Korrelation bleibt erhalten. Bei
+der API läuft die Erfassung nur bei aktiven Accesslogs auf `INFO`; die Entscheidung
+wird pro Anfrage beim Eintritt getroffen. Gateway-Timing-Events lassen sich
+unabhängig von seinen Accesslogs abschalten. Aktivierte Gateway-Performance-
+Diagnose schaltet zusätzlich Verbindungspool-Metriken ein (`httpclient.pool.metrics`);
+der Performance-Schalter deaktiviert auch diese zusätzliche Instrumentierung.
 
 Im Cluster sammelt der vorhandene Log-Agent stdout ein und ergänzt Namespace,
 Pod und Container. Keine Logdateien im Container, kein zusätzliches Volume und
@@ -175,9 +234,9 @@ wirkt erst oberhalb dieser Server-Callbacks und ist für die ursprüngliche IP
 im nativen Access-Log nicht geeignet. Alternativ die externe IP im Collector aus
 dem vertrauenswürdigen Ingress-Log ergänzen.
 
-Bestehende Fehlerantworten liefern `X-Request-Id`; Access- und Fehlerlog
-übernehmen diese ID. Native Server-IDs sind nur für den jeweiligen Hop gedacht,
-keine verteilten Trace-IDs. W3C-Tracing wird durch Access-Logging nicht aktiviert.
+`X-Request-Id` verbindet Gateway-, API- und Fehlerlogs; dies aktiviert kein
+verteiltes W3C-Tracing. Native Server-IDs bleiben nur ein Fallback für Anfragen,
+die die normale Verarbeitung nicht erreichen.
 
 Die nativen Callbacks erfassen abgeschlossene HTTP-Antworten. Verbindungsfehler
 vor der Anfrage und insbesondere abgebrochene Netty-Antworten erscheinen nicht
@@ -186,3 +245,8 @@ Kein Sampling bedeutet auch nicht revisionssichere Zustellung: Containerabstürz
 oder eine ausgefallene Log-Pipeline können Daten verlieren. Die stdout-Ausgabe
 ist synchron; ein langsamer Log-Abnehmer erzeugt Backpressure. Unter echter
 Produktionslast mit eingeschaltetem Logging messen.
+Die Gateway-Diagnose schreibt eine zusätzliche JSON-Zeile je Anfrage; auch die
+API-Zeile enthält zusätzliche Felder. Timer, Allokationen, JSON-Kodierung und
+Log-Ingestion sind daher nicht kostenlos. Die Implementierung fügt weder
+Body-Puffer noch Scheduler-Wechsel oder zusätzliche Backend-Aufrufe für die
+Messung hinzu. Bei abgeschalteter API-Diagnose wird keine Stage-Map angelegt.

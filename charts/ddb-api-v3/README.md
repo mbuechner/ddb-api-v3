@@ -161,6 +161,9 @@ kubectl rollout status deployment/ddb-api-v3-gateway -n ddb-api-v3
 
 OpenShift: `oc` statt `kubectl`. HTTPS am Ingress; API und Redis intern.
 Nach S3-Secret-Rotation API-Deployment neu starten. Logs: stdout; Probes vorkonfiguriert.
+Teilzeiten sind mit `logging.performanceEnabled: true` aktiv; die Slow-Markierung
+beginnt ab `logging.slowRequestThreshold: 100ms`. Dieselbe `X-Request-Id` verbindet
+Gateway und API. [Latenzdiagnose](../../docs/latency-diagnostics.md).
 `apiService`/`gateway`: getrennte Replikazahlen, Ressourcen und HPA.
 Redis-PVCs und verwaltete Redis-Secrets bleiben nach `helm uninstall` erhalten.
 Redis läuft standardmäßig als StatefulSet. `redis.useDeploymentWhenNonHA: true`

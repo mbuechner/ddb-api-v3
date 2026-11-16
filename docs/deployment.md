@@ -414,6 +414,10 @@ Unter OpenShift dieselben Befehle mit `oc` verwenden. Readiness prüft S3
 beziehungsweise Redis; Liveness bleibt von deren Ausfällen unabhängig. Logs
 stehen auf stdout; [Auswertung und Aufbewahrung](logging.md) übernimmt die
 vorhandene Cluster-Log-Pipeline.
+Zur Laufzeitdiagnose sind Teilzeiten standardmäßig aktiv:
+`logging.performanceEnabled: true`, `logging.slowRequestThreshold: 100ms`.
+Die Schwelle markiert langsame Requests; sie verwirft keine schnellen Referenzen.
+[Messverfahren und CPU-Throttling prüfen](latency-diagnostics.md).
 
 Die Chart-Veröffentlichung prüft Standalone- und HA-ACLs aus den tatsächlich
 gerenderten Secrets mit temporären Docker-Containern. Der Smoke-Test erlaubt Datenzugriff und

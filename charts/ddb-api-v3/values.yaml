@@ -28,6 +28,9 @@ images:
 # Both applications write ECS JSON to stdout. Collect centrally with the cluster log agent.
 logging:
   accessEnabled: true
+  # Timings use a monotonic clock; the threshold marks events without dropping fast ones.
+  performanceEnabled: true
+  slowRequestThreshold: 100ms
 
 # External OAuth2/OIDC issuer. All empty keeps writes locked; GET remains public.
 # No development bearer token is accepted by the production profile.
