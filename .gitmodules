@@ -1,0 +1,3 @@
+[submodule "shacl"]
+	path = api-service/src/main/resources/shacl
+	url = https://github.com/Deutsche-Digitale-Bibliothek/ddb-metadata-model.git
