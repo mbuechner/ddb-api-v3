@@ -16,6 +16,25 @@ RDF-Dokumente. Beide Endpunkte nutzen gemeinsame Schreib-/Lese- und RDF-Logik un
 
 ## Start
 
+Projekt einschließlich der SHACL-Dateien klonen:
+
+```bash
+git clone --recurse-submodules https://github.com/mbuechner/ddb-api-v3.git
+cd ddb-api-v3
+```
+
+In einem vorhandenen Checkout das Submodul initialisieren beziehungsweise auf
+den im Projekt festgelegten Stand bringen:
+
+```bash
+git submodule update --init --recursive
+```
+
+Die SHACL-Dateien werden im separaten Repository
+[ddb-metadata-model](https://github.com/Deutsche-Digitale-Bibliothek/ddb-metadata-model) gepflegt und unter
+`api-service/src/main/resources/shacl/` eingebunden. Das Projekt referenziert
+einen festen Commit; [neue SHACL-Stände bewusst übernehmen](docs/architecture.md#endpunkte-und-shacl-erweitern).
+
 Docker + Compose. `.env` einmal anlegen; vorhandene Secrets behalten:
 
 ```bash

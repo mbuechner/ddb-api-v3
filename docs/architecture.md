@@ -55,7 +55,7 @@ src/main/
 │   ├── rdf/            RdfCodec, Ausgabeadapter
 │   │   └── validation/ RdfValidator, ShaclRdfValidator
 │   └── storage/s3/     S3RdfDocumentStore, Verbindungskonfiguration
-└── resources/shacl/
+└── resources/shacl/  Git-Submodul: ddb-metadata-model
     ├── records.ttl
     └── items.ttl
 ```
@@ -122,9 +122,36 @@ bisherige Mindestanforderung eines nichtleeren Graphen; fachliche Pflichtfelder
 werden nicht erfunden.
 
 Für zusätzliche Regeln die jeweilige Datei unter
-`api-service/src/main/resources/shacl/` erweitern und positive sowie negative
-Uploadfälle für genau diesen Endpunkt testen. Änderungen werden nach Neustart
-wirksam. Für einen weiteren Ressourcentyp dasselbe Muster verwenden: expliziter
+`api-service/src/main/resources/shacl/` im separaten Repository
+[ddb-metadata-model](https://github.com/Deutsche-Digitale-Bibliothek/ddb-metadata-model) erweitern und dort committen.
+Das Verzeichnis ist ein Git-Submodul; dieses Projekt referenziert einen festen
+Commit. Maven und Docker verpacken ausschließlich `shacl/items.ttl` und
+`shacl/records.ttl` aus dem Submodul unverändert im Anwendungs-JAR. Buildskripte,
+Tests, Entwürfe und Dokumentation des Modellprojekts bleiben draußen.
+Beim Build und zur Laufzeit werden keine neuen SHACL-Stände aus dem Netz geladen.
+
+Aktiv sind `records.ttl` und `items.ttl` mit der Prüfung auf einen nichtleeren
+Graphen. Die zusätzlichen `*_shapes.ttl` sind fachliche Arbeitsentwürfe und
+werden von den Validatoren nicht geladen. Die `*_class_definitions.ttl` und
+`*_property_definitions.ttl` dokumentieren das RDF-Vokabular.
+
+Einen neuen Stand aus dem SHACL-Repository gezielt übernehmen; `<Commit>` durch
+den gewünschten Commit ersetzen:
+
+```bash
+git -C api-service/src/main/resources/shacl fetch origin
+git -C api-service/src/main/resources/shacl checkout <Commit>
+mvn -pl api-service clean verify
+git add api-service/src/main/resources/shacl
+git commit -m "Update SHACL profiles"
+```
+
+Positive sowie negative Uploadfälle für genau diesen Endpunkt testen. Nach dem
+Neubau der Anwendung und ihrem Neustart gilt der übernommene Stand. Andere
+Checkouts übernehmen ihn mit `git submodule update --init --recursive`; die CI
+checkt das Submodul ebenfalls auf dem referenzierten Commit aus.
+
+Für einen weiteren Ressourcentyp dasselbe Muster verwenden: expliziter
 Controller und eigener Validator unter `api/{ressource}`, eigene Shapes-Datei
 und feste `RdfDocumentType`-Zuordnung.
 Außerdem seine Schreib-Scopes in API und Gateway und seinen OpenAPI-Pfad ergänzen.
