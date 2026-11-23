@@ -167,6 +167,7 @@ DDB_API_PERFORMANCE_LOG_ENABLED=true
 DDB_API_SLOW_REQUEST_THRESHOLD=100ms
 DDB_API_CLIENT_ID_HEADER_NAME=X-Client-Id
 DDB_API_FORWARD_HEADERS_STRATEGY=none
+DDB_API_FORWARD_HEADERS_NAMING=rfc-7239
 
 GATEWAY_LOG_FORMAT=ecs
 GATEWAY_ACCESS_LOG_ENABLED=true
@@ -175,6 +176,7 @@ GATEWAY_PERFORMANCE_LOG_ENABLED=true
 GATEWAY_SLOW_REQUEST_THRESHOLD=100ms
 GATEWAY_CLIENT_ID_HEADER_NAME=X-Client-Id
 GATEWAY_FORWARD_HEADERS_STRATEGY=none
+GATEWAY_FORWARD_HEADERS_NAMING=rfc-7239
 ```
 
 Die Einstellungen sind je Anwendung getrennt und werden von Compose
@@ -219,12 +221,19 @@ Beliebige `Forwarded`-/`X-Forwarded-For`-Werte verändern deshalb `client.ip` ni
 
 Nur wenn ausschließlich ein vertrauenswürdiger Ingress das Gateway erreicht
 und eingehende Forwarded-Header entfernt und selbst korrekt setzt, kann dessen
-native Auswertung eingeschaltet werden:
+native Auswertung eingeschaltet werden. Seit Spring Boot 4.2 wertet jede
+Anwendung eine Header-Familie aus. Standard ist `Forwarded` nach RFC 7239.
+Bei bestehenden Installationen mit aktivierter Auswertung und
+`X-Forwarded-*` muss vor dem Upgrade das jeweilige
+`*_FORWARD_HEADERS_NAMING` auf `x-forwarded` gesetzt werden. Ohne diese
+Einstellung verwendet das Gateway bei der anonymen Ratenbegrenzung die IP
+des Ingress für dessen Anfragen.
 
 ```yaml
 gateway:
+  forwardHeadersStrategy: native
   extraEnv:
-    GATEWAY_FORWARD_HEADERS_STRATEGY: native
+    GATEWAY_FORWARD_HEADERS_NAMING: x-forwarded
 ```
 
 Dann bleibt `source.ip` die Ingress-IP und `client.ip` enthält die vom Server

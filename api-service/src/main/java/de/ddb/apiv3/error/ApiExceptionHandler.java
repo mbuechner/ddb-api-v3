@@ -19,6 +19,7 @@ package de.ddb.apiv3.error;
 
 import de.ddb.apiv3.storage.StorageException;
 import de.ddb.apiv3.config.RequestTiming;
+import java.net.URI;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,6 +30,7 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
@@ -57,6 +59,9 @@ public final class ApiExceptionHandler extends ResponseEntityExceptionHandler {
             @Nullable Object body, HttpHeaders headers, HttpStatusCode status, WebRequest request) {
         String requestId = RequestTiming.requestId(request);
         if (body instanceof ProblemDetail problem) {
+            if (problem.getInstance() == null && request instanceof ServletWebRequest servletRequest) {
+                problem.setInstance(URI.create(servletRequest.getRequest().getRequestURI()));
+            }
             problem.setProperty("requestId", requestId);
         }
         HttpHeaders responseHeaders = new HttpHeaders();

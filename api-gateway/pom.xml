@@ -7,7 +7,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.1.2</version>
+        <version>4.2.0</version>
         <relativePath/>
     </parent>
 
@@ -41,10 +41,10 @@
 
     <properties>
         <java.version>25</java.version>
-        <spring-cloud.version>2025.1.4</spring-cloud.version>
+        <spring-cloud.version>2026.0.0</spring-cloud.version>
         <maven-compiler-plugin.version>3.16.0</maven-compiler-plugin.version>
         <maven-surefire-plugin.version>3.6.1</maven-surefire-plugin.version>
-        <bucket4j.version>8.22.0</bucket4j.version>
+        <bucket4j.version>8.23.0</bucket4j.version>
         <project.build.outputTimestamp>2026-09-02T00:00:00Z</project.build.outputTimestamp>
     </properties>
 

@@ -37,6 +37,7 @@ class ApiEnvironmentConfigurationTest {
                 Map.entry("DDB_API_PORT", "18080"),
                 Map.entry("GATEWAY_PORT", "18081"),
                 Map.entry("DDB_API_FORWARD_HEADERS_STRATEGY", "native"),
+                Map.entry("DDB_API_FORWARD_HEADERS_NAMING", "x-forwarded"),
                 Map.entry("DDB_API_LOG_FORMAT", "logstash"),
                 Map.entry("DDB_API_ACCESS_LOG_ENABLED", "false"),
                 Map.entry("DDB_API_ACCESS_LOG_LEVEL", "WARN"),
@@ -53,6 +54,7 @@ class ApiEnvironmentConfigurationTest {
 
         assertThat(environment.getProperty("server.port", Integer.class)).isEqualTo(18080);
         assertThat(environment.getProperty("server.forward-headers-strategy")).isEqualTo("native");
+        assertThat(environment.getProperty("server.request.header.forwarded.naming")).isEqualTo("x-forwarded");
         assertThat(environment.getProperty("logging.structured.format.console")).isEqualTo("logstash");
         assertThat(environment.getProperty("logging.level.de.ddb.apiv3.access")).isEqualTo("WARN");
         assertThat(environment.getProperty("ddb.logging.access.enabled", Boolean.class)).isFalse();
@@ -72,6 +74,7 @@ class ApiEnvironmentConfigurationTest {
         var environment = environment(Map.ofEntries(
                 Map.entry("GATEWAY_PORT", "18081"),
                 Map.entry("GATEWAY_FORWARD_HEADERS_STRATEGY", "native"),
+                Map.entry("GATEWAY_FORWARD_HEADERS_NAMING", "x-forwarded"),
                 Map.entry("GATEWAY_LOG_FORMAT", "logstash"),
                 Map.entry("GATEWAY_ACCESS_LOG_ENABLED", "false"),
                 Map.entry("GATEWAY_ACCESS_LOG_LEVEL", "WARN"),
@@ -81,6 +84,7 @@ class ApiEnvironmentConfigurationTest {
 
         assertThat(environment.getProperty("server.port", Integer.class)).isEqualTo(8080);
         assertThat(environment.getProperty("server.forward-headers-strategy")).isEqualTo("none");
+        assertThat(environment.getProperty("server.request.header.forwarded.naming")).isEqualTo("rfc-7239");
         assertThat(environment.getProperty("logging.structured.format.console")).isEqualTo("ecs");
         assertThat(environment.getProperty("logging.level.de.ddb.apiv3.access")).isEqualTo("INFO");
         assertThat(environment.getProperty("ddb.logging.access.enabled", Boolean.class)).isTrue();

@@ -26,16 +26,20 @@ class GatewayEnvironmentConfigurationTest {
 
     @Test
     void gatewaySettingsStayIndependentFromApiSettings() throws IOException {
-        var environment = environment(Map.of(
-                "DDB_API_PORT", "18080", "GATEWAY_PORT", "18081",
-                "DDB_API_FORWARD_HEADERS_STRATEGY", "framework", "GATEWAY_FORWARD_HEADERS_STRATEGY", "native",
-                "DDB_API_ACCESS_LOG_ENABLED", "true", "GATEWAY_ACCESS_LOG_ENABLED", "false",
-                "DDB_API_ACCESS_LOG_LEVEL", "ERROR", "GATEWAY_ACCESS_LOG_LEVEL", "INFO",
-                "DDB_API_CLIENT_ID_HEADER_NAME", "X-Api-Client", "GATEWAY_CLIENT_ID_HEADER_NAME", "X-Gateway-Client"),
-                false);
+        var environment = environment(Map.ofEntries(
+                Map.entry("DDB_API_PORT", "18080"), Map.entry("GATEWAY_PORT", "18081"),
+                Map.entry("DDB_API_FORWARD_HEADERS_STRATEGY", "framework"),
+                Map.entry("GATEWAY_FORWARD_HEADERS_STRATEGY", "native"),
+                Map.entry("DDB_API_FORWARD_HEADERS_NAMING", "rfc-7239"),
+                Map.entry("GATEWAY_FORWARD_HEADERS_NAMING", "x-forwarded"),
+                Map.entry("DDB_API_ACCESS_LOG_ENABLED", "true"), Map.entry("GATEWAY_ACCESS_LOG_ENABLED", "false"),
+                Map.entry("DDB_API_ACCESS_LOG_LEVEL", "ERROR"), Map.entry("GATEWAY_ACCESS_LOG_LEVEL", "INFO"),
+                Map.entry("DDB_API_CLIENT_ID_HEADER_NAME", "X-Api-Client"),
+                Map.entry("GATEWAY_CLIENT_ID_HEADER_NAME", "X-Gateway-Client")), false);
 
         assertThat(environment.getProperty("server.port", Integer.class)).isEqualTo(18081);
         assertThat(environment.getProperty("server.forward-headers-strategy")).isEqualTo("native");
+        assertThat(environment.getProperty("server.request.header.forwarded.naming")).isEqualTo("x-forwarded");
         assertThat(environment.getProperty("ddb.logging.access.enabled", Boolean.class)).isFalse();
         assertThat(environment.getProperty("logging.level.de.ddb.apiv3.access")).isEqualTo("INFO");
         assertThat(environment.getProperty("ddb.gateway.client-id.header-name")).isEqualTo("X-Gateway-Client");
@@ -69,6 +73,15 @@ class GatewayEnvironmentConfigurationTest {
         var environment = environment(Map.of(), false);
         assertThat(environment.getProperty("ddb.logging.performance.enabled", Boolean.class)).isTrue();
         assertThat(environment.getProperty(GATEWAY + "httpclient.pool.metrics", Boolean.class)).isTrue();
+    }
+
+    @Test
+    void apiForwardingDoesNotChangeGatewayDefaults() throws IOException {
+        var environment = environment(Map.of("DDB_API_FORWARD_HEADERS_STRATEGY", "native",
+                "DDB_API_FORWARD_HEADERS_NAMING", "x-forwarded"), false);
+
+        assertThat(environment.getProperty("server.forward-headers-strategy")).isEqualTo("none");
+        assertThat(environment.getProperty("server.request.header.forwarded.naming")).isEqualTo("rfc-7239");
     }
 
     @Test

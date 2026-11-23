@@ -3,6 +3,10 @@ server:
   shutdown: graceful
   # Only explicitly trusted deployments should let forwarded headers establish client/origin data.
   forward-headers-strategy: ${GATEWAY_FORWARD_HEADERS_STRATEGY:none}
+  request:
+    header:
+      forwarded:
+        naming: ${GATEWAY_FORWARD_HEADERS_NAMING:rfc-7239}
 
 spring:
   main:

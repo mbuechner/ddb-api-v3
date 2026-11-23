@@ -27,6 +27,8 @@ import java.time.Duration;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
@@ -51,11 +53,17 @@ class GatewayAccessLoggingConfigurationTest {
                 .run(application -> assertThat(application).doesNotHaveBean(NettyServerCustomizer.class));
     }
 
-    @Test
-    void distinguishesThePhysicalPeerFromAnExplicitlyTrustedForwardedClient() {
+    @ParameterizedTest
+    @CsvSource(value = {
+            "rfc-7239|Forwarded|for=203.0.113.25;proto=https;host=public.example",
+            "x-forwarded|X-Forwarded-For|203.0.113.25"
+    }, delimiter = '|')
+    void distinguishesThePhysicalPeerFromAnExplicitlyTrustedForwardedClient(
+            String naming, String header, String headerValue) {
         try (final var gateway = new SpringApplicationBuilder(DdbApiGatewayApplication.class)
                 .web(WebApplicationType.REACTIVE)
-                .run("--APP_PROFILE=dev", "--GATEWAY_PORT=0", "--server.forward-headers-strategy=native",
+                .run("--APP_PROFILE=dev", "--GATEWAY_PORT=0", "--GATEWAY_FORWARD_HEADERS_STRATEGY=native",
+                        "--GATEWAY_FORWARD_HEADERS_NAMING=" + naming,
                         "--management.endpoints.web.exposure.include=health", "--spring.main.banner-mode=off")) {
             final Logger logger = (Logger) LoggerFactory.getLogger("de.ddb.apiv3.access");
             final var appender = new ListAppender<ILoggingEvent>();
@@ -66,7 +74,7 @@ class GatewayAccessLoggingConfigurationTest {
                 final int port = ((WebServerApplicationContext) gateway).getWebServer().getPort();
                 WebTestClient.bindToServer().baseUrl("http://127.0.0.1:" + port).build()
                         .get().uri("/contexts/access-native-forwarded")
-                        .header("Forwarded", "for=203.0.113.25;proto=https;host=public.example")
+                        .header(header, headerValue)
                         .exchange().expectStatus().isNotFound().expectBody().returnResult();
                 await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> assertThat(appender.list).hasSize(1));
                 final var fields = appender.list.getFirst().getKeyValuePairs().stream()

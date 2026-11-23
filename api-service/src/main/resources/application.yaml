@@ -2,6 +2,10 @@ server:
   port: ${DDB_API_PORT:8080}
   # Enable native forwarding only behind a proxy that sanitizes incoming forwarding headers.
   forward-headers-strategy: ${DDB_API_FORWARD_HEADERS_STRATEGY:none}
+  request:
+    header:
+      forwarded:
+        naming: ${DDB_API_FORWARD_HEADERS_NAMING:rfc-7239}
   shutdown: graceful
   compression:
     # Jetty handles negotiation, gzip request decompression, response compression and
