@@ -4,7 +4,7 @@ COPY pom.xml ./
 COPY src ./src
 RUN mvn --batch-mode clean package
 
-FROM amazoncorretto:25
+FROM amazoncorretto:27
 # Size the heap from the container limit; leave room for native buffers, stacks and metaspace.
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=60.0 -XX:+ExitOnOutOfMemoryError"
 LABEL org.opencontainers.image.title="DDB API v3 Service" \
