@@ -1,0 +1,12 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix shapes: <urn:ddb:shapes:records:> .
+
+# The fixed target also runs for empty data; it need not occur in the uploaded graph.
+# No domain vocabulary is mandatory yet. Add record-specific constraints here.
+shapes:NonEmptyGraph a sh:NodeShape ;
+    sh:targetNode <urn:ddb:validation:graph> ;
+    sh:sparql [
+        a sh:SPARQLConstraint ;
+        sh:message "The RDF graph must contain at least one triple." ;
+        sh:select "SELECT $this WHERE { FILTER NOT EXISTS { ?s ?p ?o } }"
+    ] .
