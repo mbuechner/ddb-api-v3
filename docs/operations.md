@@ -138,8 +138,8 @@ verhindern den Start im geprüften Setup nicht. Sie bleiben sichtbar.
 
 ## Container und Releases
 
-Die Module haben eigene mehrstufige Dockerfiles. Sie bauen mit Maven und
-enthalten im Runtime-Image nur Java 25 und das jeweilige Anwendungs-JAR:
+Die Module haben eigene mehrstufige Dockerfiles. Die Build-Stufe verwendet
+`maven:3-amazoncorretto-25`, die Laufzeit-Stufe `amazoncorretto:25`.
 
 ```bash
 docker build --pull -t registry.example.org/ddb/api-service:1.0.0 api-service
@@ -150,19 +150,31 @@ Die Workflows [container-images.yaml](../.github/workflows/container-images.yaml
 und [helm-pages.yaml](../.github/workflows/helm-pages.yaml) veröffentlichen getrennte
 GHCR-Images und den Chart. Pull Requests werden gebaut, aber nicht veröffentlicht.
 Pushes auf `main` erhalten unter anderem `latest` und `sha-<Commit>`; Git-Tags
-`v1.2.3` erzeugen zusätzlich Versionstags. Vor der Chart-Veröffentlichung prüft CI
-die gebauten Commit-Images. Die veröffentlichten Values behalten dagegen `latest`
-für API und Gateway bei, damit die ImageStreams neue Registry-Stände weiter verfolgen.
+`v1.2.3` erzeugen zusätzlich Versionstags. Sobald beide Image-Builds des
+aktuellen Standardbranches erfolgreich sind, versieht CI die Images aus diesem
+Lauf mit dem Tag `rolling`. Vor der Chart-Veröffentlichung prüft CI die
+Commit- und Rolling-Tags.
+
+Für ein aktuelleres Corretto-Basisimage den Workflow unter **Actions → Container
+images → Run workflow** auf `main` mit aktiviertem
+`rebuild_without_cache` starten. GitHub Actions prüft Docker Hub auf aktuelle
+Basis-Images und baut beide Anwendungen standardmäßig ohne Docker-Layer-Cache.
+Das funktioniert auch mit demselben Commit. Der dabei aktualisierte
+`sha-<Commit>`-Tag identifiziert den Quellstand. Der Image-Digest identifiziert
+den konkreten Build.
 
 Die Pakete sind `ghcr.io/mbuechner/ddb-api-v3-service` und
-`ghcr.io/mbuechner/ddb-api-v3-gateway`. Für bewusst feste Stände die konfigurierten
-Quell-Tags auswählen; standardmäßig werden aktuelle Images automatisch übernommen.
-OpenShift importiert dazu ImageStream-Metadaten nach seinem geplanten Importintervall.
-Ein neuer Digest löst über Image-Change-Trigger den jeweiligen Workload-Rollout aus;
-ein Push aktualisiert laufende Pods deshalb nicht sofort. Das betrifft API, Gateway
-und Redis einschließlich aktivierter Sentinel-/Exporter- und Init-Container.
-Die lokalen Stream-Tags heißen jeweils `latest`; die externen Quell-Tags bleiben
-über die Image-Values konfigurierbar, für Redis standardmäßig `8-alpine`.
+`ghcr.io/mbuechner/ddb-api-v3-gateway`. Der Chart verwendet für beide Anwendungen
+standardmäßig `rolling`. OpenShift prüft die Tags im geplanten Importintervall.
+Ein neuer Digest löst über Image-Change-Trigger den jeweiligen Workload-Rollout
+aus. API und Gateway warten jeweils auf einen verfügbaren neuen Pod, bevor sie
+den bisherigen beenden. Der Cluster benötigt dafür Kapazität für die zusätzlichen
+Pods. Die lokalen Stream-Tags heißen jeweils `latest`. Die externen Quell-Tags
+lassen sich über die Image-Values konfigurieren, beispielsweise auf einen
+unveränderlichen Release-Tag aus der eigenen Registry.
+
+Redis importiert standardmäßig `8-alpine`. Die Trigger erfassen auch seine
+Init-Container sowie aktivierte Sentinel- und Exporter-Container.
 Redis verwendet explizite, pro Namespace eindeutige Streamnamen und Triggerlisten
 in Values. HA-/Exporter-Wechsel mit den passenden [Chart-Overlays](deployment.md#imagestreams-und-rollouts)
 vornehmen, damit keine Container-Pfade fehlen oder auf inaktive Container zeigen.

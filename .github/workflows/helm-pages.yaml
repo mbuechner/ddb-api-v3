@@ -1,8 +1,8 @@
 name: Helm repository
 
 on:
-  # Publish only after the image matrix succeeds. Charts keep tracking the
-  # configured registry tags through OpenShift's scheduled ImageStream imports.
+  # Publish after the image workflow succeeds. Charts keep tracking rolling
+  # through OpenShift's scheduled ImageStream imports.
   workflow_run:
     workflows:
       - Container images
@@ -26,7 +26,9 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'push')
+       (github.event.workflow_run.event == 'push' ||
+        (github.event.workflow_run.event == 'workflow_dispatch' &&
+         github.event.workflow_run.head_branch == github.event.repository.default_branch)))
     runs-on: ubuntu-24.04
     environment:
       name: github-pages
@@ -53,22 +55,55 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Verify built container images
+        id: images
         env:
           COMMIT_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          BUILD_BRANCH: ${{ github.event.workflow_run.head_branch || '' }}
+          BUILD_RUN_ID: ${{ github.event.workflow_run.id || '' }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
+          verify_promotion=false
+          if [[ "$GITHUB_EVENT_NAME" == workflow_run && "$BUILD_BRANCH" == "$DEFAULT_BRANCH" ]]; then
+            head_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$DEFAULT_BRANCH" --jq '.object.sha')"
+            if [[ "$COMMIT_SHA" != "$head_sha" ]]; then
+              echo "Skipping chart publication for superseded commit $COMMIT_SHA"
+              exit 0
+            fi
+            verify_promotion=true
+          fi
+
           owner="${GITHUB_REPOSITORY_OWNER,,}"
           image_tag="sha-${COMMIT_SHA::7}"
-          docker buildx imagetools inspect "ghcr.io/$owner/ddb-api-v3-service:$image_tag"
-          docker buildx imagetools inspect "ghcr.io/$owner/ddb-api-v3-gateway:$image_tag"
+          matches_build=true
+          matches_commit=true
+          for package in ddb-api-v3-service ddb-api-v3-gateway; do
+            image="ghcr.io/$owner/$package"
+            commit_digest="$(docker buildx imagetools inspect --format '{{printf "%s" .Manifest.Digest}}' "$image:$image_tag")"
+            rolling_digest="$(docker buildx imagetools inspect --format '{{printf "%s" .Manifest.Digest}}' "$image:rolling")"
+            if [[ "$verify_promotion" == true ]]; then
+              build_digest="$(docker buildx imagetools inspect --format '{{printf "%s" .Manifest.Digest}}' "$image:build-$BUILD_RUN_ID")"
+              [[ "$rolling_digest" == "$build_digest" ]] || matches_build=false
+              [[ "$rolling_digest" == "$commit_digest" ]] || matches_commit=false
+            fi
+          done
+          # Accept a complete same-commit rebuild, even if it did not trigger Pages.
+          if [[ "$matches_build" == false && "$matches_commit" == false ]]; then
+            echo "Skipping chart publication because the rolling images match neither the triggering build nor the current commit"
+            exit 0
+          fi
+          echo "publish=true" >> "$GITHUB_OUTPUT"
 
       - name: Install ACL smoke-test dependency
+        if: steps.images.outputs.publish == 'true'
         run: |
           python3 -m venv "$RUNNER_TEMP/acl-smoke"
           "$RUNNER_TEMP/acl-smoke/bin/python" -m pip install --disable-pip-version-check PyYAML==6.0.3
 
       - name: Prepare published chart
+        if: steps.images.outputs.publish == 'true'
         env:
           COMMIT_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
           PAGES_BASE_URL: ${{ steps.pages.outputs.base_url }}
@@ -87,8 +122,7 @@ jobs:
 
           sed -i "s|repository: ghcr.io/mbuechner/ddb-api-v3-service|repository: ghcr.io/$owner/ddb-api-v3-service|" "$chart_dir/values.yaml"
           sed -i "s|repository: ghcr.io/mbuechner/ddb-api-v3-gateway|repository: ghcr.io/$owner/ddb-api-v3-gateway|" "$chart_dir/values.yaml"
-          # Preserve latest: published charts must continue receiving registry
-          # updates instead of silently pinning application tags to this commit.
+          # The chart resource check below verifies the published rolling defaults.
           helm repo add groundhog2k https://groundhog2k.github.io/helm-charts/
           # Resolve the version pinned in Chart.lock from its upstream repository.
           # Only generated dependency archives are packaged; no chart fork is maintained.
@@ -151,10 +185,12 @@ jobs:
             '</html>' > _site/index.html
 
       - name: Upload GitHub Pages artifact
+        if: steps.images.outputs.publish == 'true'
         uses: actions/upload-pages-artifact@v5.0.0
         with:
           path: _site
 
       - name: Deploy GitHub Pages
+        if: steps.images.outputs.publish == 'true'
         id: deployment
         uses: actions/deploy-pages@v5.0.1

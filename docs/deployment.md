@@ -99,8 +99,11 @@ sonst lehnt die Schema-Validierung die Konfiguration ab.
 `apiService.maxDocumentSize` begrenzt den entpackten Upload, `gateway.rateLimit`
 konfiguriert Kapazität, Nachfüllmenge, Intervall und Kosten einer Anfrage.
 `apiService.forwardHeadersStrategy` und `gateway.forwardHeadersStrategy` setzen
-`DDB_API_FORWARD_HEADERS_STRATEGY` beziehungsweise `GATEWAY_FORWARD_HEADERS_STRATEGY`; hinter vertrauenswürdigen Proxies
-bewusst wählen. [Alle ENV-Zuordnungen](../charts/ddb-api-v3/values.schema.json).
+`DDB_API_FORWARD_HEADERS_STRATEGY` beziehungsweise `GATEWAY_FORWARD_HEADERS_STRATEGY`.
+Beide stehen standardmäßig auf `none`. Bei aktivierter Auswertung hinter einem
+vertrauenswürdigen Proxy wählen `DDB_API_FORWARD_HEADERS_NAMING` und
+`GATEWAY_FORWARD_HEADERS_NAMING` in `extraEnv` die Header-Familie. Für Proxies mit
+`X-Forwarded-*` vor dem Upgrade auf `x-forwarded` setzen. [Proxy-Konfiguration](logging.md#grenzen-und-schutz-vor-datenmüll) · [Alle ENV-Zuordnungen](../charts/ddb-api-v3/values.schema.json).
 Das Schema liefert auch die Feldbeschreibungen für das native OpenShift-Formular;
 dieselben Werte lassen sich weiterhin direkt in der YAML-Ansicht bearbeiten.
 
@@ -130,6 +133,12 @@ helm install ddb-api-v3 ./charts/ddb-api-v3 \
   --namespace ddb-api-v3 --values values-site.yaml --wait --timeout 10m
 ```
 
+Mit Helm 4 bei aktiven ImageStreams zu `helm install` und `helm upgrade`
+`--server-side=false` hinzufügen. Der ImageStream-Controller aktualisiert
+die Container-Images in den Workload-Templates. Client-Side Apply vermeidet
+Feldkonflikte mit diesen Änderungen. Helm 3 verwendet Client-Side Apply
+standardmäßig. [Helm-Option für Objekt-Updates](https://helm.sh/docs/helm/helm_upgrade/).
+
 `Chart.lock` fixiert die unveränderte Groundhog2k-Redis-Abhängigkeit.
 Die Templates kommen aus dem externen Chart-Repository; es wird kein eigener
 Redis-Chart-Fork gepflegt. Abhängigkeitsarchive werden beim Build geladen und
@@ -145,8 +154,9 @@ Seltene Anwendungsoptionen lassen sich über `apiService.extraEnv` und
 `global.openshift.imageStreams.enabled: true` ist Standard. API, Gateway und Redis
 erhalten je einen ImageStream; für einen aktivierten Redis-Exporter kommt ein
 weiterer hinzu. Init- und Sentinel-Container teilen den Redis-Stream. Die Quellen
-bleiben die konfigurierten Registry-Repositories und Tags: standardmäßig `latest`
-für die Anwendungen und `8-alpine` für Redis.
+sind die konfigurierten Registry-Repositories und Tags, standardmäßig `rolling`
+für API und Gateway sowie `8-alpine` für Redis. Die Trigger referenzieren jeweils
+den OpenShift-internen Stream-Tag `latest`.
 
 Die ImageStreams für API und Gateway erhalten Release-bezogene Namen. Redis bleibt
 ein unveränderter externer Unterchart und verwendet explizite Streamnamen aus
@@ -184,14 +194,35 @@ einen geänderten ImageStream-Digest in die passenden Pod-Template-Felder und l�
 den jeweiligen Deployment- oder StatefulSet-Rollout aus. Dies umfasst auch die
 Redis-Init-, Sentinel- und Exporter-Images. Ein Registry-Push startet daher keinen
 sofortigen Rollout; zuerst muss der geplante Import den neuen Digest erkennen.
+Die ImageStreams für API und Gateway prüfen ihre jeweiligen Registry-Tags
+unabhängig. Während des Rollouts können unterschiedliche Release-Stände
+zusammenarbeiten, daher müssen benachbarte Versionen kompatibel sein.
 
 ImageStreams speichern Image-Metadaten, keine Container-Binaries im Chart.
-`scheduled: false` deaktiviert die regelmäßige Prüfung. Für bewusst fixierte
-Anwendungsstände `images.apiService.tag` und `images.gateway.tag` auf passende
-unveränderliche Quell-Tags setzen. Mit `enabled: false` werden stattdessen direkte
-Registry-Referenzen verwendet. Dabei auch die explizite Redis-Annotation mit
-`redis.customAnnotations.image.openshift.io/triggers: "[]"` leeren, damit keine
-Image-Change-Trigger auf zuvor verwendete Streams zurückbleiben.
+`scheduled: false` deaktiviert die regelmäßige Prüfung. Für einen festen
+Anwendungsstand `images.apiService.tag` und `images.gateway.tag` auf passende
+unveränderliche Quell-Tags setzen.
+
+Bei einer bestehenden Installation beide Tags beim einmaligen Wechsel auf
+`rolling` explizit setzen. `--reuse-values` übernimmt die übrigen Werte
+des Releases.
+
+```bash
+helm repo add ddb-api-v3 https://mbuechner.github.io/ddb-api-v3
+helm repo update ddb-api-v3
+helm upgrade ddb-api-v3 ddb-api-v3/ddb-api-v3 --namespace ddb-api-v3 \
+  --reuse-values --set-string images.apiService.tag=rolling \
+  --set-string images.gateway.tag=rolling --wait --timeout 10m
+```
+
+Für ein Upgrade aus dem lokalen Checkout `./charts/ddb-api-v3` als Chart angeben
+und vorher die Redis-Abhängigkeit wie bei der [lokalen Installation](#values-und-installation)
+auflösen. Bei Helm 4 und aktiven ImageStreams zusätzlich `--server-side=false` angeben.
+Mit `enabled: false` beziehen die Pods ihre Images direkt aus der Registry.
+Dann einen Rollout für neue Digests
+mit `kubectl rollout restart` auslösen oder einen externen Image-Updater einsetzen.
+Die Redis-Triggerliste dabei mit
+`redis.customAnnotations.image.openshift.io/triggers: "[]"` leeren.
 
 Import und Rollout getrennt prüfen:
 
@@ -290,10 +321,12 @@ Auslastungsziel relativ zum Request gilt. Die automatische Image-Aktualisierung
 ändert diesen VPA-Modus nicht.
 [VPA-API](https://github.com/kubernetes/autoscaler/blob/master/vertical-pod-autoscaler/docs/api.md).
 
-Bei einer Mindest-Replikazahl von eins ersetzen Rollouts den alten Pod ohne zusätzlichen
-Surge-Pod; dabei gibt es eine Unterbrechung. Ab zwei Mindest-Replikaten startet
-zuerst ein zusätzlicher Pod und muss bereit sein, bevor ein alter stoppt.
-Beim Stoppen bleiben fünf Sekunden für
+API und Gateway verwenden `maxUnavailable: 0` und `maxSurge: 1` bei jeder
+Replikazahl. Auch mit einem Replikat bleibt der bisherige Pod im Dienst, bis der
+zusätzliche Pod fünf Sekunden lang bereit war. Fehlen im Cluster freie Ressourcen
+für den zusätzlichen Pod oder besteht er die Readiness-Prüfung nicht, wartet
+der Rollout. Für parallele Updates je einen zusätzlichen API- und Gateway-Pod
+einplanen. Beim Stoppen bleiben fünf Sekunden für
 Endpoint-Aktualisierung, anschließend bis zu 20 Sekunden für laufende Requests
 innerhalb der 30-sekündigen Grace-Period. Disruption-Budgets erlauben höchstens
 einen nicht verfügbaren Pod je Deployment; ein einzelnes Replikat bietet keine

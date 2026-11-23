@@ -74,7 +74,8 @@ mvn clean verify
 ```
 
 Docker-basierte Tests brauchen eine Docker-Engine; Skips vor Releases prüfen.
-Beide Module haben eigene Dockerfiles. [Images und Releases](docs/operations.md#container-und-releases).
+Beide Dockerfiles verwenden Amazon Corretto 25 LTS.
+[Images und Releases](docs/operations.md#container-und-releases).
 
 ## Details
 

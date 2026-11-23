@@ -8,10 +8,20 @@ on:
       - "v*"
   pull_request:
   workflow_dispatch:
+    inputs:
+      rebuild_without_cache:
+        description: Rebuild both images without the Docker build cache
+        type: boolean
+        default: true
 
 permissions:
   contents: read
   packages: write
+
+# Serialize default-branch builds and promotion, even for repeated builds of the same SHA.
+concurrency:
+  group: container-images-${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && 'default-branch' || github.run_id }}
+  queue: max
 
 jobs:
   build:
@@ -50,7 +60,7 @@ jobs:
         id: metadata
         uses: docker/metadata-action@v6.2.0
         env:
-          # Must match the immutable tag verified by helm-pages.yaml before publication.
+          # Must match the commit tag verified by helm-pages.yaml before publication.
           DOCKER_METADATA_SHORT_SHA_LENGTH: 7
         with:
           images: ghcr.io/${{ steps.registry.outputs.owner }}/${{ matrix.package }}
@@ -61,6 +71,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=sha,prefix=sha-
             type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=build-${{ github.run_id }},enable={{is_default_branch}}
 
       - name: Build and publish image
         uses: docker/build-push-action@v7.4.0
@@ -68,8 +79,86 @@ jobs:
           context: ./${{ matrix.context }}
           file: ./${{ matrix.context }}/Dockerfile
           pull: true
+          no-cache: ${{ github.event_name == 'workflow_dispatch' && inputs.rebuild_without_cache }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
-          cache-from: type=gha,scope=${{ matrix.package }}
+          cache-from: ${{ !(github.event_name == 'workflow_dispatch' && inputs.rebuild_without_cache) && format('type=gha,scope={0}', matrix.package) || '' }}
           cache-to: type=gha,mode=max,scope=${{ matrix.package }}
+
+  rolling:
+    name: Publish rolling image tags
+    needs: build
+    if: >-
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+      packages: write
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4.4.1
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Promote both images from this run to rolling
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          head_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$DEFAULT_BRANCH" --jq '.object.sha')"
+          if [[ "$GITHUB_SHA" != "$head_sha" ]]; then
+            echo "Skipping rolling promotion for superseded commit $GITHUB_SHA"
+            exit 0
+          fi
+          newer_runs="$(gh api --method GET --paginate \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/container-images.yaml/runs" \
+            -f branch="$DEFAULT_BRANCH" -f head_sha="$GITHUB_SHA" -f status=success -F per_page=100 \
+            --jq ".workflow_runs[] | select(.run_number > $GITHUB_RUN_NUMBER and (.event == \"push\" or .event == \"workflow_dispatch\")) | .id")"
+          if [[ -n "$newer_runs" ]]; then
+            echo "Skipping rolling promotion because a newer build already succeeded for $GITHUB_SHA"
+            exit 0
+          fi
+
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          # The run ID survives partial retries and distinguishes concurrent builds of the same commit.
+          build_tag="build-$GITHUB_RUN_ID"
+          images=("ghcr.io/$owner/ddb-api-v3-service" "ghcr.io/$owner/ddb-api-v3-gateway")
+          declare -A digests
+          for image in "${images[@]}"; do
+            digest="$(docker buildx imagetools inspect --format '{{printf "%s" .Manifest.Digest}}' "$image:$build_tag")"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+              echo "Invalid digest for $image:$build_tag: $digest" >&2
+              exit 1
+            }
+            digests["$image"]="$digest"
+          done
+
+          promote_image() {
+            local image="$1" expected_digest="$2" actual_digest attempt
+            for attempt in 1 2 3; do
+              if docker buildx imagetools create --prefer-index=false --tag "$image:rolling" "$image@$expected_digest" &&
+                actual_digest="$(docker buildx imagetools inspect --format '{{printf "%s" .Manifest.Digest}}' "$image:rolling")" &&
+                [[ "$actual_digest" == "$expected_digest" ]]; then
+                return 0
+              fi
+              echo "Could not verify $image:rolling at $expected_digest (attempt $attempt of 3)" >&2
+              if ((attempt < 3)); then
+                sleep "$((attempt * 5))"
+              fi
+            done
+            return 1
+          }
+
+          for image in "${images[@]}"; do
+            promote_image "$image" "${digests[$image]}"
+          done

@@ -4,7 +4,7 @@ API + Gateway + Redis, standardmäßig je ein Pod. S3 und Identity Provider exte
 Konfiguration: Values-YAML und Secrets; keine zusätzliche Oberfläche.
 `appProfile` setzt `APP_PROFILE`: standardmäßig `prod`, optional `dev`.
 
-Voraussetzungen für die Standardinstallation: Helm 3, OpenShift mit ImageStream-API,
+Voraussetzungen für die Standardinstallation: Helm 3 oder 4, OpenShift mit ImageStream-API,
 VPA-Controller und `VerticalPodAutoscaler`-CRD, ein passender Worker-Node,
 dynamische PVs und ein S3-Bucket. Secret `ddb-api-v3-s3` im Release-Namespace
 vorab anlegen: `S3_ACCESS_KEY`, `S3_SECRET_KEY`.
@@ -49,6 +49,12 @@ helm install ddb-api-v3 ddb-api-v3/ddb-api-v3 \
   --values values-site.yaml --wait --timeout 10m
 ```
 
+Bei aktiven ImageStreams mit Helm 4 den Befehlen `helm install` und
+`helm upgrade` jeweils `--server-side=false` hinzufügen. Client-Side Apply
+vermeidet Konflikte mit den Image-Feldern, die OpenShift beim Rollout aktualisiert.
+Helm 3 verwendet Client-Side Apply standardmäßig.
+[Helm 4 und Server-Side Apply](https://helm.sh/docs/helm/helm_upgrade/).
+
 Adressen ersetzen; bei privaten Images Registry-Secrets für Image-Import und
 Pod-Pulls im Namespace bereitstellen und `images.pullSecrets` setzen.
 Issuer + Audience gemeinsam; ohne beide nur Lesebetrieb. `records:write` und
@@ -69,13 +75,21 @@ Sentinel-Container verwenden denselben Redis-Stream. Geplante Imports beobachten
 die konfigurierten Registry-Tags; ein neuer importierter Digest aktualisiert die
 Pod-Templates über Image-Change-Trigger und löst den jeweiligen Rollout aus.
 
-API und Gateway verfolgen standardmäßig `latest`, Redis `8-alpine`. Die Quellen
-bleiben über `images.apiService`, `images.gateway`, `redis.image` und
-`redis.metrics.exporter.image` konfigurierbar. Importiert werden Registry-Metadaten;
-Container-Binaries bleiben in der Registry und sind nicht Bestandteil des Charts.
-Updates erfolgen nach dem im Cluster eingestellten Importintervall, nicht sofort
-beim Push. `global.openshift.imageStreams.scheduled: false` schaltet die periodische
-Prüfung ab. Für bewusst feste Anwendungsstände einen unveränderlichen Quell-Tag wählen.
+API und Gateway verfolgen standardmäßig den GHCR-Tag `rolling`, Redis `8-alpine`.
+Innerhalb von OpenShift verwenden die Trigger jeweils den Stream-Tag `latest`.
+Die Quellen sind über `images.apiService`, `images.gateway`, `redis.image` und
+`redis.metrics.exporter.image` konfigurierbar. OpenShift importiert die
+Registry-Metadaten im Importintervall des Clusters.
+Die beiden Anwendungs-ImageStreams importieren unabhängig voneinander. Während
+des Updates können alte und neue Versionen gleichzeitig laufen.
+`global.openshift.imageStreams.scheduled: false` schaltet die periodische Prüfung
+ab. Für einen festen Anwendungsstand einen unveränderlichen Quell-Tag wählen.
+
+Bei API und Gateway bleibt der bisherige Pod im Dienst, bis sein Ersatz verfügbar
+ist. `maxUnavailable: 0` und `maxSurge: 1` gelten auch mit je einem Replikat.
+Für parallele Rollouts Kapazität für je einen zusätzlichen API- und Gateway-Pod
+freihalten. Redis läuft standardmäßig als Einzelinstanz und ist während seiner
+eigenen Aktualisierung vorübergehend nicht verfügbar.
 
 Die API-/Gateway-Streamnamen folgen dem Release-Namen. Der unveränderte Redis-
 Unterchart erhält dagegen explizite Values: `redis.imageStreams.name` ist
@@ -121,9 +135,9 @@ redis:
     image.openshift.io/triggers: "[]"
 ```
 
-Damit entfallen ImageStreams und automatische Image-Change-Rollouts; die Pods
-verwenden weiterhin die konfigurierten Registry-Images. Die leere Redis-Triggerliste
-deaktiviert auch die expliziten Image-Trigger des unveränderten Untercharts.
+Damit beziehen die Pods ihre Images direkt aus der Registry. Für neue Digests
+einen Rollout manuell auslösen oder einen externen Image-Updater einsetzen. Die
+leere Redis-Triggerliste deaktiviert die Image-Trigger des Untercharts.
 
 ## Kapazität
 

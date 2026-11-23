@@ -16,10 +16,10 @@ global:
 images:
   apiService:
     repository: ghcr.io/mbuechner/ddb-api-v3-service
-    tag: "latest"
+    tag: "rolling"
   gateway:
     repository: ghcr.io/mbuechner/ddb-api-v3-gateway
-    tag: "latest"
+    tag: "rolling"
   # ImageStreams resolve tracked tags to digests; image-change triggers roll out new pods.
   # Images are never embedded in this Helm chart.
   pullPolicy: Always

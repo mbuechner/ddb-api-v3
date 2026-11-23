@@ -31,7 +31,8 @@ def render(chart, values=(), settings=(), capabilities=(VPA_API, IMAGE_API), rel
     return [item for item in yaml.safe_load_all(result.stdout) if item]
 
 
-def check(resources, *, ha=False, deployment=False, metrics=False, scheduled=True, images=True, vpas=True):
+def check(resources, *, ha=False, deployment=False, metrics=False, scheduled=True, images=True, vpas=True,
+          api_tag="rolling", gateway_tag="rolling"):
     workloads = [item for item in resources if item["kind"] in ("Deployment", "StatefulSet")]
     autoscalers = [item for item in resources if item["kind"] == "VerticalPodAutoscaler"]
     streams = [item for item in resources if item["kind"] == "ImageStream"]
@@ -65,6 +66,15 @@ def check(resources, *, ha=False, deployment=False, metrics=False, scheduled=Tru
             assert workload["kind"] == expected_kind, "Wrong Redis controller kind"
             assert (("containers", "redis-sentinel") in containers) == ha
             assert (("containers", "redis-exporter") in containers) == metrics
+        else:
+            component = workload["metadata"]["labels"]["app.kubernetes.io/component"]
+            tag = {"api-service": api_tag, "gateway": gateway_tag}[component]
+            container = containers[("containers", component)]
+            assert container["image"].endswith(":" + tag), "Unexpected application image tag"
+            assert workload["spec"]["strategy"] == {
+                "type": "RollingUpdate", "rollingUpdate": {"maxUnavailable": 0, "maxSurge": 1}
+            }, "Application rollouts must keep existing capacity"
+            assert workload["spec"]["minReadySeconds"] > 0 and "readinessProbe" in container
         if vpas:
             key = (workload["kind"], name)
             assert key in targets, "VPA does not target " + name
@@ -125,6 +135,8 @@ def main():
         ("HA exporter", (production, production_metrics), (), {"ha": True, "metrics": True}),
         ("numeric exporter tag", (metrics,), ("redis.metrics.exporter.image.tag=1",), {"metrics": True}),
         ("manual image imports", (), ("global.openshift.imageStreams.scheduled=false",), {"scheduled": False}),
+        ("pinned application tags", (), ("images.apiService.tag=sha-012abcd", "images.gateway.tag=sha-789abcd"),
+         {"api_tag": "sha-012abcd", "gateway_tag": "sha-789abcd"}),
     ]
     for label, values, settings, expectations in cases:
         check(render(args.chart, values, settings), **expectations)

@@ -100,7 +100,7 @@
     "images": {
       "type": "object",
       "title": "Container-Images",
-      "description": "ImageStreams verfolgen standardmaessig die latest-Tags von API und Gateway. Container laden die aufgeloesten Digests aus der Registry; eigene feste Tags sind weiterhin moeglich.",
+      "description": "ImageStreams verfolgen standardmaessig die rolling-Tags von API und Gateway. Container laden die aufgeloesten Digests aus der Registry. Eigene feste Tags sind weiterhin moeglich.",
       "required": ["apiService", "gateway", "pullPolicy"],
       "properties": {
         "apiService": { "$ref": "#/definitions/image" },

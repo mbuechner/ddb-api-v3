@@ -1,7 +1,6 @@
 {{- range $role, $component := dict "apiService" "api-service" "gateway" "gateway" }}
 {{- $settings := index $.Values $role }}
 {{- $api := eq $role "apiService" }}
-{{- $single := eq (int (ternary $settings.autoscaling.minReplicas $settings.replicaCount $settings.autoscaling.enabled)) 1 }}
 {{- $name := include (ternary "ddb-api-v3.apiServiceName" "ddb-api-v3.gatewayName" $api) $ }}
 ---
 apiVersion: apps/v1
@@ -23,9 +22,8 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      # A single replica is replaced without reserving capacity for a second pod.
-      maxUnavailable: {{ ternary 1 0 $single }}
-      maxSurge: {{ ternary 0 1 $single }}
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       {{- include "ddb-api-v3.selectorLabels" $ | nindent 6 }}
