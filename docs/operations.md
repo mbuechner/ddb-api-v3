@@ -109,6 +109,11 @@ enthält `details` nur die Fehlerklasse (`error`) und bei einer S3-Antwort den
 HTTP-Status (`httpStatus`), keine Exception-Texte oder Zugangsdaten.
 `HeadBucket` scheitert dann für den konfigurierten Bucket: Endpoint/DNS/TLS,
 S3-Zugangsdaten, Bucket-Berechtigungen und das Zwei-Sekunden-Zeitlimit prüfen.
+Im Pod-Log meldet `event.action=s3_readiness_failed` den ersten oder einen
+geänderten Fehler. Die `s3`-Felder nennen Operation, Endpunkt, Bucket, Region,
+Adressierungsmodus, Fehlerklasse und, bei einer S3-Antwort, `http_status`.
+`s3_readiness_recovered` meldet die Erholung. Fehler bei aktivierter Bucket-Anlage
+stehen unter `s3_bucket_initialization_failed`.
 Ein Speicherausfall darf die Liveness nicht zu einer Neustartschleife machen.
 Für lokale Readiness-Probleme zuerst S3-Endpunkt, Konto, Bucket und Profil prüfen.
 Das Gateway bietet zusätzlich `/actuator/metrics` und `/actuator/prometheus`;

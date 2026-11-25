@@ -19,6 +19,10 @@ package de.ddb.apiv3.storage.s3;
 
 import de.ddb.apiv3.storage.StorageException;
 import java.time.Duration;
+import java.util.concurrent.atomic.AtomicReference;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.spi.LoggingEventBuilder;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.health.contributor.Health;
@@ -46,6 +50,9 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(S3StorageProperties.class)
 public final class S3StorageConfiguration {
+
+    private static final Logger LOG = LoggerFactory.getLogger(S3StorageConfiguration.class);
+    private static final String HEAD_BUCKET = "HeadBucket";
 
     @Bean
     static AwsCredentialsProvider s3CredentialsProvider(S3StorageProperties properties) {
@@ -89,7 +96,7 @@ public final class S3StorageConfiguration {
                 client.headBucket(HeadBucketRequest.builder().bucket(properties.bucket()).build());
             } catch (S3Exception exception) {
                 if (exception.statusCode() != 404) {
-                    throw unavailable(exception);
+                    throw initializationFailed(properties, HEAD_BUCKET, exception);
                 }
                 // HEAD has no XML error body. In this bucket-only operation 404 means
                 // NoSuchBucket; authorization failures (403) must never trigger creation.
@@ -102,36 +109,76 @@ public final class S3StorageConfiguration {
                 } catch (BucketAlreadyOwnedByYouException alreadyCreated) {
                     // A second service instance may have provisioned this bucket concurrently.
                 } catch (SdkException creationFailure) {
-                    throw unavailable(creationFailure);
+                    throw initializationFailed(properties, "CreateBucket", creationFailure);
                 }
             } catch (SdkException exception) {
-                throw unavailable(exception);
+                throw initializationFailed(properties, HEAD_BUCKET, exception);
             }
         };
     }
 
     @Bean("s3Storage")
     static HealthIndicator s3StorageHealthIndicator(S3Client client, S3StorageProperties properties) {
+        final var lastFailure = new AtomicReference<Health>();
         return () -> {
             try {
                 client.headBucket(HeadBucketRequest.builder().bucket(properties.bucket())
                         // Keep a sleepy store inside the Kubernetes readiness probe's budget.
                         .overrideConfiguration(config -> config.apiCallTimeout(Duration.ofSeconds(2)))
                         .build());
+                if (lastFailure.getAndSet(null) != null) {
+                    bucketEvent(LOG.atInfo(), properties, HEAD_BUCKET)
+                            .addKeyValue("event.action", "s3_readiness_recovered")
+                            .log("S3 bucket readiness check recovered");
+                }
                 return Health.up().build();
             } catch (SdkException exception) {
-                // Safe diagnostics only: never publish exception messages or signed request URLs.
-                final var health = Health.down().withDetail("error",
-                        NestedExceptionUtils.getMostSpecificCause(exception).getClass().getSimpleName());
-                if (exception instanceof S3Exception s3Exception) {
-                    health.withDetail("httpStatus", s3Exception.statusCode());
+                final var failure = bucketDown(exception);
+                if (!failure.equals(lastFailure.getAndSet(failure))) {
+                    final var event = bucketEvent(LOG.atWarn(), properties, HEAD_BUCKET)
+                            .addKeyValue("event.action", "s3_readiness_failed");
+                    withFailureDetails(event, failure)
+                            .log("S3 bucket readiness check failed");
                 }
-                return health.build();
+                return failure;
             }
         };
     }
 
-    private static StorageException unavailable(SdkException exception) {
-        return new StorageException("The S3 record bucket is unavailable", exception);
+    private static Health bucketDown(SdkException exception) {
+        final var health = Health.down().withDetail("error",
+                NestedExceptionUtils.getMostSpecificCause(exception).getClass().getSimpleName());
+        if (exception instanceof S3Exception s3Exception) {
+            health.withDetail("httpStatus", s3Exception.statusCode());
+        }
+        return health.build();
+    }
+
+    private static LoggingEventBuilder bucketEvent(
+            LoggingEventBuilder event, S3StorageProperties properties, String operation) {
+        // Configuration binding validates that this URI is a plain HTTP(S) origin.
+        return event.addKeyValue("s3.endpoint", properties.endpoint().toASCIIString())
+                .addKeyValue("s3.bucket", properties.bucket())
+                .addKeyValue("s3.region", properties.region())
+                .addKeyValue("s3.path_style_access", properties.pathStyleAccess())
+                .addKeyValue("s3.operation", operation);
+    }
+
+    private static LoggingEventBuilder withFailureDetails(LoggingEventBuilder event, Health failure) {
+        final var details = failure.getDetails();
+        event.addKeyValue("s3.error", details.get("error"));
+        if (details.get("httpStatus") instanceof Integer status && status > 0) {
+            event.addKeyValue("s3.http_status", status);
+        }
+        return event;
+    }
+
+    private static StorageException initializationFailed(
+            S3StorageProperties properties, String operation, SdkException exception) {
+        final var event = bucketEvent(LOG.atError(), properties, operation)
+                .addKeyValue("event.action", "s3_bucket_initialization_failed");
+        withFailureDetails(event, bucketDown(exception)).log("S3 bucket initialization failed");
+        // Spring logs the startup exception. Report only the structured diagnostics above.
+        return new StorageException("The S3 record bucket is unavailable");
     }
 }

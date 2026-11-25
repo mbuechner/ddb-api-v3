@@ -19,6 +19,7 @@ package de.ddb.apiv3.storage.s3;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -26,8 +27,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import de.ddb.apiv3.storage.StorageException;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.sun.net.httpserver.HttpServer;
+import de.ddb.apiv3.storage.StorageException;
 import jakarta.validation.Validation;
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -39,21 +44,39 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.health.contributor.Status;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.CreateBucketRequest;
 import software.amazon.awssdk.services.s3.model.HeadBucketRequest;
+import software.amazon.awssdk.services.s3.model.HeadBucketResponse;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
 class S3StorageConfigurationTest {
 
     private final S3Client client = mock(S3Client.class);
+    private final Logger logger = (Logger) LoggerFactory.getLogger(S3StorageConfiguration.class);
+    private final ListAppender<ILoggingEvent> events = new ListAppender<>();
+
+    @BeforeEach
+    void captureS3Events() {
+        events.start();
+        logger.addAppender(events);
+    }
+
+    @AfterEach
+    void stopCapturingS3Events() {
+        logger.detachAppender(events);
+        events.stop();
+    }
 
     @Test
     void leavesBucketProvisioningToTheOperatorByDefault() throws Exception {
@@ -78,11 +101,19 @@ class S3StorageConfigurationTest {
     @Test
     void neverCreatesABucketAfterAnAuthorizationFailure() {
         when(client.headBucket(any(HeadBucketRequest.class)))
-                .thenThrow(S3Exception.builder().statusCode(403).build());
+                .thenThrow(S3Exception.builder().statusCode(403).message("private credential details").build());
 
         assertThatThrownBy(() -> S3StorageConfiguration.s3BucketInitializer(client, properties(true)).afterPropertiesSet())
-                .isInstanceOf(StorageException.class);
+                .isInstanceOf(StorageException.class)
+                .hasMessage("The S3 record bucket is unavailable").hasNoCause();
         verify(client, never()).createBucket(any(CreateBucketRequest.class));
+        assertThat(events.list).singleElement().satisfies(event -> {
+            assertThat(event.getLevel()).isEqualTo(Level.ERROR);
+            assertThat(event.getThrowableProxy()).isNull();
+            assertThat(event.getKeyValuePairs()).extracting(pair -> pair.key, pair -> pair.value)
+                    .contains(tuple("event.action", "s3_bucket_initialization_failed"),
+                            tuple("s3.operation", "HeadBucket"), tuple("s3.http_status", 403));
+        });
     }
 
     @Test
@@ -113,6 +144,45 @@ class S3StorageConfigurationTest {
         assertThat(health.getDetails()).containsOnlyKeys("error", "httpStatus")
                 .containsEntry("error", "S3Exception").containsEntry("httpStatus", 403);
         assertThat(health.toString()).doesNotContain("private credential details");
+    }
+
+    @Test
+    void logsSafeReadinessDetailsWhenHealthChanges() {
+        var forbidden = S3Exception.builder().statusCode(403).message("private credential details").build();
+        var dnsFailure = SdkClientException.builder().message("signed request with credential details")
+                .cause(new UnknownHostException("private.storage.host")).build();
+        when(client.headBucket(any(HeadBucketRequest.class)))
+                .thenThrow(forbidden)
+                .thenThrow(forbidden)
+                .thenThrow(dnsFailure)
+                .thenReturn(HeadBucketResponse.builder().build())
+                .thenThrow(forbidden);
+        var indicator = S3StorageConfiguration.s3StorageHealthIndicator(client, properties(false));
+
+        assertThat(indicator.health().getStatus()).isEqualTo(Status.DOWN);
+        assertThat(indicator.health().getStatus()).isEqualTo(Status.DOWN);
+        assertThat(indicator.health().getStatus()).isEqualTo(Status.DOWN);
+        assertThat(indicator.health().getStatus()).isEqualTo(Status.UP);
+        assertThat(indicator.health().getStatus()).isEqualTo(Status.DOWN);
+
+        assertThat(events.list).extracting(ILoggingEvent::getFormattedMessage).containsExactly(
+                "S3 bucket readiness check failed", "S3 bucket readiness check failed",
+                "S3 bucket readiness check recovered", "S3 bucket readiness check failed");
+        assertThat(events.list).extracting(ILoggingEvent::getLevel)
+                .containsExactly(Level.WARN, Level.WARN, Level.INFO, Level.WARN);
+        assertThat(events.list).allSatisfy(event -> assertThat(event.getThrowableProxy()).isNull());
+        assertThat(events.list.getFirst().getKeyValuePairs()).extracting(pair -> pair.key, pair -> pair.value)
+                .containsExactlyInAnyOrder(tuple("event.action", "s3_readiness_failed"),
+                        tuple("s3.endpoint", "http://127.0.0.1:8333"), tuple("s3.bucket", "records"),
+                        tuple("s3.region", "eu-central-1"), tuple("s3.path_style_access", true),
+                        tuple("s3.operation", "HeadBucket"), tuple("s3.error", "S3Exception"),
+                        tuple("s3.http_status", 403));
+        assertThat(events.list.get(1).getKeyValuePairs()).extracting(pair -> pair.key, pair -> pair.value)
+                .contains(tuple("s3.error", "UnknownHostException"));
+        assertThat(events.list.get(1).getKeyValuePairs()).extracting(pair -> pair.key)
+                .doesNotContain("s3.http_status");
+        assertThat(events.list.get(2).getKeyValuePairs()).extracting(pair -> pair.key, pair -> pair.value)
+                .contains(tuple("event.action", "s3_readiness_recovered"));
     }
 
     @Test
