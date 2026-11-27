@@ -4,7 +4,7 @@ COPY pom.xml ./
 COPY src ./src
 RUN mvn --batch-mode clean package
 
-FROM amazoncorretto:25
+FROM amazoncorretto:27
 # Netty loads native transport libraries from the classpath; authorize that on Java 25.
 # Leave headroom for native memory instead of fixing -Xmx.
 ENV JAVA_TOOL_OPTIONS="--enable-native-access=ALL-UNNAMED -XX:MaxRAMPercentage=60.0 -XX:+ExitOnOutOfMemoryError"
